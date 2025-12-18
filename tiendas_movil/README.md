@@ -1,50 +1,92 @@
-# Welcome to your Expo app 👋
+# Tiendas Móvil
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Bienvenido al repositorio de **Tiendas Móvil**. Esta es una aplicación móvil desarrollada con [Expo](https://expo.dev) y React Native, diseñada para la gestión de clientes y servicios, utilizando [Supabase](https://supabase.com) como backend.
 
-## Get started
+## 🚀 Características Principales
 
-1. Install dependencies
+- **Gestión de Clientes**: Visualización y edición de clientes.
+- **Ruteo Dinámico**: Uso de Expo Router para navegación fluida.
+- **Integración con Supabase**: Autenticación y base de datos en tiempo real.
+- **UI Moderna**: Componentes estilizados y responsivos.
+
+## 🛠 Tech Stack
+
+- **Framework**: React Native con Expo (SDK 52+)
+- **Lenguaje**: TypeScript
+- **Navegación**: Expo Router
+- **Backend / Base de Datos**: Supabase
+- **Gestión de Estado/Data**: Hooks personalizados y Context API
+- **Estilos**: StyleSheet estándar y constantes de diseño
+
+## 📋 Requisitos Previos
+
+Antes de comenzar, asegúrate de tener instalado:
+
+- [Node.js](https://nodejs.org/) (versión LTS recomendada)
+- [Git](https://git-scm.com/)
+- Un gestor de paquetes como `npm` (incluido con Node), `yarn` o `pnpm`.
+
+> **Nota**: Recomendamos usar un dispositivo físico con Expo Go o un emulador (Android Studio / Xcode) para probar la app.
+
+## 🔧 Instalación
+
+1. **Clonar el repositorio:**
+
+   ```bash
+   git clone <URL_DEL_REPOSITORIO>
+   cd tiendas_movil
+   ```
+
+2. **Instalar dependencias:**
 
    ```bash
    npm install
    ```
 
-2. Start the app
+## ⚙️ Configuración
 
-   ```bash
-   npx expo start
-   ```
+Actualmente, las credenciales de Supabase están configuradas en `lib/supabase.ts`.
 
-In the output, you'll find options to open the app in a
+> **Recomendación para Desarrolladores:**
+> Para mayor seguridad y flexibilidad, se recomienda mover estas credenciales a variables de entorno. Crea un archivo `.env` en la raíz del proyecto y añade las siguientes variables (luego actualiza `lib/supabase.ts` para usarlas):
+>
+> ```bash
+> EXPO_PUBLIC_SUPABASE_URL=tu_url_de_supabase
+> EXPO_PUBLIC_SUPABASE_ANON_KEY=tu_anon_key
+> ```
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+## 🏃‍♂️ Ejecutar la Aplicación
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+Para iniciar el servidor de desarrollo:
 
 ```bash
-npm run reset-project
+npm start
+# o
+npx expo start
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Esto abrirá la interfaz de Expo CLI. Desde allí puedes:
 
-## Learn more
+- Presionar `a` para abrir en Android Emulator.
+- Presionar `i` para abrir en iOS Simulator (solo macOS).
+- Escanear el código QR con la app **Expo Go** en tu dispositivo físico.
 
-To learn more about developing your project with Expo, look at the following resources:
+## 📂 Estructura del Proyecto
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+- `app/`: Rutas y pantallas de la aplicación (File-based routing).
+- `components/`: Componentes reutilizables de UI.
+- `lib/`: Configuraciones de librerías externas (ej. Supabase).
+- `services/`: Lógica de negocio y llamadas a la API.
+- `types/`: Definiciones de tipos TypeScript globalmente compartidos (Interfaces, DTOs).
 
-## Join the community
+## 🤝 Contribuir
 
-Join our community of developers creating universal apps.
+1. Haz un Fork del proyecto.
+2. Crea una rama para tu feature (`git checkout -b feature/AmazingFeature`).
+3. Haz commit de tus cambios (`git commit -m 'Add some AmazingFeature'`).
+4. Haz push a la rama (`git push origin feature/AmazingFeature`).
+5. Abre un Pull Request.
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+---
+
+Desarrollado con ❤️ para gestión eficiente de tiendas.

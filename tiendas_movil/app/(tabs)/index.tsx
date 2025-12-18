@@ -106,7 +106,9 @@ export default function HomeScreen() {
           </TouchableOpacity>
 
           {/* Botón 3: Rutas */}
-          <TouchableOpacity style={styles.actionCard}>
+          <TouchableOpacity style={styles.actionCard}
+           onPress={() => router.push('/map' as any)}
+           >
             <View style={[styles.actionIcon, { backgroundColor: '#2563EB' }]}>
               <MaterialCommunityIcons name="truck-delivery" size={24} color="#fff" />
             </View>
