@@ -23,29 +23,73 @@ export const useAuth = () => useContext(AuthContext);
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [role, setRole] = useState<string | null>(null);
+  const [jobTitle, setJobTitle] = useState<string | null>(null);
 
-  // Obtener role y job_title del usuario desde los metadatos
-  const role = session?.user?.user_metadata?.role as string | null;
-  const jobTitle = session?.user?.user_metadata?.job_title as string | null;
-  
-  // El usuario es admin si su role es "Administrador"
-  const isAdmin = role === 'Administrador';
+  // Cargar el role desde la tabla employees si no está en metadata
+  const loadUserRole = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('employees')
+        .select('role, phone')
+        .eq('id', userId)
+        .single();
+
+      if (data && !error) {
+        setRole(data.role);
+        setJobTitle(data.role); // Usar role como jobTitle también
+      }
+    } catch (error) {
+      console.error('Error cargando role del usuario:', error);
+    }
+  };
 
   useEffect(() => {
-    // 1. Cargar sesión inicial al abrir la app
+    // 1. Cargar sesión inicial
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
+      
+      if (session?.user) {
+        // Intentar obtener role de metadata primero
+        const metaRole = session.user.user_metadata?.role || session.user.user_metadata?.job_title;
+        
+        if (metaRole) {
+          setRole(metaRole);
+          setJobTitle(metaRole);
+        } else {
+          // Si no está en metadata, cargar desde DB
+          loadUserRole(session.user.id);
+        }
+      }
+      
       setLoading(false);
     });
 
-    // 2. Escuchar cambios (Login, Logout, Auto-refresh)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    // 2. Escuchar cambios de autenticación
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setSession(session);
+      
+      if (session?.user) {
+        const metaRole = session.user.user_metadata?.role || session.user.user_metadata?.job_title;
+        
+        if (metaRole) {
+          setRole(metaRole);
+          setJobTitle(metaRole);
+        } else {
+          await loadUserRole(session.user.id);
+        }
+      } else {
+        setRole(null);
+        setJobTitle(null);
+      }
+      
       setLoading(false);
     });
 
     return () => subscription.unsubscribe();
   }, []);
+
+  const isAdmin = role === 'Administrador';
 
   return (
     <AuthContext.Provider value={{ session, loading, isAdmin, jobTitle, role }}>

@@ -80,7 +80,7 @@ export default function RegisterEmployeeScreen() {
       <Stack.Screen 
         options={{
           title: 'Nuevo Colaborador',
-          headerStyle: { backgroundColor: '#DC2626' },
+          headerStyle: { backgroundColor: '#2a8c4a' },
           headerTintColor: '#fff',
           headerTitleStyle: { fontWeight: 'bold' },
           headerLeft: () => (
@@ -95,7 +95,7 @@ export default function RegisterEmployeeScreen() {
         
         <View style={styles.headerIconContainer}>
           <View style={styles.iconCircle}>
-            <MaterialIcons name="person-add" size={40} color="#DC2626" />
+            <MaterialIcons name="person-add" size={40} color="#2a8c4a" />
           </View>
           <Text style={styles.helperText}>
             Ingresa los datos para dar de alta un nuevo empleado en el sistema.
@@ -305,7 +305,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#DC2626',
+    color: '#2a8c4a',
     marginBottom: 15,
   },
   roleSelector: {
@@ -327,8 +327,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   roleButtonActive: {
-    backgroundColor: '#DC2626',
-    borderColor: '#DC2626',
+    backgroundColor: '#2a8c4a',
+    borderColor: '#2a8c4a',
   },
   roleButtonText: {
     fontSize: 14,
@@ -339,13 +339,13 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   submitButton: {
-    backgroundColor: '#DC2626',
+    backgroundColor: '#2a8c4a',
     borderRadius: 8,
     height: 50,
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 20,
-    shadowColor: '#DC2626',
+    shadowColor: '#2a8c4a',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,

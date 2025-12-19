@@ -102,7 +102,7 @@ export default function RegisterClientScreen() {
         {/* 🗺️ Sección Ubicación (Como en tu diseño) */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
-            <Ionicons name="map-outline" size={20} color="#D32F2F" />
+            <Ionicons name="map-outline" size={20} color="#2a8c4a" />
             <Text style={styles.cardTitle}>Ubicación</Text>
           </View>
           
@@ -122,7 +122,7 @@ export default function RegisterClientScreen() {
             disabled={locationLoading}
           >
             {locationLoading ? (
-              <ActivityIndicator color="#D32F2F" />
+              <ActivityIndicator color="#2a8c4a" />
             ) : (
               <Text style={styles.secondaryButtonText}>Capturar Ubicación GPS</Text>
             )}
@@ -132,7 +132,7 @@ export default function RegisterClientScreen() {
         {/* 📝 Información Principal */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
-            <Ionicons name="storefront-outline" size={20} color="#D32F2F" />
+            <Ionicons name="storefront-outline" size={20} color="#2a8c4a" />
             <Text style={styles.cardTitle}>Información Principal</Text>
           </View>
 
@@ -164,7 +164,7 @@ export default function RegisterClientScreen() {
         {/* 📄 Documentación */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
-            <Ionicons name="document-text-outline" size={20} color="#D32F2F" />
+            <Ionicons name="document-text-outline" size={20} color="#2a8c4a" />
             <Text style={styles.cardTitle}>Documentación y Contacto</Text>
           </View>
 
@@ -201,7 +201,7 @@ export default function RegisterClientScreen() {
         {/* 💰 Financiera */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
-            <Ionicons name="cash-outline" size={20} color="#D32F2F" />
+            <Ionicons name="cash-outline" size={20} color="#2a8c4a" />
             <Text style={styles.cardTitle}>Financiera</Text>
           </View>
           
@@ -236,7 +236,7 @@ export default function RegisterClientScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F5F5F5' },
   header: {
-    backgroundColor: '#D32F2F', // Rojo corporativo según Figma
+    backgroundColor: '#2a8c4a', // Verde corporativo
     paddingTop: 50,
     paddingBottom: 20,
     paddingHorizontal: 20,
@@ -276,7 +276,7 @@ const styles = StyleSheet.create({
 
   // Botones
   primaryButton: {
-    backgroundColor: '#D32F2F',
+    backgroundColor: '#2a8c4a',
     padding: 16,
     borderRadius: 12,
     alignItems: 'center',
@@ -286,14 +286,14 @@ const styles = StyleSheet.create({
   primaryButtonText: { color: 'white', fontSize: 16, fontWeight: 'bold' },
   
   secondaryButton: {
-    borderColor: '#D32F2F',
+    borderColor: '#2a8c4a',
     borderWidth: 1,
     padding: 12,
     borderRadius: 8,
     alignItems: 'center',
     marginTop: 10,
   },
-  secondaryButtonText: { color: '#D32F2F', fontWeight: '600' },
+  secondaryButtonText: { color: '#2a8c4a', fontWeight: '600' },
   
   locationPreview: {
     height: 60,

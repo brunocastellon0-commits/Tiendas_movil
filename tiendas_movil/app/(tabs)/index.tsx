@@ -1,16 +1,98 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
-import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useAuth } from '../../contexts/AuthContext'; // Para obtener datos reales del usuario
-import { useRouter } from 'expo-router';
+import { useAuth } from '../../contexts/AuthContext';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { supabase } from '../../lib/supabase';
+
+interface Order {
+  id: string;
+  client_id: string;
+  total_amount: number;
+  status: string;
+  created_at: string;
+  clients: {
+    name: string;
+  };
+}
 
 export default function HomeScreen() {
   const { session, jobTitle, isAdmin } = useAuth();
   const router = useRouter();
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState({
+    totalSales: 0,
+    pendingCount: 0,
+    deliveredCount: 0,
+  });
   
-  // Obtenemos el nombre del usuario o usamos uno por defecto
-  const userName = session?.user?.user_metadata?.full_name || "Usuario"; 
+  const userName = session?.user?.user_metadata?.full_name || "Usuario";
+
+  // Función para cargar pedidos desde Supabase
+  const fetchOrders = async () => {
+    try {
+      if (!session?.user) return;
+      
+      const today = new Date().toISOString().split('T')[0];
+      
+      const { data, error } = await supabase
+        .from('pedidos_auxiliares')
+        .select(`
+          id,
+          client_id,
+          total_amount,
+          status,
+          created_at,
+          clients:client_id (
+            name
+          )
+        `)
+        .eq('seller_id', session.user.id)
+        .gte('created_at', `${today}T00:00:00`)
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (error) {
+        console.error('Error cargando pedidos:', error);
+        return;
+      }
+
+      if (data) {
+        // Supabase devuelve un objeto cuando usas client_id (no un array)
+        const ordersWithClients = data.map(order => ({
+          ...order,
+          clients: Array.isArray(order.clients) ? order.clients[0] : order.clients
+        }));
+        
+        setOrders(ordersWithClients as Order[]);
+        
+        // Calcular estadísticas del día
+        const totalSales = data.reduce((sum, order) => sum + (order.total_amount || 0), 0);
+        const pendingCount = data.filter(o => o.status === 'pending').length;
+        const deliveredCount = data.filter(o => o.status === 'delivered').length;
+        
+        setStats({
+          totalSales,
+          pendingCount,
+          deliveredCount,
+        });
+      }
+    } catch (error) {
+      console.error('Error:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Cargar datos cuando la pantalla se enfoca
+  useFocusEffect(
+    useCallback(() => {
+      setLoading(true);
+      fetchOrders();
+    }, [session])
+  ); 
 
   return (
     <View style={styles.container}>
@@ -51,47 +133,51 @@ export default function HomeScreen() {
         {/* --- RESUMEN DEL DÍA (Tarjeta Flotante) --- */}
         <View style={styles.summaryCard}>
           <Text style={styles.sectionTitle}>Resumen del Día</Text>
-          <View style={styles.statsRow}>
-            <View style={styles.statItem}>
-              <View style={[styles.statIcon, { backgroundColor: '#E0F2F1' }]}>
-                <Ionicons name="trending-up" size={20} color="#009688" />
+          {loading ? (
+            <ActivityIndicator size="small" color="#2a8c4a" style={{ marginVertical: 20 }} />
+          ) : (
+            <View style={styles.statsRow}>
+              <View style={styles.statItem}>
+                <View style={[styles.statIcon, { backgroundColor: '#E0F2F1' }]}>
+                  <Ionicons name="trending-up" size={20} color="#009688" />
+                </View>
+                <Text style={styles.statLabel}>Ventas</Text>
+                <Text style={styles.statValue}>Bs {stats.totalSales.toFixed(2)}</Text>
               </View>
-              <Text style={styles.statLabel}>Ventas</Text>
-              <Text style={styles.statValue}>$45.250</Text>
-            </View>
-            <View style={styles.verticalDivider} />
-            <View style={styles.statItem}>
-              <View style={[styles.statIcon, { backgroundColor: '#FFEBEE' }]}>
-                <Ionicons name="clipboard-outline" size={20} color="#EF5350" />
+              <View style={styles.verticalDivider} />
+              <View style={styles.statItem}>
+                <View style={[styles.statIcon, { backgroundColor: '#FFEBEE' }]}>
+                  <Ionicons name="clipboard-outline" size={20} color="#EF5350" />
+                </View>
+                <Text style={styles.statLabel}>Pendientes</Text>
+                <Text style={styles.statValue}>{stats.pendingCount}</Text>
               </View>
-              <Text style={styles.statLabel}>Pendientes</Text>
-              <Text style={styles.statValue}>8</Text>
-            </View>
-            <View style={styles.verticalDivider} />
-            <View style={styles.statItem}>
-              <View style={[styles.statIcon, { backgroundColor: '#E3F2FD' }]}>
-                <Ionicons name="map-outline" size={20} color="#42A5F5" />
+              <View style={styles.verticalDivider} />
+              <View style={styles.statItem}>
+                <View style={[styles.statIcon, { backgroundColor: '#E3F2FD' }]}>
+                  <Ionicons name="checkmark-circle" size={20} color="#42A5F5" />
+                </View>
+                <Text style={styles.statLabel}>Entregados</Text>
+                <Text style={styles.statValue}>{stats.deliveredCount}</Text>
               </View>
-              <Text style={styles.statLabel}>Rutas</Text>
-              <Text style={styles.statValue}>3</Text>
             </View>
-          </View>
+          )}
         </View>
 
         {/* --- ACCIONES RÁPIDAS --- */}
         <Text style={styles.sectionHeader}>Acciones Rápidas</Text>
         <View style={styles.actionsGrid}>
           
-          {/* Botón 1: Registrar Empleado - Solo para Administradores */}
+          {/* Botón 1: Empleados - Solo para Administradores */}
           {isAdmin && (
             <TouchableOpacity 
               style={styles.actionCard}
-              onPress={() => router.push('/admin/RegistrarEmpleado' as any)}
+              onPress={() => router.push('/admin/Empleados' as any)}
             >
-              <View style={[styles.actionIcon, { backgroundColor: '#DC2626' }]}>
-                <Ionicons name="person-add" size={24} color="#fff" />
+              <View style={[styles.actionIcon, { backgroundColor: '#2a8c4a' }]}>
+                <Ionicons name="people" size={24} color="#fff" />
               </View>
-              <Text style={styles.actionText}>Registrar Empleado</Text>
+              <Text style={styles.actionText}>Empleados</Text>
             </TouchableOpacity>
           )}
 
@@ -109,7 +195,7 @@ export default function HomeScreen() {
           <TouchableOpacity style={styles.actionCard}
            onPress={() => router.push('/map' as any)}
            >
-            <View style={[styles.actionIcon, { backgroundColor: '#2563EB' }]}>
+            <View style={[styles.actionIcon, { backgroundColor: '#64c27b' }]}>
               <MaterialCommunityIcons name="truck-delivery" size={24} color="#fff" />
             </View>
             <Text style={styles.actionText}>Rutas</Text>
@@ -127,35 +213,56 @@ export default function HomeScreen() {
         {/* --- ÚLTIMOS PEDIDOS --- */}
         <Text style={styles.sectionHeader}>Últimos Pedidos</Text>
         
-        {/* Item de Lista 1 */}
-        <View style={styles.orderCard}>
-          <View style={styles.orderHeader}>
-            <Text style={styles.orderId}>#12345</Text>
-            <View style={[styles.statusBadge, { backgroundColor: '#DCFCE7' }]}>
-              <Text style={[styles.statusText, { color: '#166534' }]}>Entregado</Text>
-            </View>
+        {loading ? (
+          <ActivityIndicator size="large" color="#2a8c4a" style={{ marginTop: 20 }} />
+        ) : orders.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="receipt-outline" size={48} color="#ccc" />
+            <Text style={styles.emptyText}>No hay pedidos hoy</Text>
+            <Text style={styles.emptySubtext}>Los pedidos que crees aparecerán aquí</Text>
           </View>
-          <View style={styles.orderRow}>
-            <Text style={styles.clientName}>Tienda El Sol</Text>
-            <Text style={styles.orderAmount}>$2500</Text>
-          </View>
-          <Text style={styles.orderTime}>09:30 AM</Text>
-        </View>
-
-        {/* Item de Lista 2 */}
-        <View style={styles.orderCard}>
-          <View style={styles.orderHeader}>
-            <Text style={styles.orderId}>#12344</Text>
-            <View style={[styles.statusBadge, { backgroundColor: '#FEF9C3' }]}>
-              <Text style={[styles.statusText, { color: '#854D0E' }]}>Pendiente</Text>
-            </View>
-          </View>
-          <View style={styles.orderRow}>
-            <Text style={styles.clientName}>Minisuper López</Text>
-            <Text style={styles.orderAmount}>$4200</Text>
-          </View>
-          <Text style={styles.orderTime}>08:15 AM</Text>
-        </View>
+        ) : (
+          orders.map((order) => {
+            if (!order) return null;
+            
+            const statusConfig = {
+              pending: { bg: '#FEF9C3', color: '#854D0E', label: 'Pendiente' },
+              delivered: { bg: '#DCFCE7', color: '#166534', label: 'Entregado' },
+              cancelled: { bg: '#FEE2E2', color: '#991B1B', label: 'Cancelado' },
+            };
+            
+            const status = statusConfig[order.status as keyof typeof statusConfig] || statusConfig.pending;
+            
+            // Manejo seguro de la relación con cliente
+            let clientName = 'Cliente sin nombre';
+            if (order.clients) {
+              if (typeof order.clients === 'object' && 'name' in order.clients) {
+                clientName = order.clients.name || 'Cliente sin nombre';
+              }
+            }
+            
+            const orderTime = new Date(order.created_at).toLocaleTimeString('es-BO', {
+              hour: '2-digit',
+              minute: '2-digit',
+            });
+            
+            return (
+              <View key={order.id} style={styles.orderCard}>
+                <View style={styles.orderHeader}>
+                  <Text style={styles.orderId}>#{order.id.toString().slice(0, 8)}</Text>
+                  <View style={[styles.statusBadge, { backgroundColor: status.bg }]}>
+                    <Text style={[styles.statusText, { color: status.color }]}>{status.label}</Text>
+                  </View>
+                </View>
+                <View style={styles.orderRow}>
+                  <Text style={styles.clientName}>{clientName}</Text>
+                  <Text style={styles.orderAmount}>Bs {order.total_amount.toFixed(2)}</Text>
+                </View>
+                <Text style={styles.orderTime}>{orderTime}</Text>
+              </View>
+            );
+          }).filter(Boolean)
+        )}
 
       </ScrollView>
     </View>
@@ -168,7 +275,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F3F4F6', // Gris muy claro de fondo
   },
   header: {
-    backgroundColor: '#DC2626', // Rojo corporativo
+    backgroundColor: '#2a8c4a', // Verde corporativo
     paddingBottom: 30,
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
@@ -197,7 +304,7 @@ const styles = StyleSheet.create({
     right: -5,
     backgroundColor: '#EF4444', // Rojo más claro o amarillo
     borderWidth: 1.5,
-    borderColor: '#DC2626',
+    borderColor: '#2a8c4a',
     borderRadius: 10,
     width: 18,
     height: 18,
@@ -223,7 +330,7 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   avatarText: {
-    color: '#DC2626',
+    color: '#2a8c4a',
     fontSize: 20,
     fontWeight: 'bold',
   },
@@ -340,7 +447,7 @@ const styles = StyleSheet.create({
     padding: 15,
     marginBottom: 10,
     borderLeftWidth: 4,
-    borderLeftColor: '#DC2626', // Detalle estético
+    borderLeftColor: '#2a8c4a', // Detalle estético
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
@@ -384,5 +491,25 @@ const styles = StyleSheet.create({
   orderTime: {
     fontSize: 12,
     color: '#9CA3AF',
+  },
+  
+  // Empty State
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+    paddingHorizontal: 20,
+  },
+  emptyText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#6B7280',
+    marginTop: 12,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    marginTop: 4,
+    textAlign: 'center',
   },
 });

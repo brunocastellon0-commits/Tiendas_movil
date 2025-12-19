@@ -27,7 +27,7 @@ export default function ClientsListScreen() {
     }
   };
 
-  // 🧠 Tech Lead Tip: useFocusEffect hace que la lista se recargue
+  // Tech Lead Tip: useFocusEffect hace que la lista se recargue
   // automáticamente cuando regresas de la pantalla "Nuevo Cliente".
   useFocusEffect(
     useCallback(() => {
@@ -94,7 +94,7 @@ export default function ClientsListScreen() {
             }}
             style={styles.deleteButton}
           >
-            <Ionicons name="trash-outline" size={20} color="#D32F2F" />
+            <Ionicons name="trash-outline" size={20} color="#2a8c4a" />
           </TouchableOpacity>
         </View>
       </View>
@@ -112,7 +112,7 @@ export default function ClientsListScreen() {
          <Text style={styles.balanceLabel}>Saldo:</Text>
          <Text style={[
            styles.balanceValue, 
-           { color: item.current_balance > 0 ? '#D32F2F' : '#388E3C' }
+           { color: item.current_balance > 0 ? '#2a8c4a' : '#388E3C' }
          ]}>
            Bs {item.current_balance?.toFixed(2) || '0.00'}
          </Text>
@@ -147,7 +147,7 @@ export default function ClientsListScreen() {
 
       {/* Lista */}
       {loading && !refreshing ? (
-        <ActivityIndicator size="large" color="#D32F2F" style={{ marginTop: 20 }} />
+        <ActivityIndicator size="large" color="#2a8c4a" style={{ marginTop: 20 }} />
       ) : (
         <FlatList
           data={clients}
@@ -158,7 +158,7 @@ export default function ClientsListScreen() {
             <RefreshControl refreshing={refreshing} onRefresh={() => {
               setRefreshing(true);
               fetchClients();
-            }} colors={['#D32F2F']} />
+            }} colors={['#2a8c4a']} />
           }
           ListEmptyComponent={
             <Text style={styles.emptyText}>No se encontraron clientes.</Text>
@@ -181,7 +181,7 @@ export default function ClientsListScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F5F5F5' },
   header: {
-    backgroundColor: '#D32F2F',
+    backgroundColor: '#2a8c4a',
     paddingTop: 50,
     paddingBottom: 15,
     paddingHorizontal: 20,
@@ -240,7 +240,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 24,
     right: 24,
-    backgroundColor: '#D32F2F',
+    backgroundColor: '#2a8c4a',
     width: 56,
     height: 56,
     borderRadius: 28,

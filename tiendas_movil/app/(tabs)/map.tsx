@@ -29,13 +29,24 @@ const LEAFLET_HTML = `
     #map { height: 100vh; width: 100vw; }
     .custom-icon {
       background-color: #fff;
-      border: 2px solid #DC2626;
+      border: 2px solid #2a8c4a;
       border-radius: 50%;
       text-align: center;
       line-height: 24px;
       font-weight: bold;
-      color: #DC2626;
+      color: #2a8c4a;
       box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+    .custom-order-icon {
+      background: linear-gradient(135deg, #2563EB 0%, #1E40AF 100%);
+      border: 2px solid #1E40AF;
+      border-radius: 50%;
+      text-align: center;
+      line-height: 28px;
+      font-size: 18px;
+      font-weight: bold;
+      color: white;
+      box-shadow: 0 3px 6px rgba(37,99,235,0.4);
     }
   </style>
 </head>
@@ -55,32 +66,46 @@ const LEAFLET_HTML = `
 
     // 3. Función para recibir datos desde React Native
     function updateMap(data) {
-      if (data.type === 'UPDATE_MARKERS') {
+      if (data.type === 'UPDATE_DATA') {
         markersLayer.clearLayers();
         markersMap = {}; // Limpiar referencias
         
-        data.clients.forEach(c => {
-          if(c.lat && c.lng) {
-            // Icono personalizado con la inicial
-            var myIcon = L.divIcon({
-              className: 'custom-icon',
-              html: c.name.charAt(0).toUpperCase(),
-              iconSize: [30, 30]
-            });
-            
-            var marker = L.marker([c.lat, c.lng], {icon: myIcon})
-              .bindPopup('<div style="text-align:center"><b>' + c.name + '</b><br><span style="color:#666;font-size:12px">' + (c.code || '') + '</span><br><button onclick="window.ReactNativeWebView.postMessage(\\'' + c.id + '\\')" style="background:#DC2626;color:white;border:none;padding:6px 12px;border-radius:4px;margin-top:8px;font-weight:bold;width:100%">VISITAR</button></div>');
-            
-            markersLayer.addLayer(marker);
-            markersMap[c.id] = marker; // Guardar referencia
-            
-            // Si es búsqueda única, centrar
-            if (data.center) {
-              map.setView([c.lat, c.lng], 16);
-              marker.openPopup();
+        // A. PINTAR CLIENTES (Rojo 🔴)
+        if (data.clients && data.clients.length > 0) {
+          data.clients.forEach(c => {
+            if(c.lat && c.lng) {
+              // Icono personalizado con la inicial
+              var myIcon = L.divIcon({
+                className: 'custom-icon',
+                html: c.name.charAt(0).toUpperCase(),
+                iconSize: [30, 30]
+              });
+              
+              var marker = L.marker([c.lat, c.lng], {icon: myIcon})
+                .bindPopup('<div style="text-align:center"><b>' + c.name + '</b><br><span style="color:#666;font-size:12px">' + (c.code || '') + '</span><br><button onclick="window.ReactNativeWebView.postMessage(\\'' + c.id + '\\')" style="background:#2a8c4a;color:white;border:none;padding:6px 12px;border-radius:4px;margin-top:8px;font-weight:bold;width:100%">VISITAR</button></div>');
+              
+              markersLayer.addLayer(marker);
+              markersMap[c.id] = marker; // Guardar referencia
             }
-          }
-        });
+          });
+        }
+
+        // B. PINTAR PEDIDOS (Azul 💰)
+        if (data.orders && data.orders.length > 0) {
+          data.orders.forEach(o => {
+            if(o.lat && o.lng) {
+              var orderIcon = L.divIcon({
+                className: 'custom-order-icon',
+                html: '$',
+                iconSize: [32, 32]
+              });
+              
+              L.marker([o.lat, o.lng], {icon: orderIcon})
+                .bindPopup('<div style="text-align:center"><b>✅ Pedido Realizado</b><br><span style="color:#64c27b;font-size:16px;font-weight:bold">Bs. ' + o.total.toFixed(2) + '</span><br><span style="color:#666;font-size:11px">' + (o.time || '') + '</span></div>')
+                .addTo(markersLayer);
+            }
+          });
+        }
       }
       
       if (data.type === 'CENTER_USER') {
@@ -88,7 +113,7 @@ const LEAFLET_HTML = `
         // Marcador azul para el usuario
         L.circleMarker([data.lat, data.lng], {
           radius: 8,
-          fillColor: "#2563EB",
+          fillColor: "#64c27b",
           color: "#fff",
           weight: 2,
           opacity: 1,
@@ -173,9 +198,94 @@ export default function LeafletMapScreen() {
           }));
           setClients(processed);
           
-          // Enviamos marcadores al mapa
+          // C. Cargar pedidos del día
+          const today = new Date().toISOString().split('T')[0];
+          const { data: session } = await supabase.auth.getSession();
+          
+          let orderMarkers: any[] = [];
+          if (session?.session?.user) {
+            const { data: ordersData, error: ordersError } = await supabase
+              .from('pedidos_auxiliares')
+              .select(`
+                id, 
+                total_amount, 
+                created_at,
+                order_location
+              `)
+              .eq('seller_id', session.session.user.id)
+              .gte('created_at', `${today}T00:00:00`)
+              .not('order_location', 'is', null);
+
+            if (!ordersError && ordersData && ordersData.length > 0) {
+              orderMarkers = ordersData.map((o: any) => {
+                  
+                let lat = null;
+                let lng = null;
+
+                if (o.order_location) {
+                  // GeoJSON format
+                  if (o.order_location.coordinates && Array.isArray(o.order_location.coordinates)) {
+                    lng = o.order_location.coordinates[0];
+                    lat = o.order_location.coordinates[1];
+                  }
+                  // WKT string format
+                  else if (typeof o.order_location === 'string' && o.order_location.includes('POINT(')) {
+                    const match = o.order_location.match(/POINT\(([-\d.]+)\s+([-\d.]+)\)/);
+                    if (match) {
+                      lng = parseFloat(match[1]);
+                      lat = parseFloat(match[2]);
+                    }
+                  }
+                  // WKB hexadecimal format (PostGIS binary)
+                  else if (typeof o.order_location === 'string' && o.order_location.length > 20) {
+                    try {
+                      const hex = o.order_location;
+                      const lngHex = hex.slice(-32, -16);
+                      const latHex = hex.slice(-16);
+                      
+                      const lngBuffer = new ArrayBuffer(8);
+                      const lngView = new DataView(lngBuffer);
+                      for (let i = 0; i < 8; i++) {
+                        lngView.setUint8(i, parseInt(lngHex.substr(i * 2, 2), 16));
+                      }
+                      lng = lngView.getFloat64(0, true);
+                      
+                      const latBuffer = new ArrayBuffer(8);
+                      const latView = new DataView(latBuffer);
+                      for (let i = 0; i < 8; i++) {
+                        latView.setUint8(i, parseInt(latHex.substr(i * 2, 2), 16));
+                      }
+                      lat = latView.getFloat64(0, true);
+                    } catch (e) {
+                      // Silently fail
+                    }
+                  }
+                }
+
+                if (lat && lng && !isNaN(lat) && !isNaN(lng)) {
+                  return {
+                    id: o.id,
+                    lat: lat,
+                    lng: lng,
+                    total: o.total_amount,
+                    time: new Date(o.created_at).toLocaleTimeString('es-BO', { 
+                      hour: '2-digit', 
+                      minute: '2-digit' 
+                    })
+                  };
+                }
+                return null;
+              }).filter((o: any) => o !== null);
+            }
+          }
+          
+         // Enviamos TODO al mapa (Clientes + Pedidos)
           setTimeout(() => {
-            sendMessage({ type: 'UPDATE_MARKERS', clients: processed, center: false });
+            sendMessage({ 
+              type: 'UPDATE_DATA', 
+              clients: processed, 
+              orders: orderMarkers
+            });
           }, 1500);
         }
       } catch (dbError) {
@@ -268,7 +378,7 @@ export default function LeafletMapScreen() {
                     <Text style={styles.suggestionName}>{item.name}</Text>
                     {item.code && <Text style={styles.suggestionCode}>{item.code}</Text>}
                   </View>
-                  <Ionicons name="location-sharp" size={16} color="#DC2626" style={{ marginLeft: 'auto' }} />
+                  <Ionicons name="location-sharp" size={16} color="#2a8c4a" style={{ marginLeft: 'auto' }} />
                 </TouchableOpacity>
               )}
             />
@@ -341,15 +451,15 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#EEF2FF',
+    backgroundColor: '#d0fdd7',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
     borderWidth: 1,
-    borderColor: '#E0E7FF'
+    borderColor: '#9bfab0'
   },
   suggestionInitial: {
-    color: '#4F46E5',
+    color: '#2a8c4a',
     fontWeight: 'bold',
     fontSize: 14,
   },

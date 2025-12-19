@@ -56,6 +56,7 @@ serve(async (req) => {
         full_name: full_name,
         email: email,
         phone: phone,
+        role: role,
         job_title: job_title || 'Preventista',
         status: 'active',
         // Puedes agregar más campos según tu necesidad

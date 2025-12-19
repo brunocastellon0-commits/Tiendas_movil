@@ -5,10 +5,17 @@
 
 import { Platform } from 'react-native';
 
-const tintColorLight = '#0a7ea4';
-const tintColorDark = '#fff';
+// Nueva paleta de colores - Tonos verdes
+const tintColorLight = '#2a8c4a'; // Verde oscuro principal
+const tintColorDark = '#64c27b'; // Verde medio para modo oscuro
 
 export const Colors = {
+  // Paleta base
+  primary: '#2a8c4a',      // Verde oscuro - Color principal
+  secondary: '#64c27b',    // Verde medio - Color secundario
+  accent: '#9bfab0',       // Verde claro/mint - Acentos
+  lightBg: '#d0fdd7',      // Verde muy claro - Fondos sutiles
+  
   light: {
     text: '#11181C',
     background: '#fff',
@@ -16,6 +23,7 @@ export const Colors = {
     icon: '#687076',
     tabIconDefault: '#687076',
     tabIconSelected: tintColorLight,
+    surface: '#d0fdd7',
   },
   dark: {
     text: '#ECEDEE',
@@ -24,6 +32,7 @@ export const Colors = {
     icon: '#9BA1A6',
     tabIconDefault: '#9BA1A6',
     tabIconSelected: tintColorDark,
+    surface: '#2a8c4a',
   },
 };
 
