@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, TextInput } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
@@ -22,6 +22,7 @@ export default function HomeScreen() {
   const router = useRouter();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
   const [stats, setStats] = useState({
     totalSales: 0,
     pendingCount: 0,
@@ -92,7 +93,19 @@ export default function HomeScreen() {
       setLoading(true);
       fetchOrders();
     }, [session])
-  ); 
+  );
+
+  // Filtrar pedidos por nombre de cliente
+  const filteredOrders = orders.filter(order => {
+    if (!searchQuery.trim()) return true;
+    
+    let clientName = '';
+    if (order.clients && typeof order.clients === 'object' && 'name' in order.clients) {
+      clientName = order.clients.name || '';
+    }
+    
+    return clientName.toLowerCase().includes(searchQuery.toLowerCase());
+  }); 
 
   return (
     <View style={styles.container}>
@@ -181,6 +194,19 @@ export default function HomeScreen() {
             </TouchableOpacity>
           )}
 
+          {/* Botón: Monitor de Ventas - Solo para Administradores */}
+          {isAdmin && (
+            <TouchableOpacity 
+              style={styles.actionCard}
+              onPress={() => router.push('/admin/MonitorVentas' as any)}
+            >
+              <View style={[styles.actionIcon, { backgroundColor: '#3B82F6' }]}>
+                <Ionicons name="analytics" size={24} color="#fff" />
+              </View>
+              <Text style={styles.actionText}>Monitor Ventas</Text>
+            </TouchableOpacity>
+          )}
+
           {/* Botón 2: Ver Clientes */}
           <TouchableOpacity style={styles.actionCard}
           onPress={() => router.push('/clients/clients' as any)}
@@ -210,59 +236,6 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* --- ÚLTIMOS PEDIDOS --- */}
-        <Text style={styles.sectionHeader}>Últimos Pedidos</Text>
-        
-        {loading ? (
-          <ActivityIndicator size="large" color="#2a8c4a" style={{ marginTop: 20 }} />
-        ) : orders.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Ionicons name="receipt-outline" size={48} color="#ccc" />
-            <Text style={styles.emptyText}>No hay pedidos hoy</Text>
-            <Text style={styles.emptySubtext}>Los pedidos que crees aparecerán aquí</Text>
-          </View>
-        ) : (
-          orders.map((order) => {
-            if (!order) return null;
-            
-            const statusConfig = {
-              pending: { bg: '#FEF9C3', color: '#854D0E', label: 'Pendiente' },
-              delivered: { bg: '#DCFCE7', color: '#166534', label: 'Entregado' },
-              cancelled: { bg: '#FEE2E2', color: '#991B1B', label: 'Cancelado' },
-            };
-            
-            const status = statusConfig[order.status as keyof typeof statusConfig] || statusConfig.pending;
-            
-            // Manejo seguro de la relación con cliente
-            let clientName = 'Cliente sin nombre';
-            if (order.clients) {
-              if (typeof order.clients === 'object' && 'name' in order.clients) {
-                clientName = order.clients.name || 'Cliente sin nombre';
-              }
-            }
-            
-            const orderTime = new Date(order.created_at).toLocaleTimeString('es-BO', {
-              hour: '2-digit',
-              minute: '2-digit',
-            });
-            
-            return (
-              <View key={order.id} style={styles.orderCard}>
-                <View style={styles.orderHeader}>
-                  <Text style={styles.orderId}>#{order.id.toString().slice(0, 8)}</Text>
-                  <View style={[styles.statusBadge, { backgroundColor: status.bg }]}>
-                    <Text style={[styles.statusText, { color: status.color }]}>{status.label}</Text>
-                  </View>
-                </View>
-                <View style={styles.orderRow}>
-                  <Text style={styles.clientName}>{clientName}</Text>
-                  <Text style={styles.orderAmount}>Bs {order.total_amount.toFixed(2)}</Text>
-                </View>
-                <Text style={styles.orderTime}>{orderTime}</Text>
-              </View>
-            );
-          }).filter(Boolean)
-        )}
 
       </ScrollView>
     </View>
@@ -511,5 +484,35 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     marginTop: 4,
     textAlign: 'center',
+  },
+  
+  // Search
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+    marginBottom: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  searchIcon: {
+    marginRight: 10,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    color: '#111827',
+  },
+  orderFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 4,
   },
 });

@@ -82,7 +82,7 @@ const LEAFLET_HTML = `
               });
               
               var marker = L.marker([c.lat, c.lng], {icon: myIcon})
-                .bindPopup('<div style="text-align:center"><b>' + c.name + '</b><br><span style="color:#666;font-size:12px">' + (c.code || '') + '</span><br><button onclick="window.ReactNativeWebView.postMessage(\\'' + c.id + '\\')" style="background:#2a8c4a;color:white;border:none;padding:6px 12px;border-radius:4px;margin-top:8px;font-weight:bold;width:100%">VISITAR</button></div>');
+                .bindPopup('<div style="text-align:center"><b>' + c.name + '</b><br><span style="color:#666;font-size:12px">' + (c.code || '') + '</span><br><button onclick="var msg = {action:\\'startVisit\\', clientId:\\''+c.id+'\\'}; window.ReactNativeWebView.postMessage(JSON.stringify(msg));" style="background:#2a8c4a;color:white;border:none;padding:6px 12px;border-radius:4px;margin-top:8px;font-weight:bold;width:100%">INICIAR VISITA</button></div>');
               
               markersLayer.addLayer(marker);
               markersMap[c.id] = marker; // Guardar referencia
@@ -90,7 +90,7 @@ const LEAFLET_HTML = `
           });
         }
 
-        // B. PINTAR PEDIDOS (Azul 💰)
+        // B. PINTAR PEDIDOS (Azul)
         if (data.orders && data.orders.length > 0) {
           data.orders.forEach(o => {
             if(o.lat && o.lng) {
@@ -101,7 +101,7 @@ const LEAFLET_HTML = `
               });
               
               L.marker([o.lat, o.lng], {icon: orderIcon})
-                .bindPopup('<div style="text-align:center"><b>✅ Pedido Realizado</b><br><span style="color:#64c27b;font-size:16px;font-weight:bold">Bs. ' + o.total.toFixed(2) + '</span><br><span style="color:#666;font-size:11px">' + (o.time || '') + '</span></div>')
+                .bindPopup('<div style="text-align:center"><b>✅ Pedido Realizado</b><br><span style="color:#64c27b;font-size:16px;font-weight:bold">Bs. ' + o.total.toFixed(2) + '</span><br><span style="color:#666;font-size:11px">' + (o.time || '') + '</span><br><button onclick="var msg = {action:\\'viewOrder\\', orderId:\\''+o.id+'\\'}; window.ReactNativeWebView.postMessage(JSON.stringify(msg));" style="background:#3B82F6;color:white;border:none;padding:6px 12px;border-radius:4px;margin-top:8px;font-weight:bold;width:100%">VER DETALLE</button></div>')
                 .addTo(markersLayer);
             }
           });
@@ -330,11 +330,24 @@ export default function LeafletMapScreen() {
     Keyboard.dismiss();
   };
 
-  // 3. Recibir mensaje "IR A TIENDA" desde el HTML
-  const handleMessage = (event: any) => {
-    const clientId = event.nativeEvent.data;
-    if (clientId) {
-      router.push(`/clients/${clientId}`);
+  // 3. Recibir mensajes desde el HTML (INICIAR VISITA o VER DETALLE DE PEDIDO)
+  const handleMessage = async (event: any) => {
+    try {
+      const data = JSON.parse(event.nativeEvent.data);
+      
+      if (data.action === 'startVisit' && data.clientId) {
+        // Navegar al cliente e iniciar visita automáticamente
+        router.push(`/clients/${data.clientId}?autoStartVisit=true`);
+      } else if (data.action === 'viewOrder' && data.orderId) {
+        // Navegar al detalle del pedido
+        router.push(`/pedidos/${data.orderId}` as any);
+      }
+    } catch (error) {
+      // Si no es JSON, asumir que es el formato antiguo (solo clientId)
+      const clientId = event.nativeEvent.data;
+      if (clientId) {
+        router.push(`/clients/${clientId}`);
+      }
     }
   };
 

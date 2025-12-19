@@ -9,7 +9,7 @@ import { Client } from '../../types/Cliente.interface';
 import { useVisitTracker } from '../../hooks/hookVisita';
 
 export default function ClientDetailScreen() {
-  const { id } = useLocalSearchParams();
+  const { id, autoStartVisit } = useLocalSearchParams();
   const router = useRouter();
   const [client, setClient] = useState<Client | null>(null);
   const [loading, setLoading] = useState(true);
@@ -36,6 +36,13 @@ export default function ClientDetailScreen() {
     }
     setLoading(false);
   };
+
+  // Auto-iniciar visita si viene del mapa
+  useEffect(() => {
+    if (autoStartVisit === 'true' && client && !isVisiting) {
+      handleStartVisit();
+    }
+  }, [client, autoStartVisit]);
 
   const handleStartVisit = async () => {
     if (!client) return;
