@@ -27,16 +27,16 @@ export default function HomeScreen() {
     pendingCount: 0,
     deliveredCount: 0,
   });
-  
+
   const userName = session?.user?.user_metadata?.full_name || "Usuario";
 
   // Función para cargar pedidos desde Supabase
   const fetchOrders = async () => {
     try {
       if (!session?.user) return;
-      
+
       const today = new Date().toISOString().split('T')[0];
-      
+
       const { data, error } = await supabase
         .from('pedidos_auxiliares')
         .select(`
@@ -65,14 +65,14 @@ export default function HomeScreen() {
           ...order,
           clients: Array.isArray(order.clients) ? order.clients[0] : order.clients
         }));
-        
+
         setOrders(ordersWithClients as Order[]);
-        
+
         // Calcular estadísticas del día
         const totalSales = data.reduce((sum, order) => sum + (order.total_amount || 0), 0);
         const pendingCount = data.filter(o => o.status === 'pending').length;
         const deliveredCount = data.filter(o => o.status === 'delivered').length;
-        
+
         setStats({
           totalSales,
           pendingCount,
@@ -92,7 +92,7 @@ export default function HomeScreen() {
       setLoading(true);
       fetchOrders();
     }, [session])
-  ); 
+  );
 
   return (
     <View style={styles.container}>
@@ -100,9 +100,9 @@ export default function HomeScreen() {
       <View style={styles.header}>
         <SafeAreaView edges={['top']} style={styles.headerContent}>
           <View style={styles.headerTop}>
-            <View style={{flexDirection: 'row', alignItems: 'center'}}>
-               <MaterialCommunityIcons name="store" size={24} color="#fff" style={{marginRight: 8}}/>
-               <Text style={styles.headerTitle}>Tiendas Móvil</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <MaterialCommunityIcons name="store" size={24} color="#fff" style={{ marginRight: 8 }} />
+              <Text style={styles.headerTitle}>Tiendas Móvil</Text>
             </View>
             <TouchableOpacity style={styles.notificationBtn}>
               <Ionicons name="notifications-outline" size={24} color="#fff" />
@@ -124,12 +124,12 @@ export default function HomeScreen() {
         </SafeAreaView>
       </View>
 
-      <ScrollView 
-        style={styles.content} 
+      <ScrollView
+        style={styles.content}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 100 }} // Espacio para que no lo tape el TabBar
       >
-        
+
         {/* --- RESUMEN DEL DÍA (Tarjeta Flotante) --- */}
         <View style={styles.summaryCard}>
           <Text style={styles.sectionTitle}>Resumen del Día</Text>
@@ -167,10 +167,10 @@ export default function HomeScreen() {
         {/* --- ACCIONES RÁPIDAS --- */}
         <Text style={styles.sectionHeader}>Acciones Rápidas</Text>
         <View style={styles.actionsGrid}>
-          
+
           {/* Botón 1: Empleados - Solo para Administradores */}
           {isAdmin && (
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.actionCard}
               onPress={() => router.push('/admin/Empleados' as any)}
             >
@@ -183,7 +183,7 @@ export default function HomeScreen() {
 
           {/* Botón 2: Ver Clientes */}
           <TouchableOpacity style={styles.actionCard}
-          onPress={() => router.push('/clients/clients' as any)}
+            onPress={() => router.push('/clients/clients' as any)}
           >
             <View style={[styles.actionIcon, { backgroundColor: '#10B981' }]}>
               <Ionicons name="people" size={24} color="#fff" />
@@ -193,8 +193,8 @@ export default function HomeScreen() {
 
           {/* Botón 3: Rutas */}
           <TouchableOpacity style={styles.actionCard}
-           onPress={() => router.push('/map' as any)}
-           >
+            onPress={() => router.push('/map' as any)}
+          >
             <View style={[styles.actionIcon, { backgroundColor: '#64c27b' }]}>
               <MaterialCommunityIcons name="truck-delivery" size={24} color="#fff" />
             </View>
@@ -202,17 +202,27 @@ export default function HomeScreen() {
           </TouchableOpacity>
 
           {/* Botón 4: Inventario */}
-          <TouchableOpacity style={styles.actionCard}>
+          <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/admin/productos/Productos' as any)}>
             <View style={[styles.actionIcon, { backgroundColor: '#9333EA' }]}>
               <MaterialCommunityIcons name="package-variant-closed" size={24} color="#fff" />
             </View>
             <Text style={styles.actionText}>Inventario</Text>
           </TouchableOpacity>
-        </View>
 
+          {/* Botón 5: Categorías */}
+          <TouchableOpacity style={styles.actionCard}
+            onPress={() => router.push('/admin/categorias/categoria' as any)}
+          >
+            {/* Icono con fondo Morado para diferenciar de Rutas */}
+            <View style={[styles.actionIcon, { backgroundColor: '#8e44ad' }]}>
+              <MaterialCommunityIcons name="shape" size={24} color="#fff" />
+            </View>
+            <Text style={styles.actionText}>Categorías</Text>
+          </TouchableOpacity>
+        </View>
         {/* --- ÚLTIMOS PEDIDOS --- */}
         <Text style={styles.sectionHeader}>Últimos Pedidos</Text>
-        
+
         {loading ? (
           <ActivityIndicator size="large" color="#2a8c4a" style={{ marginTop: 20 }} />
         ) : orders.length === 0 ? (
@@ -224,15 +234,15 @@ export default function HomeScreen() {
         ) : (
           orders.map((order) => {
             if (!order) return null;
-            
+
             const statusConfig = {
               pending: { bg: '#FEF9C3', color: '#854D0E', label: 'Pendiente' },
               delivered: { bg: '#DCFCE7', color: '#166534', label: 'Entregado' },
               cancelled: { bg: '#FEE2E2', color: '#991B1B', label: 'Cancelado' },
             };
-            
+
             const status = statusConfig[order.status as keyof typeof statusConfig] || statusConfig.pending;
-            
+
             // Manejo seguro de la relación con cliente
             let clientName = 'Cliente sin nombre';
             if (order.clients) {
@@ -240,12 +250,12 @@ export default function HomeScreen() {
                 clientName = order.clients.name || 'Cliente sin nombre';
               }
             }
-            
+
             const orderTime = new Date(order.created_at).toLocaleTimeString('es-BO', {
               hour: '2-digit',
               minute: '2-digit',
             });
-            
+
             return (
               <View key={order.id} style={styles.orderCard}>
                 <View style={styles.orderHeader}>
@@ -348,7 +358,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     marginTop: -25, // Para que la tarjeta se superponga al header
   },
-  
+
   // --- CARD RESUMEN ---
   summaryCard: {
     backgroundColor: '#fff',
@@ -492,7 +502,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#9CA3AF',
   },
-  
+
   // Empty State
   emptyState: {
     alignItems: 'center',
