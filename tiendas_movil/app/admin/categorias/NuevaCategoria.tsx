@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ScrollView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { crearCategoria } from '../../../services/CategoriaService';
 import { NuevaCategoria } from '../../../types/Categorias.inteface';
 
@@ -8,7 +9,6 @@ export default function CrearCategorias() {
     const router = useRouter();
     const [loading, setLoading] = useState(false);
 
-    // Estados locales del formulario
     const [form, setForm] = useState<NuevaCategoria>({
         empresa: '',
         nombre_categoria: '',
@@ -16,24 +16,22 @@ export default function CrearCategorias() {
         marca: ''
     });
 
-    // Función genérica para actualizar los campos
     const handleChange = (key: keyof NuevaCategoria, value: string) => {
         setForm({ ...form, [key]: value });
     };
 
     const handleGuardar = async () => {
-        // Validar
         if (!form.empresa || !form.nombre_categoria || !form.linea || !form.marca) {
-            Alert.alert('Faltan datos', 'Completa todos los campos');
+            Alert.alert('Faltan datos', 'Completa todos los campos obligatorios');
             return;
         }
 
         setLoading(true);
         try {
-            // LLAMAMOS AL SERVICIO 
             await crearCategoria(form);
-            Alert.alert('¡Éxito!', 'Categoría creada correctamente');
-            router.back();
+            Alert.alert('¡Éxito!', 'Categoría creada correctamente', [
+                { text: 'OK', onPress: () => router.back() }
+            ]);
         } catch (error: any) {
             Alert.alert('Error', error.message || 'No se pudo crear la categoría');
         } finally {
@@ -42,69 +40,120 @@ export default function CrearCategorias() {
     };
 
     return (
-        <ScrollView contentContainerStyle={styles.container}>
-            <Text style={styles.titulo}>Nueva Categoría</Text>
-
-            <View style={styles.inputGroup}>
-                <Text style={styles.label}>Empresa</Text>
-                <TextInput
-                    style={styles.input}
-                    placeholder="Ej: ARC"
-                    value={form.empresa}
-                    onChangeText={(text) => handleChange('empresa', text)}
-                />
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+            {/* Header Personalizado */}
+            <View style={styles.header}>
+                <TouchableOpacity onPress={() => router.back()}>
+                    <Ionicons name="arrow-back" size={24} color="white" />
+                </TouchableOpacity>
+                <Text style={styles.headerTitle}>Nueva Categoría</Text>
+                <View style={{ width: 24 }} />
             </View>
 
-            <View style={styles.inputGroup}>
-                <Text style={styles.label}>Nombre Categoría</Text>
-                <TextInput
-                    style={styles.input}
-                    placeholder="Ej: GOLOSINAS"
-                    value={form.nombre_categoria}
-                    onChangeText={(text) => handleChange('nombre_categoria', text)}
-                />
-            </View>
+            <ScrollView contentContainerStyle={styles.scrollContent}>
 
-            <View style={styles.inputGroup}>
-                <Text style={styles.label}>Línea</Text>
-                <TextInput
-                    style={styles.input}
-                    placeholder="Ej: CHOCOLATES"
-                    value={form.linea}
-                    onChangeText={(text) => handleChange('linea', text)}
-                />
-            </View>
+                {/* --- TARJETA: INFORMACIÓN DE CATEGORÍA --- */}
+                <View style={styles.card}>
+                    <View style={styles.cardHeader}>
+                        <MaterialCommunityIcons name="shape" size={20} color="#2a8c4a" />
+                        <Text style={styles.cardTitle}>Información de Categoría</Text>
+                    </View>
 
-            <View style={styles.inputGroup}>
-                <Text style={styles.label}>Marca</Text>
-                <TextInput
-                    style={styles.input}
-                    placeholder="Ej: NUCITA"
-                    value={form.marca}
-                    onChangeText={(text) => handleChange('marca', text)}
-                />
-            </View>
+                    <Text style={styles.label}>Empresa *</Text>
+                    <TextInput
+                        style={styles.input}
+                        placeholder="Ej: ARC"
+                        value={form.empresa}
+                        onChangeText={(text) => handleChange('empresa', text)}
+                    />
 
-            <TouchableOpacity
-                style={[styles.boton, loading && styles.botonDesactivado]}
-                onPress={handleGuardar}
-                disabled={loading}
-            >
-                <Text style={styles.textoBoton}>
-                    {loading ? "Guardando..." : "Crear Categoría"}
-                </Text>
-            </TouchableOpacity>
-        </ScrollView>
+                    <Text style={styles.label}>Nombre Categoría *</Text>
+                    <TextInput
+                        style={styles.input}
+                        placeholder="Ej: GOLOSINAS"
+                        value={form.nombre_categoria}
+                        onChangeText={(text) => handleChange('nombre_categoria', text)}
+                    />
+
+                    <Text style={styles.label}>Línea *</Text>
+                    <TextInput
+                        style={styles.input}
+                        placeholder="Ej: CHOCOLATES"
+                        value={form.linea}
+                        onChangeText={(text) => handleChange('linea', text)}
+                    />
+
+                    <Text style={styles.label}>Marca *</Text>
+                    <TextInput
+                        style={styles.input}
+                        placeholder="Ej: NUCITA"
+                        value={form.marca}
+                        onChangeText={(text) => handleChange('marca', text)}
+                    />
+                </View>
+
+                {/* BOTÓN GUARDAR */}
+                <TouchableOpacity
+                    style={styles.btnGuardar}
+                    onPress={handleGuardar}
+                    disabled={loading}
+                >
+                    {loading ? (
+                        <ActivityIndicator color="white" />
+                    ) : (
+                        <Text style={styles.btnText}>Crear Categoría</Text>
+                    )}
+                </TouchableOpacity>
+
+            </ScrollView>
+        </KeyboardAvoidingView>
     );
 }
 
 const styles = StyleSheet.create({
-    container: { padding: 20, backgroundColor: '#fff', flexGrow: 1 },
-    titulo: { fontSize: 24, fontWeight: 'bold', marginBottom: 20, textAlign: 'center' },
-    inputGroup: { marginBottom: 15 },
-    label: { fontSize: 14, fontWeight: '600', marginBottom: 5, color: '#444' },
-    input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, padding: 12, backgroundColor: '#f9f9f9' },
-    boton: { backgroundColor: '#007AFF', padding: 15, borderRadius: 10, alignItems: 'center', marginTop: 10 },
-    botonDesactivado: { backgroundColor: '#ccc' },
-    textoBoton: { color: '#fff', fontWeight: 'bold' }
+    header: {
+        backgroundColor: '#2a8c4a',
+        paddingTop: 50,
+        paddingBottom: 20,
+        paddingHorizontal: 20,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+    headerTitle: { color: 'white', fontSize: 18, fontWeight: 'bold' },
+    scrollContent: { padding: 16 },
+
+    card: {
+        backgroundColor: 'white',
+        borderRadius: 12,
+        padding: 16,
+        marginBottom: 16,
+        elevation: 2,
+        shadowColor: '#000', shadowOpacity: 0.05, shadowOffset: { width: 0, height: 2 }
+    },
+    cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 15, borderBottomWidth: 1, borderBottomColor: '#f0f0f0', paddingBottom: 8 },
+    cardTitle: { fontSize: 16, fontWeight: 'bold', color: '#2a8c4a', marginLeft: 8 },
+
+    label: { fontSize: 14, color: '#666', marginBottom: 6, marginTop: 5, fontWeight: '500' },
+    input: {
+        backgroundColor: '#FAFAFA',
+        borderWidth: 1,
+        borderColor: '#E0E0E0',
+        borderRadius: 8,
+        padding: 10,
+        fontSize: 16,
+        color: '#333',
+        marginBottom: 5
+    },
+
+    btnGuardar: {
+        backgroundColor: '#2a8c4a',
+        padding: 16,
+        borderRadius: 12,
+        alignItems: 'center',
+        marginTop: 10,
+        marginBottom: 40,
+        elevation: 4
+    },
+    btnText: { color: 'white', fontSize: 16, fontWeight: 'bold' }
 });

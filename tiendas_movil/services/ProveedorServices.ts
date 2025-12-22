@@ -10,7 +10,7 @@ export const proveedorService = {
             .order('nombre', { ascending: true }) //ordena
 
         if (busqueda) {
-            query = query.or(`nombre.ilike.%${busqueda}%, 'razon_social.ilike.%${busqueda}%`);
+            query = query.or(`nombre.ilike.%${busqueda}%,razon_social.ilike.%${busqueda}%`);
         }
 
         const { data, error } = await query;
