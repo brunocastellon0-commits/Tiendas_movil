@@ -1,11 +1,11 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { 
-  View, 
-  Text, 
-  TextInput, 
-  TouchableOpacity, 
-  FlatList, 
-  StyleSheet, 
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  FlatList,
+  StyleSheet,
   Alert,
   ActivityIndicator
 } from 'react-native';
@@ -25,18 +25,18 @@ interface Employee {
 }
 
 // --- 2. Componente de Tarjeta Individual ---
-const EmployeeCard = ({ 
-  item, 
-  onEdit, 
-  onToggleStatus 
-}: { 
-  item: Employee, 
-  onEdit: () => void, 
-  onToggleStatus?: () => void 
+const EmployeeCard = ({
+  item,
+  onEdit,
+  onToggleStatus
+}: {
+  item: Employee,
+  onEdit: () => void,
+  onToggleStatus?: () => void
 }) => {
   // En la tabla real no existe is_active, todos están activos
   const isActive = true;
-  
+
   return (
     <View style={styles.card}>
       {/* Columna Izquierda: Avatar e Info */}
@@ -44,29 +44,29 @@ const EmployeeCard = ({
         <View style={styles.avatarContainer}>
           <Ionicons name="person" size={24} color="#666" />
         </View>
-        
+
         <View style={styles.infoContainer}>
           <Text style={styles.nameText}>{item.full_name}</Text>
           <Text style={styles.emailText}>{item.email}</Text>
-          
+
           <View style={styles.tagsContainer}>
             {/* Tag de Rol */}
             <View style={[
-              styles.roleTag, 
-              (item.role === 'Administrador' || item.job_title === 'Administrador') 
-                ? styles.bgDarkGreen 
+              styles.roleTag,
+              (item.role === 'Administrador' || item.job_title === 'Administrador')
+                ? styles.bgDarkGreen
                 : styles.bgLightGray
             ]}>
               <Text style={[
-                styles.tagText, 
-                (item.role === 'Administrador' || item.job_title === 'Administrador') 
-                  ? styles.textWhite 
+                styles.tagText,
+                (item.role === 'Administrador' || item.job_title === 'Administrador')
+                  ? styles.textWhite
                   : styles.textDark
               ]}>
                 {item.job_title || (item.role === 'vendedor' ? 'Preventista' : item.role)}
               </Text>
             </View>
-            
+
             {/* Tag de Estado */}
             <View style={[styles.statusTag, isActive ? styles.bgGreenLight : styles.bgRedLight]}>
               <Text style={[styles.statusText, isActive ? styles.textGreen : styles.textRed]}>
@@ -94,7 +94,7 @@ export default function EmployeeManagementScreen() {
   const [loading, setLoading] = useState(true);
   const [searchText, setSearchText] = useState('');
   const [activeFilter, setActiveFilter] = useState<'Todos' | 'Preventista' | 'Administrador'>('Todos');
-  
+
   // Función para cargar empleados
   const fetchEmployees = async () => {
     try {
@@ -137,13 +137,13 @@ export default function EmployeeManagementScreen() {
   // Lógica de filtrado optimizada
   const filteredEmployees = useMemo(() => {
     return employees.filter(emp => {
-      const matchesSearch = emp.full_name.toLowerCase().includes(searchText.toLowerCase()) || 
-                            emp.email.toLowerCase().includes(searchText.toLowerCase());
-      
+      const matchesSearch = emp.full_name.toLowerCase().includes(searchText.toLowerCase()) ||
+        emp.email.toLowerCase().includes(searchText.toLowerCase());
+
       // Mapear vendedor a Preventista para el filtro
       const displayRole = emp.job_title || (emp.role === 'vendedor' ? 'Preventista' : emp.role);
       const matchesRole = activeFilter === 'Todos' || displayRole === activeFilter;
-      
+
       return matchesSearch && matchesRole;
     });
   }, [employees, searchText, activeFilter]);
@@ -164,7 +164,7 @@ export default function EmployeeManagementScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
 
-      
+
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()}>
@@ -220,8 +220,8 @@ export default function EmployeeManagementScreen() {
             data={filteredEmployees}
             keyExtractor={(item) => item.id}
             renderItem={({ item }) => (
-              <EmployeeCard 
-                item={item} 
+              <EmployeeCard
+                item={item}
                 onEdit={() => handleEdit(item.id)}
               />
             )}
@@ -232,7 +232,7 @@ export default function EmployeeManagementScreen() {
                 <Ionicons name="people-outline" size={64} color="#ccc" />
                 <Text style={styles.emptyText}>No se encontraron empleados</Text>
                 <Text style={styles.emptySubtext}>
-                  {searchText || activeFilter !== 'Todos' 
+                  {searchText || activeFilter !== 'Todos'
                     ? 'Intenta con otros filtros'
                     : 'Agrega empleados para comenzar'
                   }
@@ -413,7 +413,7 @@ const styles = StyleSheet.create({
   bgLightGray: { backgroundColor: '#F0F0F0' },
   bgGreenLight: { backgroundColor: '#E8F5E9' },
   bgRedLight: { backgroundColor: '#FFEBEE' },
-  
+
   tagText: { fontSize: 11, fontWeight: 'bold' },
   textWhite: { color: '#FFF' },
   textDark: { color: '#333' },
