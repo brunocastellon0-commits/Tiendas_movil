@@ -219,6 +219,17 @@ export default function HomeScreen() {
             </View>
             <Text style={styles.actionText}>Categorías</Text>
           </TouchableOpacity>
+
+          {/* Botón 6: Proveedores */}
+          <TouchableOpacity style={styles.actionCard}
+            onPress={() => router.push('/admin/proveedores/ListarProveedores' as any)}
+          >
+            {/* Icono con fondo Naranja para Proveedores */}
+            <View style={[styles.actionIcon, { backgroundColor: '#f39c12' }]}>
+              <MaterialCommunityIcons name="truck" size={24} color="#fff" />
+            </View>
+            <Text style={styles.actionText}>Proveedores</Text>
+          </TouchableOpacity>
         </View>
         {/* --- ÚLTIMOS PEDIDOS --- */}
         <Text style={styles.sectionHeader}>Últimos Pedidos</Text>
