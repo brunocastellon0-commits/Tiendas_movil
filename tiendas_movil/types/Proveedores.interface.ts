@@ -1,0 +1,30 @@
+export interface Proveedor {
+    id?: string;
+    created_at?: string;
+    codigo?: string;
+    nombre: string;
+    razon_social: string;
+    nit_ci: string;
+    direccion: string | null;
+    localidad: string | null;
+    ciudad: string;
+    telefono: string | null;
+    fax: string | null;
+    email: string | null;
+    persona_contacto: string | null;
+    tipo: string | null;
+    estado: string;
+    categoria_id: string | null;
+    zonas: string | null;
+    transportista: string | null;
+    comentario: string | null;
+    limite_credito: number | null;
+    autorizacion: string | null;
+    forma_pago: string;
+    tipo_documento: string;
+    saldo_inicial: number;
+    moneda: string;
+    cuenta_contable: string | null;
+    detalle_adicional: string | null;
+}
+export type NuevoProveedor = Omit<Proveedor, 'id' | 'created_at'>;

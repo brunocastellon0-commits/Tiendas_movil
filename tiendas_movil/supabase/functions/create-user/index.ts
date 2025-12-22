@@ -51,16 +51,16 @@ serve(async (req) => {
     // 5. Insertar en la tabla employees
     const { error: employeeError } = await supabaseAdmin
       .from('employees')
-      .insert({
-        user_uuid: userData.user.id,
+      .upsert({
+        id: userData.user.id, // Usar id en lugar de user_uuid
         full_name: full_name,
         email: email,
         phone: phone,
         role: role,
         job_title: job_title || 'Preventista',
-        status: 'active',
-        // Puedes agregar más campos según tu necesidad
-        // branch_id: null, // Lo puedes asignar después
+        status: 'Habilitado', 
+        created_at: new Date().toISOString(),
+
       })
 
     if (employeeError) {
