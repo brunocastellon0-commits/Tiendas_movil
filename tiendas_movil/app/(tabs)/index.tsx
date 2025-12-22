@@ -27,8 +27,8 @@ export default function HomeScreen() {
     pendingCount: 0,
     deliveredCount: 0,
   });
-  
-  const userName = session?.user?.user_metadata?.full_name || "Usuario";
+
+  const userName = session?.user?.user_metadata?.full_name || session?.user?.email || "Usuario";
 
   // Función para cargar pedidos desde Supabase
   const fetchOrders = async () => {
