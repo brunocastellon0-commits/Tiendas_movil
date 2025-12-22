@@ -59,9 +59,7 @@ export default function OrderDetailScreen() {
 
   const fetchOrderDetail = async () => {
     try {
-      // Consulta a Supabase incluyendo relaciones (joins)
-      // Nota: Se solicita 'phones' en clients para coincidir con la estructura de la BD
-      // Se utiliza order_items en lugar de la columna JSON 'items'
+      // Solicitamos la columna 'items' directa, ya que es un JSONB
       const { data, error } = await supabase
         .from('pedidos_auxiliares')
         .select(`
@@ -72,6 +70,7 @@ export default function OrderDetailScreen() {
           total_amount,
           status,
           created_at,
+          items, 
           clients:client_id (
             name,
             phones,
@@ -84,14 +83,6 @@ export default function OrderDetailScreen() {
             duration_seconds,
             outcome,
             notes
-          ),
-          order_items (
-            id,
-            quantity,
-            unit_price,
-            products:product_id (
-              name
-            )
           )
         `)
         .eq('id', id)
@@ -106,20 +97,19 @@ export default function OrderDetailScreen() {
       if (data) {
         const rawData = data as any;
 
-        // Transformación de los items relacionales al formato simple de la UI
-        const mappedItems: OrderItem[] = Array.isArray(rawData.order_items)
-          ? rawData.order_items.map((item: any) => ({
-              id: item.id,
-              name: item.products?.name || 'Producto Desconocido',
-              qty: item.quantity,
-              price: item.unit_price
+        // Mapeo directo del JSONB. Asumimos que la estructura guardada es compatible.
+        const jsonItems = rawData.items || [];
+        const mappedItems: OrderItem[] = Array.isArray(jsonItems)
+          ? jsonItems.map((item: any) => ({
+              name: item.name || 'Producto sin nombre',
+              qty: Number(item.qty || item.quantity || 0),
+              price: Number(item.price || item.unit_price || 0)
             }))
           : [];
 
-        // Manejo de la relación clients (array vs objeto)
+        // Manejo del cliente (array vs objeto) y corrección de phones
         const rawClient = Array.isArray(rawData.clients) ? rawData.clients[0] : rawData.clients;
         
-        // Mapeo del objeto cliente para ajustar 'phones' a 'phone'
         const mappedClient = {
             name: rawClient?.name || 'Sin nombre',
             address: rawClient?.address || 'Sin dirección',
@@ -134,11 +124,8 @@ export default function OrderDetailScreen() {
           total_amount: rawData.total_amount,
           status: rawData.status,
           created_at: rawData.created_at,
-          
           clients: mappedClient,
-          
           items: mappedItems,
-          
           visits: Array.isArray(rawData.visits) ? rawData.visits[0] : rawData.visits,
         };
 
