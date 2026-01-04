@@ -103,7 +103,6 @@ export default function EditEmployeeScreen() {
         full_name: formData.fullName,
         phone: formData.phone || null,
         role: formData.role,
-        job_title: formData.role,
       });
 
       const { data: updateData, error: updateError, count } = await supabase
@@ -112,7 +111,6 @@ export default function EditEmployeeScreen() {
           full_name: formData.fullName,
           phone: formData.phone || null,
           role: formData.role,
-          job_title: formData.role, // Sincronizar job_title con role
         })
         .eq('id', id)
         .select();
@@ -148,7 +146,7 @@ export default function EditEmployeeScreen() {
           Alert.alert(
             'Actualización parcial',
             'Se actualizó la información del empleado, pero no se pudo cambiar el email. Por favor contacta al administrador.',
-            [{ text: 'OK', onPress: () => router.replace('/admin/Empleados' as any) }]
+            [{ text: 'OK', onPress: () => router.back() }]
           );
           return;
         }
@@ -158,7 +156,7 @@ export default function EditEmployeeScreen() {
       Alert.alert(
         '¡Éxito!',
         `Los datos de ${formData.fullName} han sido actualizados correctamente.`,
-        [{ text: 'OK', onPress: () => router.replace('/admin/Empleados' as any) }]
+        [{ text: 'OK', onPress: () => router.back() }]
       );
 
     } catch (error: any) {
@@ -193,7 +191,7 @@ export default function EditEmployeeScreen() {
               Alert.alert(
                 'Empleado eliminado',
                 'El empleado ha sido eliminado del sistema.',
-                [{ text: 'OK', onPress: () => router.replace('/admin/Empleados' as any) }]
+                [{ text: 'OK', onPress: () => router.back() }]
               );
             } catch (error: any) {
               console.error('Error eliminando empleado:', error);

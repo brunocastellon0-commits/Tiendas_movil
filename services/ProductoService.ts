@@ -2,7 +2,7 @@ import { supabase } from "../lib/supabase";
 import { Producto, Equivalencia } from "../types/Producto.interface";
 
 export const productoService = {
-    //trae los productos
+    //obtiene los productos
     getProductos: async (busqueda: string = '') => {
         let query = supabase
             .from('productos')
@@ -13,7 +13,6 @@ export const productoService = {
             //ilike indiferente con mayusculas o minusculas
             query = query.or(`nombre_producto.ilike.%${busqueda}%, codigo_producto.ilike.%${busqueda}%`);
         }
-
         const { data, error } = await query.returns<Producto[]>();
 
         if (error) {
@@ -25,7 +24,7 @@ export const productoService = {
     //crear productos
     createProducto: async (producto: Producto, equivalencias: Equivalencia[]) => {
         // Construimos el objeto solo con los campos que existen en la BD
-        const productoParaBD = {
+        const productoBase = {
             codigo_producto: producto.codigo_producto,
             nombre_producto: producto.nombre_producto,
             estado: producto.estado,
@@ -42,7 +41,7 @@ export const productoService = {
             comision: producto.comision || null,
             comision2: producto.comision2 || null,
             activo: producto.activo,
-            id_categoria: producto.id_categoria,
+            categoria_id: producto.id_categoria,
             proveedor_id: producto.proveedor_id || null,
             // Campos de descuentos (confirmado que existen en BD)
             descuento_volumen: producto.descuento_volumen || false,
@@ -53,7 +52,7 @@ export const productoService = {
         //guardamos producto
         const { data, error } = await supabase
             .from('productos')
-            .insert(productoParaBD)
+            .insert(productoBase)
             .select()
             .single();
 
@@ -74,16 +73,15 @@ export const productoService = {
             //asignacion de ids
             const listaGuardar = equivalencias.map(eq => ({
                 nombre_unidad: eq.nombre_unidad,
-                conversion_factores: eq.conversion_factores,
+                factor_conversion: eq.conversion_factores,
                 precio_mayor: eq.precio_mayor,
-                id_producto: nuevoId
+                producto_id: nuevoId
             }));
             const { error: errorhijos } = await supabase
                 .from('equivalencias')
                 .insert(listaGuardar);
             if (errorhijos) {
                 console.error("Error guardando equivalencias", errorhijos);
-                throw new Error("Producto creado, pero equivalencias no guardadas");
             }
         }
         return nuevoProducto;

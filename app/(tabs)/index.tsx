@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, TextInput } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
@@ -22,7 +22,6 @@ export default function HomeScreen() {
   const router = useRouter();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
   const [stats, setStats] = useState({
     totalSales: 0,
     pendingCount: 0,
@@ -94,18 +93,6 @@ export default function HomeScreen() {
       fetchOrders();
     }, [session])
   );
-
-  // Filtrar pedidos por nombre de cliente
-  const filteredOrders = orders.filter(order => {
-    if (!searchQuery.trim()) return true;
-    
-    let clientName = '';
-    if (order.clients && typeof order.clients === 'object' && 'name' in order.clients) {
-      clientName = order.clients.name || '';
-    }
-    
-    return clientName.toLowerCase().includes(searchQuery.toLowerCase());
-  }); 
 
   return (
     <View style={styles.container}>
@@ -191,19 +178,6 @@ export default function HomeScreen() {
                 <Ionicons name="people" size={24} color="#fff" />
               </View>
               <Text style={styles.actionText}>Empleados</Text>
-            </TouchableOpacity>
-          )}
-
-          {/* Botón: Monitor de Ventas - Solo para Administradores */}
-          {isAdmin && (
-            <TouchableOpacity 
-              style={styles.actionCard}
-              onPress={() => router.push('/admin/MonitorVentas' as any)}
-            >
-              <View style={[styles.actionIcon, { backgroundColor: '#3B82F6' }]}>
-                <Ionicons name="analytics" size={24} color="#fff" />
-              </View>
-              <Text style={styles.actionText}>Monitor Ventas</Text>
             </TouchableOpacity>
           )}
 
@@ -558,35 +532,5 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     marginTop: 4,
     textAlign: 'center',
-  },
-  
-  // Search
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    paddingHorizontal: 15,
-    paddingVertical: 12,
-    marginBottom: 15,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  searchIcon: {
-    marginRight: 10,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 15,
-    color: '#111827',
-  },
-  orderFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 4,
   },
 });
