@@ -3,7 +3,7 @@ import {
     View, Text, TextInput, StyleSheet, ScrollView, TouchableOpacity,
     Alert, ActivityIndicator, Modal, FlatList, Switch
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
 
 // Importamos tus servicios y tipos
@@ -16,6 +16,7 @@ import { Proveedor } from '../../../types/Proveedores.interface';
 
 export default function NuevoProductoScreen() {
     const router = useRouter();
+    const { id } = useLocalSearchParams(); // Para detectar modo edición
     const [loading, setLoading] = useState(false);
 
     // --- 1. FORMULARIO COMPLETO (Todos los datos del escritorio) ---
@@ -76,6 +77,10 @@ export default function NuevoProductoScreen() {
 
     useEffect(() => {
         cargarListas();
+        // Si hay ID, cargar datos del producto
+        if (id) {
+            cargarProductoExistente();
+        }
     }, []);
 
     const cargarListas = async () => {
@@ -87,6 +92,32 @@ export default function NuevoProductoScreen() {
             setCategorias(c || []);
             setProveedores(p || []);
         } catch (e) { console.error(e); }
+    };
+
+    const cargarProductoExistente = async () => {
+        if (!id) return;
+        setLoading(true);
+        try {
+            // Cargar producto
+            const producto = await productoService.getProductoById(id.toString());
+            setForm(producto);
+
+            // Cargar equivalencias
+            const eqs = await productoService.getEquivalenciaProducto(id.toString());
+            setListaEquivalencias(eqs);
+
+            // Actualizar textos de selectores
+            const cat = (await obtenerCategoria()).find(c => c.id === producto.id_categoria);
+            if (cat) setTxtCategoria(`${cat.nombre_categoria} - ${cat.marca}`);
+
+            const prov = (await proveedorService.getProveedores()).find(p => p.id === producto.proveedor_id);
+            if (prov) setTxtProveedor(prov.nombre);
+        } catch (e: any) {
+            Alert.alert("Error", `No se pudo cargar el producto: ${e.message}`);
+            router.back();
+        } finally {
+            setLoading(false);
+        }
     };
 
     const updateForm = (key: keyof Producto, value: any) => {
@@ -120,12 +151,19 @@ export default function NuevoProductoScreen() {
 
         setLoading(true);
         try {
-            // Llamamos a la función correcta del servicio
-            await productoService.createProducto(form, listaEquivalencias);
-
-            Alert.alert("¡Éxito!", "Producto creado correctamente con todas sus opciones.", [
-                { text: "OK", onPress: () => router.back() }
-            ]);
+            if (id) {
+                // Modo edición
+                await productoService.updateProducto(id.toString(), form, listaEquivalencias);
+                Alert.alert("¡Éxito!", "Producto actualizado correctamente.", [
+                    { text: "OK", onPress: () => router.back() }
+                ]);
+            } else {
+                // Modo creación
+                await productoService.createProducto(form, listaEquivalencias);
+                Alert.alert("¡Éxito!", "Producto creado correctamente con todas sus opciones.", [
+                    { text: "OK", onPress: () => router.back() }
+                ]);
+            }
         } catch (e: any) {
             Alert.alert("Error", e.message);
         } finally {
@@ -140,7 +178,7 @@ export default function NuevoProductoScreen() {
                 <TouchableOpacity onPress={() => router.back()}>
                     <Ionicons name="arrow-back" size={24} color="white" />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>Nuevo Producto</Text>
+                <Text style={styles.headerTitle}>{id ? 'Modificar Producto' : 'Nuevo Producto'}</Text>
                 <View style={{ width: 24 }} />
             </View>
 

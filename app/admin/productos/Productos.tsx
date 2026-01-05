@@ -106,6 +106,34 @@ export default function ProductoScreen() {
     }
   };
 
+  const handleEditar = (producto: Producto) => {
+    // Navegar a NuevoProducto pasando el ID como parámetro
+    router.push(`/admin/productos/NuevoProducto?id=${producto.id}` as any);
+  };
+
+  const handleEliminar = async (producto: Producto) => {
+    Alert.alert(
+      "Eliminar Producto",
+      `¿Estás seguro de eliminar "${producto.nombre_producto}"?\n\nEsto lo marcará como inactivo.`,
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Eliminar",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await productoService.deleteProducto(producto.id!);
+              Alert.alert("¡Listo!", "Producto eliminado correctamente.");
+              cargarProductos(); // Recargar lista
+            } catch (e: any) {
+              Alert.alert("Error", e.message);
+            }
+          }
+        }
+      ]
+    );
+  };
+
   // DISEÑO DE LA TARJETA
   const renderItem = ({ item }: { item: Producto }) => (
     <View style={styles.card}>
@@ -128,14 +156,27 @@ export default function ProductoScreen() {
         </Text>
         <Text style={styles.unitSmall}>{item.unidad_base_venta}</Text>
       </View>
-      {/* Botón para añadir stock */}
-      <TouchableOpacity
-        style={styles.addStockBtn}
-        onPress={() => abrirModalIngreso(item)}
-      >
-        <Ionicons name="add" size={20} color="white" />
-        <Text style={styles.addStockText}>Stock</Text>
-      </TouchableOpacity>
+      {/* Botones de acción */}
+      <View style={styles.cardActions}>
+        <TouchableOpacity
+          style={[styles.actionBtn, { backgroundColor: '#2196F3' }]}
+          onPress={() => handleEditar(item)}
+        >
+          <Ionicons name="create-outline" size={18} color="white" />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.actionBtn, { backgroundColor: '#2a8c4a' }]}
+          onPress={() => abrirModalIngreso(item)}
+        >
+          <Ionicons name="add" size={18} color="white" />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.actionBtn, { backgroundColor: '#F44336' }]}
+          onPress={() => handleEliminar(item)}
+        >
+          <Ionicons name="trash-outline" size={18} color="white" />
+        </TouchableOpacity>
+      </View>
     </View>
   );
 
@@ -320,6 +361,11 @@ const styles = StyleSheet.create({
   unitSmall: { fontSize: 10, color: '#666' },
   textGreen: { color: '#2a8c4a' },
   textRed: { color: '#C62828' },
+
+  // Botones de acción
+  cardActions: { flexDirection: 'column', gap: 6, marginLeft: 8 },
+  actionBtn: { width: 36, height: 36, borderRadius: 8, justifyContent: 'center', alignItems: 'center', elevation: 2 },
+
   addStockBtn: { backgroundColor: '#2a8c4a', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 4 },
   addStockText: { color: 'white', fontSize: 12, fontWeight: 'bold' },
 

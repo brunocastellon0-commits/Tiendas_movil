@@ -89,12 +89,87 @@ export const productoService = {
     //obtencio de equivalencias
     getEquivalenciaProducto: async (idProducto: string) => {
         const { data, error } = await supabase
-            .from('equivalencia')
+            .from('equivalencias')
             .select('*')
-            .eq('id_producto', idProducto);
+            .eq('producto_id', idProducto);
 
         if (error) throw error;
         return data || [];
+    },
+    //obtener producto por ID
+    getProductoById: async (id: string) => {
+        const { data, error } = await supabase
+            .from('productos')
+            .select('*')
+            .eq('id', id)
+            .single();
+
+        if (error) throw error;
+        return data as Producto;
+    },
+    //actualizar producto
+    updateProducto: async (id: string, producto: Producto, equivalencias: Equivalencia[]) => {
+        // Construimos el objeto de actualización
+        const productoUpdate = {
+            codigo_producto: producto.codigo_producto,
+            nombre_producto: producto.nombre_producto,
+            estado: producto.estado,
+            precio_base_venta: producto.precio_base_venta,
+            unidad_base_venta: producto.unidad_base_venta,
+            stock_min: producto.stock_min,
+            stock_max: producto.stock_max,
+            stock_actual: producto.stock_actual,
+            observacion: producto.observacion || null,
+            extra_1: producto.extra_1 || null,
+            tipo: producto.tipo || null,
+            peso_bruto: producto.peso_bruto || null,
+            kg_unidad: producto.kg_unidad || null,
+            comision: producto.comision || null,
+            comision2: producto.comision2 || null,
+            activo: producto.activo,
+            categoria_id: producto.id_categoria,
+            proveedor_id: producto.proveedor_id || null,
+            descuento_volumen: producto.descuento_volumen || false,
+            descuento_temporada: producto.descuento_temporada || false,
+            precios_volumen: producto.precios_volumen || false,
+        };
+
+        // Actualizar producto
+        const { data, error } = await supabase
+            .from('productos')
+            .update(productoUpdate)
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (error) {
+            console.error("Error al actualizar el producto", error);
+            throw new Error("No se pudo actualizar el producto: " + error.message);
+        }
+
+        // Actualizar equivalencias: borrar las viejas e insertar las nuevas
+        // Primero eliminamos las equivalencias existentes
+        await supabase
+            .from('equivalencias')
+            .delete()
+            .eq('producto_id', id);
+
+        // Guardar nuevas equivalencias
+        if (equivalencias.length > 0) {
+            const listaGuardar = equivalencias.map(eq => ({
+                nombre_unidad: eq.nombre_unidad,
+                factor_conversion: eq.conversion_factores,
+                precio_mayor: eq.precio_mayor,
+                producto_id: id
+            }));
+            const { error: errorEquiv } = await supabase
+                .from('equivalencias')
+                .insert(listaGuardar);
+            if (errorEquiv) {
+                console.error("Error guardando equivalencias", errorEquiv);
+            }
+        }
+        return data;
     },
     //stock
     registroStock: async (idProducto: string, cantidadEntrante: number, factor: number, nuevoPrecioBase?: number) => {
