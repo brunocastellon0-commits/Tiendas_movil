@@ -1,76 +1,86 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  FlatList,
-  StyleSheet,
+import { 
+  View, 
+  Text, 
+  TextInput, 
+  TouchableOpacity, 
+  FlatList, 
+  StyleSheet, 
   Alert,
-  ActivityIndicator
+  ActivityIndicator,
+  RefreshControl
 } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { supabase } from '../../lib/supabase';
+import { supabase } from '../../lib/supabase'; // Ajusta la ruta a tu cliente
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-// --- 1. Definición de Tipos ---
+// --- 1. Definición de Tipos (Coincide con tu DB Real) ---
 interface Employee {
   id: string;
   full_name: string;
   email: string;
-  role: 'Administrador' | 'Preventista' | 'vendedor'; // Agregado vendedor
-  job_title?: string; // Opcional
+  role: 'Administrador' | 'Preventista' | 'Auditor' | 'vendedor'; 
+  job_title?: string;
+  // El status ahora es estricto según tu CHECK constraint
+  status: 'Habilitado' | 'Deshabilitado' | 'Vacaciones'; 
   created_at: string;
 }
 
 // --- 2. Componente de Tarjeta Individual ---
-const EmployeeCard = ({
-  item,
-  onEdit,
-  onToggleStatus
-}: {
-  item: Employee,
-  onEdit: () => void,
-  onToggleStatus?: () => void
+const EmployeeCard = ({ 
+  item, 
+  onEdit, 
+  onToggleStatus 
+}: { 
+  item: Employee, 
+  onEdit: () => void, 
+  onToggleStatus: () => void 
 }) => {
-  // En la tabla real no existe is_active, todos están activos
-  const isActive = true;
+  const isEnabled = item.status === 'Habilitado';
+  
+  // Determinamos el rol a mostrar
+  const displayRole = item.job_title || item.role;
+  const isAdmin = item.role === 'Administrador' || displayRole === 'Administrador';
 
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, !isEnabled && styles.cardDisabled]}>
       {/* Columna Izquierda: Avatar e Info */}
       <View style={styles.cardContent}>
-        <View style={styles.avatarContainer}>
-          <Ionicons name="person" size={24} color="#666" />
+        <View style={[styles.avatarContainer, !isEnabled && { backgroundColor: '#ddd' }]}>
+          <Ionicons name="person" size={24} color={isEnabled ? "#666" : "#999"} />
         </View>
-
+        
         <View style={styles.infoContainer}>
-          <Text style={styles.nameText}>{item.full_name}</Text>
+          <Text style={[styles.nameText, !isEnabled && { color: '#999' }]}>
+            {item.full_name}
+          </Text>
           <Text style={styles.emailText}>{item.email}</Text>
-
+          
           <View style={styles.tagsContainer}>
             {/* Tag de Rol */}
             <View style={[
-              styles.roleTag,
-              (item.role === 'Administrador' || item.job_title === 'Administrador')
-                ? styles.bgDarkGreen
-                : styles.bgLightGray
+              styles.roleTag, 
+              isAdmin ? styles.bgDarkGreen : styles.bgLightGray
             ]}>
               <Text style={[
-                styles.tagText,
-                (item.role === 'Administrador' || item.job_title === 'Administrador')
-                  ? styles.textWhite
-                  : styles.textDark
+                styles.tagText, 
+                isAdmin ? styles.textWhite : styles.textDark
               ]}>
-                {item.job_title || (item.role === 'vendedor' ? 'Preventista' : item.role)}
+                {displayRole}
               </Text>
             </View>
-
+            
             {/* Tag de Estado */}
-            <View style={[styles.statusTag, isActive ? styles.bgGreenLight : styles.bgRedLight]}>
-              <Text style={[styles.statusText, isActive ? styles.textGreen : styles.textRed]}>
-                {isActive ? 'Activo' : 'Inactivo'}
+            <View style={[
+              styles.statusTag, 
+              isEnabled ? styles.bgGreenLight : styles.bgRedLight
+            ]}>
+              <Text style={[
+                styles.statusText, 
+                isEnabled ? styles.textGreen : styles.textRed
+              ]}>
+                {item.status}
               </Text>
             </View>
           </View>
@@ -82,6 +92,18 @@ const EmployeeCard = ({
         <TouchableOpacity onPress={onEdit} style={styles.actionButton}>
           <MaterialIcons name="edit" size={20} color="#555" />
         </TouchableOpacity>
+        
+        {/* Botón Candado (Toggle) */}
+        <TouchableOpacity 
+          onPress={onToggleStatus} 
+          style={[styles.actionButton, isEnabled ? styles.bgRedLight : styles.bgGreenLight]}
+        >
+          <MaterialIcons 
+            name={isEnabled ? "lock-open" : "lock"} 
+            size={20} 
+            color={isEnabled ? "#2a8c4a" : "#D32F2F"} // Verde si está abierto, Rojo si está cerrado
+          />
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -92,85 +114,124 @@ export default function EmployeeManagementScreen() {
   const router = useRouter();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  
+  // Filtros
   const [searchText, setSearchText] = useState('');
   const [activeFilter, setActiveFilter] = useState<'Todos' | 'Preventista' | 'Administrador'>('Todos');
-
-  // Función para cargar empleados
+  
+  // --- A. Cargar Empleados (READ) ---
   const fetchEmployees = async () => {
     try {
-      setLoading(true);
       const { data, error } = await supabase
         .from('employees')
-        .select('id, full_name, email, role, job_title, created_at')
-        .order('created_at', { ascending: false });
+        .select('id, full_name, email, role, job_title, status, created_at')
+        .order('full_name', { ascending: true }); // Orden alfabético es mejor para listas largas
 
-      console.log('=== DEBUG EMPLEADOS ===');
-      console.log('Error:', error);
-      console.log('Data recibida:', data);
-      console.log('Cantidad de empleados:', data?.length);
-
-      if (error) {
-        console.error('Error cargando empleados:', error);
-        Alert.alert('Error', 'No se pudieron cargar los empleados: ' + error.message);
-        return;
-      }
+      if (error) throw error;
 
       if (data) {
-        console.log('Empleados cargados exitosamente:', data.length);
-        setEmployees(data);
+        setEmployees(data as Employee[]);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error:', error);
-      Alert.alert('Error', 'Ocurrió un error al cargar los empleados');
+      Alert.alert('Error', 'No se pudieron cargar los empleados');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
-  // Recargar cuando la pantalla se enfoca
+  // Recargar al enfocar la pantalla
   useFocusEffect(
     useCallback(() => {
       fetchEmployees();
     }, [])
   );
 
-  // Lógica de filtrado optimizada
+  // --- B. Lógica de Habilitar/Deshabilitar (RPC) ---
+  const handleToggleStatus = async (employee: Employee) => {
+    // 1. Calcular lógica inversa
+    const isCurrentlyEnabled = employee.status === 'Habilitado';
+    const newStatus: 'Habilitado' | 'Deshabilitado' = isCurrentlyEnabled ? 'Deshabilitado' : 'Habilitado';
+    const actionVerb = isCurrentlyEnabled ? 'DESHABILITAR' : 'HABILITAR';
+    const confirmColor = isCurrentlyEnabled ? 'destructive' : 'default';
+
+    // 2. Confirmación UI
+    Alert.alert(
+      `${actionVerb} ACCESO`,
+      `¿Confirmas que deseas ${actionVerb.toLowerCase()} a ${employee.full_name}?`,
+      [
+        { text: "Cancelar", style: "cancel" },
+        { 
+          text: `Sí, ${actionVerb.toLowerCase()}`,
+          style: confirmColor,
+          onPress: async () => {
+            try {
+              // 3. Llamada Segura a la Base de Datos (RPC)
+              const { data, error } = await supabase.rpc('toggle_employee_status', {
+                target_employee_id: employee.id,
+                new_status: newStatus
+              });
+
+              if (error) {
+                console.error('Error en toggle_employee_status:', error);
+                throw error;
+              }
+
+              // 4. Actualización Optimista (Sin recargar toda la lista)
+              setEmployees(prev => 
+                prev.map(emp => 
+                  emp.id === employee.id 
+                    ? { ...emp, status: newStatus } 
+                    : emp
+                )
+              );
+              Alert.alert("Éxito", `El usuario ahora está ${newStatus}.`);
+
+            } catch (err: any) {
+              console.error('Error al cambiar estado:', err);
+              Alert.alert("Error", err.message || "No se pudo cambiar el estado.");
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleEdit = (id: string) => {
+    router.push(`/admin/edit/${id}` as any);
+  };
+
+  // --- C. Filtrado en Tiempo Real ---
   const filteredEmployees = useMemo(() => {
     return employees.filter(emp => {
-      const matchesSearch = emp.full_name.toLowerCase().includes(searchText.toLowerCase()) ||
+      // Filtro de Texto
+      const matchesSearch = 
+        emp.full_name.toLowerCase().includes(searchText.toLowerCase()) || 
         emp.email.toLowerCase().includes(searchText.toLowerCase());
-
-      // Mapear vendedor a Preventista para el filtro
-      const displayRole = emp.job_title || (emp.role === 'vendedor' ? 'Preventista' : emp.role);
-      const matchesRole = activeFilter === 'Todos' || displayRole === activeFilter;
-
+      
+      // Filtro de Tabs (Role)
+      // Normalizamos: Si el filtro es 'Todos', pasa. Si no, debe coincidir con role o job_title
+      const roleToCheck = emp.job_title || emp.role;
+      // Truco: Si el filtro es "Preventista", aceptamos "vendedor" también
+      const effectiveRole = roleToCheck === 'vendedor' ? 'Preventista' : roleToCheck;
+      
+      const matchesRole = activeFilter === 'Todos' || effectiveRole === activeFilter;
+      
       return matchesSearch && matchesRole;
     });
   }, [employees, searchText, activeFilter]);
 
-  const handleEdit = (id: string) => {
-    // Navegar a pantalla de edición
-    router.push(`/admin/edit/${id}` as any);
-  };
-
-  const handleToggleStatus = async (employee: Employee) => {
-    // Función deshabilitada - no existe is_active en la tabla
-    Alert.alert(
-      'Función no disponible',
-      'La funcionalidad de habilitar/deshabilitar empleados no está implementada en la base de datos actual.'
-    );
-  };
-
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-
-
+      
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={28} color="#FFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Empleados</Text>
+        <Text style={styles.headerTitle}>Gestión de Equipo</Text>
         <TouchableOpacity onPress={() => router.push('/admin/RegistrarEmpleado' as any)}>
           <Ionicons name="add" size={28} color="#FFF" />
         </TouchableOpacity>
@@ -213,30 +274,28 @@ export default function EmployeeManagementScreen() {
         {loading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color="#2a8c4a" />
-            <Text style={styles.loadingText}>Cargando empleados...</Text>
+            <Text style={styles.loadingText}>Cargando equipo...</Text>
           </View>
         ) : (
           <FlatList
             data={filteredEmployees}
             keyExtractor={(item) => item.id}
             renderItem={({ item }) => (
-              <EmployeeCard
-                item={item}
+              <EmployeeCard 
+                item={item} 
                 onEdit={() => handleEdit(item.id)}
+                onToggleStatus={() => handleToggleStatus(item)}
               />
             )}
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchEmployees(); }} />
+            }
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
                 <Ionicons name="people-outline" size={64} color="#ccc" />
-                <Text style={styles.emptyText}>No se encontraron empleados</Text>
-                <Text style={styles.emptySubtext}>
-                  {searchText || activeFilter !== 'Todos'
-                    ? 'Intenta con otros filtros'
-                    : 'Agrega empleados para comenzar'
-                  }
-                </Text>
+                <Text style={styles.emptyText}>No se encontraron resultados</Text>
               </View>
             }
           />
@@ -252,7 +311,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F5F5F5',
   },
-  // Header
   header: {
     backgroundColor: '#2a8c4a',
     flexDirection: 'row',
@@ -266,13 +324,11 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
   },
-  // Body
   body: {
     flex: 1,
     paddingHorizontal: 16,
     paddingTop: 16,
   },
-  // Search
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -292,7 +348,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#333',
   },
-  // Tabs
   tabsContainer: {
     flexDirection: 'row',
     marginBottom: 16,
@@ -314,7 +369,9 @@ const styles = StyleSheet.create({
   activeTabText: {
     color: '#FFF',
   },
-  // Loading
+  listContent: {
+    paddingBottom: 20,
+  },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -323,30 +380,17 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 12,
     color: '#666',
-    fontSize: 16,
-  },
-  // List
-  listContent: {
-    paddingBottom: 20,
   },
   emptyContainer: {
     alignItems: 'center',
     marginTop: 60,
-    paddingHorizontal: 40,
   },
   emptyText: {
-    color: '#666',
-    fontSize: 18,
-    fontWeight: '600',
-    marginTop: 16,
-  },
-  emptySubtext: {
     color: '#999',
-    fontSize: 14,
-    marginTop: 8,
-    textAlign: 'center',
+    fontSize: 16,
+    marginTop: 10,
   },
-  // Card Styles
+  // --- Estilos de Tarjeta ---
   card: {
     backgroundColor: '#FFF',
     borderRadius: 12,
@@ -356,13 +400,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 3.84,
     elevation: 3,
+  },
+  cardDisabled: {
+    opacity: 0.7, // Efecto visual para deshabilitados
+    backgroundColor: '#F9F9F9'
   },
   cardContent: {
     flexDirection: 'row',
@@ -413,15 +458,15 @@ const styles = StyleSheet.create({
   bgLightGray: { backgroundColor: '#F0F0F0' },
   bgGreenLight: { backgroundColor: '#E8F5E9' },
   bgRedLight: { backgroundColor: '#FFEBEE' },
-
+  
   tagText: { fontSize: 11, fontWeight: 'bold' },
   textWhite: { color: '#FFF' },
   textDark: { color: '#333' },
   statusText: { fontSize: 11, fontWeight: 'bold' },
   textGreen: { color: '#2a8c4a' },
-  textRed: { color: '#EF5350' },
+  textRed: { color: '#C62828' },
 
-  // Actions
+  // Acciones
   actionsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -432,7 +477,4 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginLeft: 8,
   },
-  lockButton: {
-    backgroundColor: '#FFF0F0',
-  }
 });

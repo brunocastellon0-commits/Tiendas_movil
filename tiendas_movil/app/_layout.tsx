@@ -2,6 +2,7 @@ import { Slot, useRouter, useSegments } from 'expo-router';
 import { useEffect } from 'react';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
 import { View, ActivityIndicator } from 'react-native';
+import { LocationService } from '../services/LocationService';
 
 // proteccion de rutas
 const InitialLayout = () => {
@@ -24,6 +25,35 @@ const InitialLayout = () => {
       router.replace('/(tabs)' as any);
     }
   }, [session, loading, segments]);
+
+  // 🔄 TRACKING AUTOMÁTICO DE UBICACIÓN (cada 5 minutos)
+  useEffect(() => {
+    if (!session) return; // Solo trackear si hay sesión activa
+
+    let intervalId: ReturnType<typeof setInterval>;
+
+    const startTracking = async () => {
+      // 1. Pedir permiso al iniciar
+      const hasPermission = await LocationService.requestPermissions();
+      
+      if (hasPermission) {
+        // 2. Subir la primera ubicación inmediatamente
+        await LocationService.updateMyLocation();
+
+        // 3. Crear un intervalo para subir cada 5 minutos (300,000 ms)
+        intervalId = setInterval(async () => {
+          await LocationService.updateMyLocation();
+        }, 5 * 60 * 1000); // 5 minutos
+      }
+    };
+
+    startTracking();
+
+    // Limpieza al cerrar la app o componente
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [session]);
 
   if (loading) {
     return (

@@ -15,7 +15,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 
-// --- HTML INTELIGENTE (El cerebro del mapa) ---
+// 
 // Usamos Leaflet (librería ligera de mapas) desde CDN
 const LEAFLET_HTML = `
 <!DOCTYPE html>
@@ -47,6 +47,39 @@ const LEAFLET_HTML = `
       font-weight: bold;
       color: white;
       box-shadow: 0 3px 6px rgba(37,99,235,0.4);
+    }
+    .custom-order-icon-sale {
+      background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+      border: 2px solid #059669;
+      border-radius: 50%;
+      text-align: center;
+      line-height: 28px;
+      font-size: 18px;
+      font-weight: bold;
+      color: white;
+      box-shadow: 0 3px 6px rgba(16,185,129,0.4);
+    }
+    .custom-order-icon-no-sale {
+      background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%);
+      border: 2px solid #D97706;
+      border-radius: 50%;
+      text-align: center;
+      line-height: 28px;
+      font-size: 18px;
+      font-weight: bold;
+      color: white;
+      box-shadow: 0 3px 6px rgba(245,158,11,0.4);
+    }
+    .custom-order-icon-closed {
+      background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%);
+      border: 2px solid #DC2626;
+      border-radius: 50%;
+      text-align: center;
+      line-height: 28px;
+      font-size: 18px;
+      font-weight: bold;
+      color: white;
+      box-shadow: 0 3px 6px rgba(239,68,68,0.4);
     }
   </style>
 </head>
@@ -90,18 +123,55 @@ const LEAFLET_HTML = `
           });
         }
 
-        // B. PINTAR PEDIDOS (Azul)
+        // B. PINTAR PEDIDOS (Color dinámico según estado)
         if (data.orders && data.orders.length > 0) {
           data.orders.forEach(o => {
             if(o.lat && o.lng) {
+              // Determinar la clase del icono según el outcome
+              var iconClass = 'custom-order-icon';
+              var iconSymbol = '$';
+              var statusLabel = 'Pedido Realizado';
+              var statusColor = '#64c27b';
+              
+              if (o.outcome === 'sale') {
+                iconClass = 'custom-order-icon-sale';
+                iconSymbol = '✓';
+                statusLabel = '✅ Venta Realizada';
+                statusColor = '#10B981';
+              } else if (o.outcome === 'no_sale') {
+                iconClass = 'custom-order-icon-no-sale';
+                iconSymbol = '○';
+                statusLabel = '⚠️ Sin Venta';
+                statusColor = '#F59E0B';
+              } else if (o.outcome === 'closed') {
+                iconClass = 'custom-order-icon-closed';
+                iconSymbol = '✕';
+                statusLabel = '🔒 Tienda Cerrada';
+                statusColor = '#EF4444';
+              }
+              
               var orderIcon = L.divIcon({
-                className: 'custom-order-icon',
-                html: '$',
+                className: iconClass,
+                html: iconSymbol,
                 iconSize: [32, 32]
               });
               
+              var popupContent = '<div style="text-align:center"><b>' + statusLabel + '</b><br>';
+              if (o.total > 0) {
+                popupContent += '<span style="color:' + statusColor + ';font-size:16px;font-weight:bold">Bs. ' + o.total.toFixed(2) + '</span><br>';
+              }
+              popupContent += '<span style="color:#666;font-size:11px">' + (o.time || '') + '</span><br>';
+              // Botón para TODOS los marcadores
+              if (o.id.toString().startsWith('visit-')) {
+                var visitId = o.id.toString().replace('visit-', '');
+                popupContent += '<button onclick="var msg = {action:\\'viewVisit\\', visitId:\\''+visitId+'\\'}; window.ReactNativeWebView.postMessage(JSON.stringify(msg));" style="background:#3B82F6;color:white;border:none;padding:6px 12px;border-radius:4px;margin-top:8px;font-weight:bold;width:100%">VER DETALLE</button>';
+              } else {
+                popupContent += '<button onclick="var msg = {action:\\'viewOrder\\', orderId:\\''+o.id+'\\'}; window.ReactNativeWebView.postMessage(JSON.stringify(msg));" style="background:#3B82F6;color:white;border:none;padding:6px 12px;border-radius:4px;margin-top:8px;font-weight:bold;width:100%">VER DETALLE</button>';
+              }
+              popupContent += '</div>';
+              
               L.marker([o.lat, o.lng], {icon: orderIcon})
-                .bindPopup('<div style="text-align:center"><b>✅ Pedido Realizado</b><br><span style="color:#64c27b;font-size:16px;font-weight:bold">Bs. ' + o.total.toFixed(2) + '</span><br><span style="color:#666;font-size:11px">' + (o.time || '') + '</span><br><button onclick="var msg = {action:\\'viewOrder\\', orderId:\\''+o.id+'\\'}; window.ReactNativeWebView.postMessage(JSON.stringify(msg));" style="background:#3B82F6;color:white;border:none;padding:6px 12px;border-radius:4px;margin-top:8px;font-weight:bold;width:100%">VER DETALLE</button></div>')
+                .bindPopup(popupContent)
                 .addTo(markersLayer);
             }
           });
@@ -210,7 +280,11 @@ export default function LeafletMapScreen() {
                 id, 
                 total_amount, 
                 created_at,
-                order_location
+                order_location,
+                visit_id,
+                visits:visit_id (
+                  outcome
+                )
               `)
               .eq('seller_id', session.session.user.id)
               .gte('created_at', `${today}T00:00:00`)
@@ -263,11 +337,16 @@ export default function LeafletMapScreen() {
                 }
 
                 if (lat && lng && !isNaN(lat) && !isNaN(lng)) {
+                  // Extraer el outcome de la visita si existe
+                  const visitData = Array.isArray(o.visits) ? o.visits[0] : o.visits;
+                  const outcome = visitData?.outcome || null;
+                  
                   return {
                     id: o.id,
                     lat: lat,
                     lng: lng,
                     total: o.total_amount,
+                    outcome: outcome,
                     time: new Date(o.created_at).toLocaleTimeString('es-BO', { 
                       hour: '2-digit', 
                       minute: '2-digit' 
@@ -276,6 +355,92 @@ export default function LeafletMapScreen() {
                 }
                 return null;
               }).filter((o: any) => o !== null);
+            }
+
+            // D. Cargar TODAS las visitas del día (incluyendo las que NO tienen pedido)
+            const { data: visitsData, error: visitsError } = await supabase
+              .from('visits')
+              .select(`
+                id,
+                client_id,
+                outcome,
+                end_time,
+                check_out_location
+              `)
+              .eq('seller_id', session.session.user.id)
+              .gte('end_time', `${today}T00:00:00`)
+              .not('check_out_location', 'is', null)
+              .not('outcome', 'eq', 'pending'); // Solo visitas finalizadas
+
+            if (!visitsError && visitsData && visitsData.length > 0) {
+              // Extraer los visit_ids que ya tienen pedido para evitar duplicados
+              const visitIdsWithOrders = ordersData?.map((o: any) => o.visit_id).filter(Boolean) || [];
+
+              const visitMarkers = visitsData
+                .filter((v: any) => !visitIdsWithOrders.includes(v.id)) // Solo visitas SIN pedido
+                .map((v: any) => {
+                  let lat = null;
+                  let lng = null;
+
+                  if (v.check_out_location) {
+                    // GeoJSON format
+                    if (v.check_out_location.coordinates && Array.isArray(v.check_out_location.coordinates)) {
+                      lng = v.check_out_location.coordinates[0];
+                      lat = v.check_out_location.coordinates[1];
+                    }
+                    // WKT string format
+                    else if (typeof v.check_out_location === 'string' && v.check_out_location.includes('POINT(')) {
+                      const match = v.check_out_location.match(/POINT\(([-\d.]+)\s+([-\d.]+)\)/);
+                      if (match) {
+                        lng = parseFloat(match[1]);
+                        lat = parseFloat(match[2]);
+                      }
+                    }
+                    // WKB hexadecimal format (PostGIS binary)
+                    else if (typeof v.check_out_location === 'string' && v.check_out_location.length > 20) {
+                      try {
+                        const hex = v.check_out_location;
+                        const lngHex = hex.slice(-32, -16);
+                        const latHex = hex.slice(-16);
+                        
+                        const lngBuffer = new ArrayBuffer(8);
+                        const lngView = new DataView(lngBuffer);
+                        for (let i = 0; i < 8; i++) {
+                          lngView.setUint8(i, parseInt(lngHex.substr(i * 2, 2), 16));
+                        }
+                        lng = lngView.getFloat64(0, true);
+                        
+                        const latBuffer = new ArrayBuffer(8);
+                        const latView = new DataView(latBuffer);
+                        for (let i = 0; i < 8; i++) {
+                          latView.setUint8(i, parseInt(latHex.substr(i * 2, 2), 16));
+                        }
+                        lat = latView.getFloat64(0, true);
+                      } catch (e) {
+                        // Silently fail
+                      }
+                    }
+                  }
+
+                  if (lat && lng && !isNaN(lat) && !isNaN(lng)) {
+                    return {
+                      id: `visit-${v.id}`,
+                      lat: lat,
+                      lng: lng,
+                      total: 0, // Sin pedido = 0
+                      outcome: v.outcome,
+                      time: new Date(v.end_time).toLocaleTimeString('es-BO', { 
+                        hour: '2-digit', 
+                        minute: '2-digit' 
+                      })
+                    };
+                  }
+                  return null;
+                })
+                .filter((v: any) => v !== null);
+
+              // Combinar pedidos y visitas sin pedido
+              orderMarkers = [...orderMarkers, ...visitMarkers];
             }
           }
           
@@ -341,6 +506,9 @@ export default function LeafletMapScreen() {
       } else if (data.action === 'viewOrder' && data.orderId) {
         // Navegar al detalle del pedido
         router.push(`/pedidos/${data.orderId}` as any);
+      } else if (data.action === 'viewVisit' && data.visitId) {
+        // Navegar al detalle de la visita
+        router.push(`/visitas/${data.visitId}` as any);
       }
     } catch (error) {
       // Si no es JSON, asumir que es el formato antiguo (solo clientId)
