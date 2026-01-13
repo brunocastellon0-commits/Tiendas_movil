@@ -1,45 +1,84 @@
 import React, { useState } from 'react';
-import { 
-  View, 
-  Text, 
-  TextInput, 
-  StyleSheet, 
-  TouchableOpacity, 
-  ScrollView, 
-  Alert, 
-  KeyboardAvoidingView, 
-  Platform 
-} from 'react-native';
+import { View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView, Alert, KeyboardAvoidingView, Platform, StatusBar, ActivityIndicator, Keyboard, TouchableWithoutFeedback } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
-import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { Ionicons, MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useTheme } from '../../contexts/ThemeContext';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+// ✅ Componente FormInput movido AFUERA para evitar re-renders
+const FormInput = ({
+  label,
+  icon,
+  value,
+  onChange,
+  placeholder,
+  isPassword = false,
+  keyboard = 'default',
+  colors,
+  isDark,
+  onSubmitEditing,
+  returnKeyType = 'next',
+  inputRef
+}: any) => (
+  <View style={styles.inputGroup}>
+    <Text style={[styles.label, { color: colors.textMain }]}>{label}</Text>
+    <View style={[styles.inputWrapper, {
+      backgroundColor: colors.inputBg,
+      borderColor: isDark ? colors.cardBorder : 'transparent',
+      borderWidth: isDark ? 1 : 0
+    }]}>
+      <Ionicons name={icon} size={20} color={colors.iconGray} style={{ marginRight: 12 }} />
+      <TextInput
+        ref={inputRef}
+        style={[styles.input, { color: colors.textMain }]}
+        value={value}
+        onChangeText={onChange}
+        placeholder={placeholder}
+        placeholderTextColor={colors.textSub}
+        secureTextEntry={isPassword}
+        keyboardType={keyboard}
+        autoCapitalize="none"
+        returnKeyType={returnKeyType}
+        onSubmitEditing={onSubmitEditing}
+        blurOnSubmit={false}
+      />
+    </View>
+  </View>
+);
 
 export default function RegisterEmployeeScreen() {
+  const { colors, isDark } = useTheme();
   const router = useRouter();
   const [loading, setLoading] = useState(false);
-  
-  // Estado del formulario
+
+  // ✅ Referencias para navegación entre inputs
+  const fullNameRef = React.useRef<TextInput>(null);
+  const phoneRef = React.useRef<TextInput>(null);
+  const emailRef = React.useRef<TextInput>(null);
+  const passwordRef = React.useRef<TextInput>(null);
+
   const [formData, setFormData] = useState({
     fullName: '',
     email: '',
-    password: '', 
+    password: '',
     phone: '',
-    jobTitle: 'Preventista', // Por defecto Preventista
+    jobTitle: 'Preventista',
   });
 
   const handleRegister = async () => {
-    // 1. Validaciones básicas locales
+    // ✅ Cerrar teclado antes de validar
+    Keyboard.dismiss();
+
     if (!formData.email || !formData.password || !formData.fullName) {
-      Alert.alert('Faltan datos', 'Por favor completa los campos obligatorios.');
+      Alert.alert('Atención', 'Por favor completa los campos obligatorios.');
       return;
     }
 
     setLoading(true);
-
     try {
-      // 2. Llamada real a la Edge Function (Backend)
-      // Usamos los mismos nombres de variables que definimos en el index.ts del servidor
-      const { data, error } = await supabase.functions.invoke('create-user', {
+      const { error } = await supabase.functions.invoke('create-user', {
         body: {
           email: formData.email,
           password: formData.password,
@@ -48,316 +87,311 @@ export default function RegisterEmployeeScreen() {
           phone: formData.phone
         }
       });
-
-      // 3. Manejo de Errores del Backend
-      if (error) {
-        // Si el backend (Deno) devuelve error, lanzamos una excepción con ese mensaje
-        throw new Error(error.message || 'Ocurrió un error desconocido en el servidor.');
-      }
-
-      // 4. Éxito
-      Alert.alert(
-        '¡Éxito!',
-        `El empleado ${formData.fullName} ha sido registrado correctamente y puede iniciar sesión inmediatamente.`,
-        [{ text: 'OK', onPress: () => router.back() }]
-      );
-
+      if (error) throw new Error(error.message);
+      Alert.alert('¡Listo!', `Colaborador registrado exitosamente.`, [{ text: 'OK', onPress: () => router.back() }]);
     } catch (error: any) {
-      // Muestra el error exacto que venga del Edge Function (ej: "Faltan datos", "Email duplicado")
-      Alert.alert('Error de Registro', error.message || 'No se pudo crear el usuario.');
-      console.error(error);
+      Alert.alert('Error', error.message || 'No se pudo registrar.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <KeyboardAvoidingView 
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={{ flex: 1 }}
-    >
-      {/* Header */}
-      <Stack.Screen 
-        options={{
-          title: 'Nuevo Colaborador',
-          headerStyle: { backgroundColor: '#2a8c4a' },
-          headerTintColor: '#fff',
-          headerTitleStyle: { fontWeight: 'bold' },
-          headerLeft: () => (
-            <TouchableOpacity onPress={() => router.back()} style={{ marginLeft: 10 }}>
+    <View style={{ flex: 1, backgroundColor: colors.bgStart }}>
+      <Stack.Screen options={{ headerShown: false }} />
+      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+
+      {/* --- CABECERA CURVA --- */}
+      <LinearGradient
+        colors={[colors.brandGreen, '#166534']}
+        style={styles.headerGradient}
+      >
+        <SafeAreaView edges={['top']} style={styles.headerContent}>
+          <View style={styles.navBar}>
+            <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
               <Ionicons name="arrow-back" size={24} color="#fff" />
             </TouchableOpacity>
-          ),
-        }} 
-      />
-
-      <ScrollView contentContainerStyle={styles.container}>
-        
-        <View style={styles.headerIconContainer}>
-          <View style={styles.iconCircle}>
-            <MaterialIcons name="person-add" size={40} color="#2a8c4a" />
-          </View>
-          <Text style={styles.helperText}>
-            Ingresa los datos para dar de alta un nuevo empleado en el sistema.
-          </Text>
-        </View>
-
-        <View style={styles.form}>
-          
-          {/* Nombre Completo */}
-          <Text style={styles.label}>Nombre Completo *</Text>
-          <View style={styles.inputContainer}>
-            <Ionicons name="person-outline" size={20} color="#6B7280" style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              placeholder="Ej. Juan Pérez"
-              value={formData.fullName}
-              onChangeText={(text) => setFormData({...formData, fullName: text})}
-            />
+            <Text style={styles.headerTitle}>Personal</Text>
+            <View style={{ width: 40 }} />
           </View>
 
-          {/* Cargo */}
-          <Text style={styles.label}>Cargo</Text>
-          <View style={styles.inputContainer}>
-            <MaterialIcons name="work-outline" size={20} color="#6B7280" style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              placeholder="Ej. Preventista"
-              value={formData.jobTitle}
-              onChangeText={(text) => setFormData({...formData, jobTitle: text})}
-            />
+          <View style={styles.headerIconRow}>
+            <View style={styles.iconBigCircle}>
+              <FontAwesome5 name="user-tie" size={40} color={colors.brandGreen} />
+            </View>
+            <View>
+              <Text style={styles.headerSubtitle}>Registrar Personal</Text>
+            </View>
           </View>
+        </SafeAreaView>
+      </LinearGradient>
 
-          {/* Teléfono */}
-          <Text style={styles.label}>Teléfono / Celular</Text>
-          <View style={styles.inputContainer}>
-            <Ionicons name="call-outline" size={20} color="#6B7280" style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              placeholder="+591 70000000"
-              keyboardType="phone-pad"
-              value={formData.phone}
-              onChangeText={(text) => setFormData({...formData, phone: text})}
-            />
-          </View>
-
-          {/* Selector de Cargo/Puesto */}
-          <Text style={styles.label}>Cargo / Puesto *</Text>
-          <View style={styles.roleSelector}>
-            <TouchableOpacity 
-              style={[
-                styles.roleButton, 
-                formData.jobTitle === 'Preventista' && styles.roleButtonActive
-              ]}
-              onPress={() => setFormData({...formData, jobTitle: 'Preventista'})}
-            >
-              <Ionicons 
-                name="person" 
-                size={20} 
-                color={formData.jobTitle === 'Preventista' ? '#fff' : '#6B7280'} 
-              />
-              <Text style={[
-                styles.roleButtonText,
-                formData.jobTitle === 'Preventista' && styles.roleButtonTextActive
-              ]}>
-                Preventista
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={[
-                styles.roleButton, 
-                formData.jobTitle === 'Administrador' && styles.roleButtonActive
-              ]}
-              onPress={() => setFormData({...formData, jobTitle: 'Administrador'})}
-            >
-              <Ionicons 
-                name="shield-checkmark" 
-                size={20} 
-                color={formData.jobTitle === 'Administrador' ? '#fff' : '#6B7280'} 
-              />
-              <Text style={[
-                styles.roleButtonText,
-                formData.jobTitle === 'Administrador' && styles.roleButtonTextActive
-              ]}>
-                Administrador
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.divider} />
-
-          {/* Credenciales */}
-          <Text style={styles.sectionTitle}>Credenciales de Acceso</Text>
-
-          {/* Email */}
-          <Text style={styles.label}>Correo Electrónico *</Text>
-          <View style={styles.inputContainer}>
-            <Ionicons name="mail-outline" size={20} color="#6B7280" style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              placeholder="empleado@empresa.com"
-              keyboardType="email-address"
-              autoCapitalize="none"
-              value={formData.email}
-              onChangeText={(text) => setFormData({...formData, email: text})}
-            />
-          </View>
-
-          {/* Password */}
-          <Text style={styles.label}>Contraseña Temporal *</Text>
-          <View style={styles.inputContainer}>
-            <Ionicons name="lock-closed-outline" size={20} color="#6B7280" style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              placeholder="Mínimo 6 caracteres"
-              secureTextEntry
-              value={formData.password}
-              onChangeText={(text) => setFormData({...formData, password: text})}
-            />
-          </View>
-
-          {/* Botón */}
-          <TouchableOpacity 
-            style={[styles.submitButton, loading && styles.buttonDisabled]} 
-            onPress={handleRegister}
-            disabled={loading}
+      {/* --- CONTENIDO CON KEYBOARD HANDLING PROFESIONAL --- */}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+      >
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <ScrollView
+            style={styles.scrollView}
+            contentContainerStyle={{ paddingBottom: 40 }}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            bounces={false}
           >
-            {loading ? (
-              <Text style={styles.submitText}>Procesando...</Text>
-            ) : (
-              <Text style={styles.submitText}>Registrar Empleado</Text>
-            )}
-          </TouchableOpacity>
+            {/* Tarjeta Formulario */}
+            <View style={[styles.formSheet, {
+              backgroundColor: colors.cardBg,
+              shadowColor: colors.shadowColor,
+              borderColor: isDark ? colors.cardBorder : 'transparent',
+              borderWidth: isDark ? 1 : 0
+            }]}>
 
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+              <Text style={[styles.sectionHeader, { color: colors.brandGreen }]}>INFORMACIÓN PERSONAL</Text>
+
+              {/* ✅ Inputs con navegación mejorada */}
+              <FormInput
+                label="Nombre Completo"
+                icon="person-outline"
+                value={formData.fullName}
+                onChange={(t: string) => setFormData({ ...formData, fullName: t })}
+                placeholder="Ej. María Gonzales"
+                colors={colors}
+                isDark={isDark}
+                inputRef={fullNameRef}
+                returnKeyType="next"
+                onSubmitEditing={() => phoneRef.current?.focus()}
+              />
+
+              <FormInput
+                label="Teléfono"
+                icon="call-outline"
+                value={formData.phone}
+                onChange={(t: string) => setFormData({ ...formData, phone: t })}
+                placeholder="+591 ..."
+                keyboard="phone-pad"
+                colors={colors}
+                isDark={isDark}
+                inputRef={phoneRef}
+                returnKeyType="next"
+                onSubmitEditing={() => {
+                  Keyboard.dismiss();
+                  // Pequeño delay para que el teclado se cierre antes de cambiar de tipo
+                  setTimeout(() => emailRef.current?.focus(), 100);
+                }}
+              />
+
+              <Text style={[styles.label, { color: colors.textMain, marginTop: 10 }]}>Rol Asignado</Text>
+              <View style={styles.roleContainer}>
+                {['Preventista', 'Administrador'].map((role) => {
+                  const isActive = formData.jobTitle === role;
+                  return (
+                    <TouchableOpacity
+                      key={role}
+                      style={[styles.roleCard, {
+                        backgroundColor: isActive ? colors.brandGreen : colors.inputBg,
+                        borderColor: isActive ? colors.brandGreen : (isDark ? colors.cardBorder : 'transparent'),
+                        borderWidth: 1
+                      }]}
+                      onPress={() => {
+                        Keyboard.dismiss();
+                        setFormData({ ...formData, jobTitle: role });
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <MaterialIcons
+                        name={role === 'Administrador' ? "admin-panel-settings" : "shopping-bag"}
+                        size={24}
+                        color={isActive ? '#fff' : colors.textSub}
+                      />
+                      <Text style={[styles.roleText, { color: isActive ? '#fff' : colors.textSub }]}>{role}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <View style={[styles.divider, { backgroundColor: isDark ? colors.cardBorder : '#F1F5F9' }]} />
+
+              <Text style={[styles.sectionHeader, { color: colors.brandGreen }]}>ACCESO AL SISTEMA</Text>
+
+              <FormInput
+                label="Correo Electrónico"
+                icon="mail-outline"
+                value={formData.email}
+                onChange={(t: string) => setFormData({ ...formData, email: t })}
+                placeholder="correo@ejemplo.com"
+                keyboard="email-address"
+                colors={colors}
+                isDark={isDark}
+                inputRef={emailRef}
+                returnKeyType="next"
+                onSubmitEditing={() => passwordRef.current?.focus()}
+              />
+
+              <FormInput
+                label="Contraseña"
+                icon="lock-closed-outline"
+                value={formData.password}
+                onChange={(t: string) => setFormData({ ...formData, password: t })}
+                placeholder="••••••••"
+                isPassword
+                colors={colors}
+                isDark={isDark}
+                inputRef={passwordRef}
+                returnKeyType="done"
+                onSubmitEditing={handleRegister}
+              />
+
+              <TouchableOpacity
+                style={[styles.submitBtn, {
+                  backgroundColor: colors.brandGreen,
+                  shadowColor: colors.brandGreen
+                }]}
+                onPress={handleRegister}
+                disabled={loading}
+                activeOpacity={0.8}
+              >
+                {loading ? <ActivityIndicator color="#fff" /> : (
+                  <Text style={styles.submitBtnText}>GUARDAR REGISTRO</Text>
+                )}
+              </TouchableOpacity>
+
+            </View>
+          </ScrollView>
+        </TouchableWithoutFeedback>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    padding: 20,
-    backgroundColor: '#F9FAFB',
-    flexGrow: 1,
-  },
-  headerIconContainer: {
-    alignItems: 'center',
-    marginBottom: 25,
-  },
-  iconCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#FEE2E2',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  helperText: {
-    textAlign: 'center',
-    color: '#6B7280',
-    fontSize: 14,
+  // HEADER
+  headerGradient: {
+    height: 240,
+    borderBottomLeftRadius: 40,
+    borderBottomRightRadius: 40,
     paddingHorizontal: 20,
+    position: 'absolute',
+    top: 0, width: '100%', zIndex: 0
   },
-  form: {
-    backgroundColor: '#fff',
+  headerContent: { flex: 1 },
+  navBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 10,
+  },
+  backBtn: {
+    padding: 8,
     borderRadius: 12,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
+    backgroundColor: 'rgba(255,255,255,0.2)',
   },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  headerIconRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 25,
+    paddingHorizontal: 10,
+  },
+  iconBigCircle: {
+    width: 60, height: 60,
+    borderRadius: 30,
+    backgroundColor: '#fff',
+    justifyContent: 'center', alignItems: 'center',
+    marginRight: 15,
+    shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 10, elevation: 5
+  },
+  headerSubtitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+
+  // BODY
+  scrollView: {
+    flex: 1,
+    marginTop: 170,
+  },
+  formSheet: {
+    marginHorizontal: 20,
+    borderRadius: 24,
+    padding: 24,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
+    marginBottom: 30,
+  },
+
+  // FORM COMPONENTS
+  sectionHeader: {
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 1,
+    marginBottom: 15,
+    marginTop: 5,
+  },
+  inputGroup: { marginBottom: 16 },
   label: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#374151',
     marginBottom: 8,
+    marginLeft: 4,
+  },
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 14,
+    height: 52,
+    paddingHorizontal: 14,
+  },
+  input: { flex: 1, fontSize: 16, height: '100%' },
+
+  // SELECTOR ROLES
+  roleContainer: {
+    flexDirection: 'row',
+    gap: 12,
     marginTop: 5,
   },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    height: 48,
-    marginBottom: 15,
-    backgroundColor: '#F9FAFB',
-  },
-  inputIcon: {
-    marginRight: 10,
-  },
-  input: {
+  roleCard: {
     flex: 1,
-    fontSize: 16,
-    color: '#111827',
-  },
-  divider: {
-    height: 1,
-    backgroundColor: '#E5E7EB',
-    marginVertical: 20,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#2a8c4a',
-    marginBottom: 15,
-  },
-  roleSelector: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 15,
-  },
-  roleButton: {
-    flex: 1,
-    flexDirection: 'row',
+    paddingVertical: 15,
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 15,
-    borderWidth: 2,
-    borderColor: '#D1D5DB',
-    borderRadius: 8,
-    backgroundColor: '#F9FAFB',
+    borderRadius: 14,
     gap: 8,
   },
-  roleButtonActive: {
-    backgroundColor: '#2a8c4a',
-    borderColor: '#2a8c4a',
-  },
-  roleButtonText: {
+  roleText: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#6B7280',
+    fontWeight: 'bold',
   },
-  roleButtonTextActive: {
-    color: '#fff',
+
+  divider: {
+    height: 1,
+    marginVertical: 25,
+    width: '100%',
   },
-  submitButton: {
-    backgroundColor: '#2a8c4a',
-    borderRadius: 8,
-    height: 50,
+
+  // BOTÓN
+  submitBtn: {
+    height: 56,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 20,
-    shadowColor: '#2a8c4a',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
-  buttonDisabled: {
-    backgroundColor: '#EF5350',
-    opacity: 0.7,
-  },
-  submitText: {
+  submitBtnText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+    letterSpacing: 1,
   },
 });
