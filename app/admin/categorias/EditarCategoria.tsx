@@ -1,16 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import {
+    View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ScrollView,
+    ActivityIndicator, KeyboardAvoidingView, Platform, StatusBar
+} from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
 import { getCategoriaId, updateCategoria } from '../../../services/CategoriaService';
 import { Categorias } from '../../../types/Categorias.inteface';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useTheme } from '../../../contexts/ThemeContext';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function EditCategoria() {
     const router = useRouter();
-    const { id } = useLocalSearchParams(); // Recibimos el ID
+    const { colors, isDark } = useTheme();
+    const { id } = useLocalSearchParams();
+
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
-
     const [form, setForm] = useState<Categorias | null>(null);
 
     useEffect(() => {
@@ -41,7 +48,6 @@ export default function EditCategoria() {
 
         setSaving(true);
         try {
-            // Extraemos solo los campos editables
             const { id, created_at, ...datosEditables } = form;
             await updateCategoria(id, datosEditables);
 
@@ -55,108 +61,148 @@ export default function EditCategoria() {
         }
     };
 
+    // Input Reutilizable
+    const InputField = ({ label, icon, value, onChange, placeholder }: any) => (
+        <View style={styles.inputGroup}>
+            <Text style={[styles.label, { color: colors.textMain }]}>{label}</Text>
+            <View style={[styles.inputWrapper, {
+                backgroundColor: colors.inputBg,
+                borderColor: isDark ? colors.cardBorder : 'transparent',
+                borderWidth: isDark ? 1 : 0
+            }]}>
+                <MaterialCommunityIcons name={icon} size={20} color={colors.iconGray} style={{ marginRight: 12 }} />
+                <TextInput
+                    style={[styles.input, { color: colors.textMain }]}
+                    value={value}
+                    onChangeText={onChange}
+                    placeholder={placeholder}
+                    placeholderTextColor={colors.textSub}
+                />
+            </View>
+        </View>
+    );
+
     if (loading || !form) {
         return (
-            <View style={styles.center}>
-                <ActivityIndicator size="large" color="#2a8c4a" />
+            <View style={[styles.center, { backgroundColor: colors.bgStart }]}>
+                <ActivityIndicator size="large" color={colors.brandGreen} />
             </View>
         );
     }
 
     return (
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-            {/* Header */}
-            <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.back()}>
-                    <Ionicons name="arrow-back" size={24} color="white" />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle}>Editar Categoría</Text>
-                <View style={{ width: 24 }} />
-            </View>
+        <View style={{ flex: 1, backgroundColor: colors.bgStart }}>
+            <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
-            <ScrollView contentContainerStyle={styles.scrollContent}>
-                <View style={styles.card}>
-                    <View style={styles.cardHeader}>
-                        <MaterialCommunityIcons name="pencil" size={20} color="#2a8c4a" />
-                        <Text style={styles.cardTitle}>Datos de la Categoría</Text>
+            {/* HEADER */}
+            <LinearGradient
+                colors={[colors.brandGreen, '#166534']}
+                style={styles.headerGradient}
+            >
+                <SafeAreaView edges={['top']} style={styles.headerContent}>
+                    <View style={styles.navBar}>
+                        <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
+                            <Ionicons name="arrow-back" size={24} color="#fff" />
+                        </TouchableOpacity>
+                        <Text style={styles.headerTitle}>Editar Categoría</Text>
+                        <View style={{ width: 40 }} />
                     </View>
+                    <View style={styles.headerIconRow}>
+                        <View style={styles.iconBigCircle}>
+                            <FontAwesome5 name="edit" size={30} color={colors.brandGreen} />
+                        </View>
+                        <Text style={styles.headerSubtitle}>{form.nombre_categoria}</Text>
+                    </View>
+                </SafeAreaView>
+            </LinearGradient>
 
-                    <Text style={styles.label}>Empresa</Text>
-                    <TextInput
-                        style={styles.input}
-                        value={form.empresa}
-                        onChangeText={(text) => handleChange('empresa', text)}
-                    />
+            {/* FORMULARIO */}
+            <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                style={{ flex: 1 }}
+            >
+                <ScrollView
+                    style={styles.scrollView}
+                    contentContainerStyle={{ paddingBottom: 40 }}
+                    showsVerticalScrollIndicator={false}
+                >
+                    <View style={[styles.formSheet, {
+                        backgroundColor: colors.cardBg,
+                        borderColor: isDark ? colors.cardBorder : 'transparent',
+                        borderWidth: isDark ? 1 : 0
+                    }]}>
 
-                    <Text style={styles.label}>Nombre Categoría</Text>
-                    <TextInput
-                        style={styles.input}
-                        value={form.nombre_categoria}
-                        onChangeText={(text) => handleChange('nombre_categoria', text)}
-                    />
+                        <Text style={[styles.sectionTitle, { color: colors.brandGreen }]}>DATOS GENERALES</Text>
 
-                    <Text style={styles.label}>Línea</Text>
-                    <TextInput
-                        style={styles.input}
-                        value={form.linea}
-                        onChangeText={(text) => handleChange('linea', text)}
-                    />
+                        <InputField
+                            label="Empresa" icon="domain"
+                            value={form.empresa} onChange={(t: string) => handleChange('empresa', t)}
+                        />
 
-                    <Text style={styles.label}>Marca</Text>
-                    <TextInput
-                        style={styles.input}
-                        value={form.marca}
-                        onChangeText={(text) => handleChange('marca', text)}
-                    />
-                </View>
+                        <InputField
+                            label="Nombre Categoría" icon="tag-text-outline"
+                            value={form.nombre_categoria} onChange={(t: string) => handleChange('nombre_categoria', t)}
+                        />
 
-                <TouchableOpacity style={styles.btnGuardar} onPress={handleActualizar} disabled={saving}>
-                    {saving ? <ActivityIndicator color="white" /> : <Text style={styles.btnText}>Guardar Cambios</Text>}
-                </TouchableOpacity>
-            </ScrollView>
-        </KeyboardAvoidingView>
+                        <View style={styles.divider} />
+
+                        <Text style={[styles.sectionTitle, { color: colors.brandGreen }]}>DETALLES</Text>
+
+                        <InputField
+                            label="Línea" icon="format-list-bulleted-type"
+                            value={form.linea} onChange={(t: string) => handleChange('linea', t)}
+                        />
+
+                        <InputField
+                            label="Marca" icon="watermark"
+                            value={form.marca} onChange={(t: string) => handleChange('marca', t)}
+                        />
+
+                        <TouchableOpacity
+                            style={[styles.submitBtn, {
+                                backgroundColor: colors.brandGreen,
+                                shadowColor: colors.brandGreen,
+                                opacity: saving ? 0.7 : 1
+                            }]}
+                            onPress={handleActualizar}
+                            disabled={saving}
+                        >
+                            {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>GUARDAR CAMBIOS</Text>}
+                        </TouchableOpacity>
+
+                    </View>
+                </ScrollView>
+            </KeyboardAvoidingView>
+        </View>
     );
 }
 
 const styles = StyleSheet.create({
     center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    header: {
-        backgroundColor: '#2a8c4a',
-        paddingTop: 50,
-        paddingBottom: 20,
-        paddingHorizontal: 20,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-    },
-    headerTitle: { color: 'white', fontSize: 18, fontWeight: 'bold' },
-    scrollContent: { padding: 16 },
-    card: {
-        backgroundColor: 'white',
-        borderRadius: 12,
-        padding: 16,
-        marginBottom: 16,
-        elevation: 2,
-    },
-    cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 15, borderBottomWidth: 1, borderColor: '#f0f0f0', paddingBottom: 8 },
-    cardTitle: { fontSize: 16, fontWeight: 'bold', color: '#2a8c4a', marginLeft: 8 },
-    label: { fontSize: 14, color: '#666', marginBottom: 6, fontWeight: '500' },
-    input: {
-        backgroundColor: '#FAFAFA',
-        borderWidth: 1,
-        borderColor: '#E0E0E0',
-        borderRadius: 8,
-        padding: 10,
-        fontSize: 16,
-        color: '#333',
-        marginBottom: 12
-    },
-    btnGuardar: {
-        backgroundColor: '#2a8c4a',
-        padding: 16,
-        borderRadius: 12,
-        alignItems: 'center',
-        elevation: 4
-    },
-    btnText: { color: 'white', fontSize: 16, fontWeight: 'bold' }
+
+    // HEADER
+    headerGradient: { height: 240, borderBottomLeftRadius: 40, borderBottomRightRadius: 40, paddingHorizontal: 20, position: 'absolute', top: 0, width: '100%', zIndex: 0 },
+    headerContent: { flex: 1 },
+    navBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 },
+    iconBtn: { padding: 8, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.2)' },
+    headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#fff' },
+    headerIconRow: { flexDirection: 'row', alignItems: 'center', marginTop: 25, justifyContent: 'center' },
+    iconBigCircle: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center', marginRight: 15, elevation: 5 },
+    headerSubtitle: { fontSize: 20, fontWeight: 'bold', color: '#fff' },
+
+    // BODY
+    scrollView: { flex: 1, marginTop: 170 },
+    formSheet: { marginHorizontal: 20, borderRadius: 24, padding: 24, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4, marginBottom: 30 },
+
+    // INPUTS
+    sectionTitle: { fontSize: 12, fontWeight: '800', letterSpacing: 1, marginBottom: 15, marginTop: 5 },
+    divider: { height: 1, backgroundColor: '#E5E7EB', marginVertical: 20, opacity: 0.5 },
+    inputGroup: { marginBottom: 16 },
+    label: { fontSize: 14, fontWeight: '600', marginBottom: 8, marginLeft: 4 },
+    inputWrapper: { flexDirection: 'row', alignItems: 'center', borderRadius: 14, height: 52, paddingHorizontal: 14 },
+    input: { flex: 1, fontSize: 16, height: '100%' },
+
+    // BUTTON
+    submitBtn: { height: 56, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginTop: 25, elevation: 6 },
+    submitBtnText: { color: '#fff', fontSize: 16, fontWeight: 'bold', letterSpacing: 1 },
 });

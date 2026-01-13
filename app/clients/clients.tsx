@@ -1,252 +1,269 @@
-import React, { useState, useCallback } from 'react';
-import { 
-  View, Text, FlatList, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator, RefreshControl, Alert 
+import React, { useState, useCallback, useMemo } from 'react';
+import {
+  View, Text, FlatList, StyleSheet, TouchableOpacity, TextInput,
+  ActivityIndicator, RefreshControl, StatusBar, Alert
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useTheme } from '../../contexts/ThemeContext';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+// Servicios
 import { clientService } from '../../services/ClienteService';
 import { Client } from '../../types/Cliente.interface';
 
+// --- COMPONENTE TARJETA ---
+const ClientCard = ({ item, onPress, onEdit, onDelete, colors, isDark }: any) => {
+  const isVigente = item.status === 'Vigente';
+
+  return (
+    <View style={[styles.card, {
+      backgroundColor: colors.cardBg,
+      borderColor: isDark ? colors.cardBorder : 'transparent',
+      borderWidth: isDark ? 1 : 0,
+      shadowColor: colors.shadowColor
+    }]}>
+
+      {/* Área Principal: Navega al Detalle */}
+      <TouchableOpacity
+        style={styles.cardContent}
+        onPress={onPress}
+        activeOpacity={0.7}
+      >
+        <View style={[styles.avatarContainer, {
+          backgroundColor: isDark ? 'rgba(42, 140, 74, 0.15)' : '#E8F5E9'
+        }]}>
+          <MaterialCommunityIcons name="storefront" size={24} color={colors.brandGreen} />
+        </View>
+
+        <View style={styles.infoContainer}>
+          <Text style={[styles.nameText, { color: colors.textMain }]} numberOfLines={1}>
+            {item.name}
+          </Text>
+          <Text style={[styles.subText, { color: colors.textSub }]} numberOfLines={1}>
+            {item.business_name || 'Sin Razón Social'}
+          </Text>
+
+          <View style={styles.tagsRow}>
+            <View style={[styles.badge, {
+              backgroundColor: isVigente ? (isDark ? 'rgba(46, 125, 50, 0.2)' : '#E8F5E9') : (isDark ? 'rgba(198, 40, 40, 0.2)' : '#FFEBEE'),
+              borderColor: isDark ? colors.cardBorder : 'transparent',
+              borderWidth: 1
+            }]}>
+              <Text style={[styles.badgeText, { color: isVigente ? '#2E7D32' : '#C62828' }]}>
+                {item.status || 'Inactivo'}
+              </Text>
+            </View>
+            {item.current_balance > 0 && (
+              <Text style={[styles.balanceText, { color: '#EAB308' }]}> • Deuda: Bs {item.current_balance.toFixed(2)}</Text>
+            )}
+          </View>
+        </View>
+      </TouchableOpacity>
+
+      {/* Botones de Acción */}
+      <View style={styles.actionsContainer}>
+        <TouchableOpacity
+          onPress={onEdit}
+          style={[styles.actionBtn, { backgroundColor: isDark ? colors.inputBg : '#F0F9FF' }]}
+        >
+          <Ionicons name="pencil" size={18} color="#0284C7" />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={onDelete}
+          style={[styles.actionBtn, { backgroundColor: isDark ? colors.inputBg : '#FEF2F2', marginTop: 8 }]}
+        >
+          <Ionicons name="trash-outline" size={18} color="#EF4444" />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+};
+
 export default function ClientsListScreen() {
   const router = useRouter();
+  const { colors, isDark } = useTheme();
+
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
+  const [filterStatus, setFilterStatus] = useState<'Todos' | 'Vigente' | 'Inactivo'>('Todos');
 
-  // Cargar datos
   const fetchClients = async () => {
     try {
+      // La búsqueda por texto la manejamos en el servicio si es posible, o localmente
       const data = await clientService.getClients(search);
       setClients(data);
     } catch (error) {
-      console.error(error); // O mostrar un Toast
+      console.error(error);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
 
-  // Tech Lead Tip: useFocusEffect hace que la lista se recargue
-  // automáticamente cuando regresas de la pantalla "Nuevo Cliente".
   useFocusEffect(
-    useCallback(() => {
-      fetchClients();
-    }, []) // Removido 'search' para evitar loops - la búsqueda se maneja con un botón o debounce
+    useCallback(() => { fetchClients(); }, [search])
   );
 
-  // Efecto para búsqueda con debounce (500ms después de que el usuario deja de escribir)
-  React.useEffect(() => {
-    const timer = setTimeout(() => {
-      setLoading(true);
-      fetchClients();
-    }, 500);
-
-    return () => clearTimeout(timer);
-  }, [search]);
-
-  // Función para eliminar cliente (borrado lógico)
-  const handleDelete = async (clientId: string, clientName: string) => {
-    Alert.alert(
-      "Confirmar eliminación",
-      `¿Estás seguro de suspender a "${clientName}"?`,
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Suspender",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await clientService.deleteClient(clientId);
-              Alert.alert("Éxito", "Cliente suspendido correctamente");
-              fetchClients(); // Recargar la lista
-            } catch (error: any) {
-              Alert.alert("Error", error.message);
-            }
-          }
+  const handleDelete = (id: string, name: string) => {
+    Alert.alert("Eliminar Cliente", `¿Suspender a "${name}"?`, [
+      { text: "Cancelar", style: "cancel" },
+      {
+        text: "Suspender", style: "destructive", onPress: async () => {
+          await clientService.deleteClient(id);
+          fetchClients();
         }
-      ]
-    );
+      }
+    ]);
   };
 
-  // Renderizado de cada item (Tarjeta de Cliente)
-  const renderItem = ({ item }: { item: Client }) => (
-    <TouchableOpacity 
-      style={styles.card}
-      onPress={() => router.push(`/clients/${item.id}` as any)}
-    >
-      <View style={styles.cardHeader}>
-        <Text style={styles.clientName}>{item.name}</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <View style={[
-            styles.statusBadge, 
-            { backgroundColor: item.status === 'Vigente' ? '#E8F5E9' : '#FFEBEE' }
-          ]}>
-            <Text style={[
-              styles.statusText,
-              { color: item.status === 'Vigente' ? '#2E7D32' : '#C62828' }
-            ]}>{item.status}</Text>
-          </View>
-          <TouchableOpacity 
-            onPress={(e) => {
-              e.stopPropagation(); // Evitar navegar al detalle
-              handleDelete(item.id, item.name);
-            }}
-            style={styles.deleteButton}
-          >
-            <Ionicons name="trash-outline" size={20} color="#2a8c4a" />
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <View style={styles.cardBody}>
-        <Text style={styles.cardInfo}>
-          <Ionicons name="barcode-outline" size={14} color="#666" /> {item.code}
-        </Text>
-        <Text style={styles.cardInfo} numberOfLines={1}>
-          <Ionicons name="location-outline" size={14} color="#666" /> {item.address || 'Sin dirección'}
-        </Text>
-      </View>
-
-      <View style={styles.cardFooter}>
-         <Text style={styles.balanceLabel}>Saldo:</Text>
-         <Text style={[
-           styles.balanceValue, 
-           { color: item.current_balance > 0 ? '#2a8c4a' : '#388E3C' }
-         ]}>
-           Bs {item.current_balance?.toFixed(2) || '0.00'}
-         </Text>
-      </View>
-    </TouchableOpacity>
-  );
+  // Filtrado local por Estado
+  const filteredClients = useMemo(() => {
+    return clients.filter(c => {
+      if (filterStatus === 'Todos') return true;
+      if (filterStatus === 'Vigente') return c.status === 'Vigente';
+      if (filterStatus === 'Inactivo') return c.status !== 'Vigente';
+      return true;
+    });
+  }, [clients, filterStatus]);
 
   return (
-    <View style={styles.container}>
-      {/* Header Personalizado */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Cartera de Clientes</Text>
-      </View>
+    <View style={{ flex: 1, backgroundColor: colors.bgStart }}>
+      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
-      {/* Buscador */}
-      <View style={styles.searchContainer}>
-        <View style={styles.searchBar}>
-          <Ionicons name="search" size={20} color="#999" />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Buscar por nombre o código..."
-            value={search}
-            onChangeText={setSearch}
-          />
-          {search.length > 0 && (
-            <TouchableOpacity onPress={() => setSearch('')}>
-              <Ionicons name="close-circle" size={20} color="#999" />
+      {/* HEADER HERO */}
+      <LinearGradient colors={[colors.brandGreen, '#166534']} style={styles.headerGradient}>
+        <SafeAreaView edges={['top']} style={styles.headerContent}>
+          <View style={styles.navBar}>
+            <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
+              <Ionicons name="arrow-back" size={24} color="#fff" />
             </TouchableOpacity>
-          )}
+            <Text style={styles.headerTitle}>Cartera de Clientes</Text>
+
+            {/* Botón Nuevo: Redirige a NuevoCliente */}
+            <TouchableOpacity
+              onPress={() => router.push('/clients/NuevoCliente')}
+              style={[styles.iconBtn, { backgroundColor: 'rgba(255,255,255,0.2)' }]}
+            >
+              <Ionicons name="person-add" size={24} color="#fff" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Buscador */}
+          <View style={styles.searchSection}>
+            <View style={[styles.searchBar, { backgroundColor: 'rgba(255,255,255,0.15)' }]}>
+              <Ionicons name="search" size={20} color="rgba(255,255,255,0.7)" />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Buscar cliente, NIT, código..."
+                placeholderTextColor="rgba(255,255,255,0.6)"
+                value={search} onChangeText={setSearch}
+              />
+              {search.length > 0 && (
+                <TouchableOpacity onPress={() => setSearch('')}>
+                  <Ionicons name="close-circle" size={18} color="#fff" />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+
+          {/* Filtros (Tabs) */}
+          <View style={styles.tabsRow}>
+            {(['Todos', 'Vigente', 'Inactivo'] as const).map(status => (
+              <TouchableOpacity key={status} onPress={() => setFilterStatus(status)}
+                style={[styles.tabPill, filterStatus === status ? { backgroundColor: '#fff' } : { backgroundColor: 'rgba(0,0,0,0.2)' }]}>
+                <Text style={[styles.tabText, { color: filterStatus === status ? colors.brandGreen : 'rgba(255,255,255,0.8)' }]}>{status}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </SafeAreaView>
+      </LinearGradient>
+
+      {/* LISTA */}
+      <View style={styles.bodyContainer}>
+        <View style={styles.backgroundShapes}>
+          <View style={[styles.shapeCircle, { top: 50, right: -50, width: 200, height: 200, backgroundColor: colors.brandGreen, opacity: colors.bubbleOpacity }]} />
         </View>
+
+        {loading && !refreshing ? (
+          <View style={styles.centerView}>
+            <ActivityIndicator size="large" color={colors.brandGreen} />
+            <Text style={[styles.loadingText, { color: colors.textSub }]}>Cargando cartera...</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={filteredClients}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
+              <ClientCard
+                item={item}
+                // IR A DETALLE
+                onPress={() => router.push(`/clients/${item.id}` as any)}
+                // IR A EDITAR (Archivo separado)
+                onEdit={() => router.push({ pathname: '/clients/EditarCliente', params: { id: item.id } })}
+                onDelete={() => handleDelete(item.id, item.name)}
+                colors={colors}
+                isDark={isDark}
+              />
+            )}
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchClients(); }} tintColor={colors.brandGreen} />}
+            ListEmptyComponent={
+              <View style={styles.emptyView}>
+                <FontAwesome5 name="users-slash" size={40} color={colors.iconGray} style={{ opacity: 0.5 }} />
+                <Text style={[styles.emptyText, { color: colors.textSub }]}>No se encontraron clientes</Text>
+              </View>
+            }
+          />
+        )}
       </View>
-
-      {/* Lista */}
-      {loading && !refreshing ? (
-        <ActivityIndicator size="large" color="#2a8c4a" style={{ marginTop: 20 }} />
-      ) : (
-        <FlatList
-          data={clients}
-          renderItem={renderItem}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContent}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={() => {
-              setRefreshing(true);
-              fetchClients();
-            }} colors={['#2a8c4a']} />
-          }
-          ListEmptyComponent={
-            <Text style={styles.emptyText}>No se encontraron clientes.</Text>
-          }
-        />
-      )}
-
-      {/* FAB - Botón Flotante para Crear */}
-      <TouchableOpacity 
-        style={styles.fab} 
-        onPress={() => router.push('/clients/NuevoCliente')}
-        activeOpacity={0.8}
-      >
-        <Ionicons name="add" size={30} color="white" />
-      </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F5F5' },
-  header: {
-    backgroundColor: '#2a8c4a',
-    paddingTop: 50,
-    paddingBottom: 15,
-    paddingHorizontal: 20,
-  },
-  headerTitle: { color: 'white', fontSize: 20, fontWeight: 'bold' },
-  
-  searchContainer: { padding: 16, paddingBottom: 8 },
-  searchBar: {
-    flexDirection: 'row',
-    backgroundColor: 'white',
-    borderRadius: 8,
-    padding: 10,
-    alignItems: 'center',
-    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 2, elevation: 2
-  },
-  searchInput: { flex: 1, marginLeft: 10, fontSize: 16 },
+  // HEADER
+  headerGradient: { paddingBottom: 25, borderBottomLeftRadius: 30, borderBottomRightRadius: 30, zIndex: 10 },
+  headerContent: { paddingHorizontal: 20 },
+  navBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, marginBottom: 15 },
+  iconBtn: { padding: 8, borderRadius: 12 },
+  headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#fff' },
+  searchSection: { marginBottom: 15 },
+  searchBar: { flexDirection: 'row', alignItems: 'center', borderRadius: 16, height: 50, paddingHorizontal: 15 },
+  searchInput: { flex: 1, fontSize: 16, color: '#fff', marginLeft: 10 },
+  tabsRow: { flexDirection: 'row', gap: 10 },
+  tabPill: { paddingVertical: 6, paddingHorizontal: 14, borderRadius: 20 },
+  tabText: { fontSize: 13, fontWeight: '600' },
 
-  listContent: { padding: 16, paddingBottom: 80 }, // Padding bottom extra para el FAB
-  
-  // Card Styles
-  card: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000', shadowOpacity: 0.05, shadowOffset: {width:0, height:2}, elevation: 2
-  },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  clientName: { fontSize: 16, fontWeight: 'bold', color: '#333', flex: 1 },
-  statusBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12 },
-  statusText: { fontSize: 12, fontWeight: 'bold' },
-  deleteButton: {
-    padding: 4,
-    borderRadius: 4,
-    backgroundColor: '#FFEBEE',
-  },
-  
-  cardBody: { marginBottom: 12 },
-  cardInfo: { fontSize: 14, color: '#666', marginBottom: 4 },
-  
-  cardFooter: { 
-    borderTopWidth: 1, 
-    borderTopColor: '#EEE', 
-    paddingTop: 8, 
-    flexDirection: 'row', 
-    justifyContent: 'flex-end',
-    alignItems: 'center'
-  },
-  balanceLabel: { fontSize: 14, color: '#666', marginRight: 8 },
-  balanceValue: { fontSize: 16, fontWeight: 'bold' },
+  // BODY
+  bodyContainer: { flex: 1, marginTop: -20, zIndex: 1 },
+  listContent: { paddingHorizontal: 20, paddingTop: 30, paddingBottom: 40 },
+  backgroundShapes: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: -1, overflow: 'hidden' },
+  shapeCircle: { position: 'absolute', borderRadius: 999 },
 
-  emptyText: { textAlign: 'center', marginTop: 40, color: '#999' },
+  // CARD
+  card: { borderRadius: 16, padding: 16, marginBottom: 12, flexDirection: 'row', alignItems: 'center', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 3 },
+  cardContent: { flex: 1, flexDirection: 'row', alignItems: 'center' },
+  avatarContainer: { width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center', marginRight: 15 },
+  infoContainer: { flex: 1 },
+  nameText: { fontSize: 16, fontWeight: '700', marginBottom: 2 },
+  subText: { fontSize: 13, marginBottom: 6 },
+  tagsRow: { flexDirection: 'row', alignItems: 'center' },
+  badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  badgeText: { fontSize: 10, fontWeight: '600' },
+  balanceText: { fontSize: 11, marginLeft: 5, fontWeight: '600' },
 
-  // FAB Styles
-  fab: {
-    position: 'absolute',
-    bottom: 24,
-    right: 24,
-    backgroundColor: '#2a8c4a',
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 6,
-    shadowColor: '#000', shadowOpacity: 0.3, shadowOffset: {width:0, height:3}
-  },
+  actionsContainer: { alignItems: 'center', justifyContent: 'center', paddingLeft: 10 },
+  actionBtn: { padding: 8, borderRadius: 10 },
+
+  centerView: { flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: 50 },
+  loadingText: { marginTop: 15, fontSize: 14 },
+  emptyView: { alignItems: 'center', marginTop: 60, opacity: 0.8 },
+  emptyText: { marginTop: 10, fontSize: 16, fontWeight: '600' },
+  emptyIconCircle: { width: 80, height: 80, borderRadius: 40, justifyContent: 'center', alignItems: 'center', marginBottom: 15 },
 });

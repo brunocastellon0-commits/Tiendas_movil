@@ -1,40 +1,30 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import {
+    View, Text, TextInput, StyleSheet, ScrollView, TouchableOpacity,
+    Alert, ActivityIndicator, KeyboardAvoidingView, Platform, StatusBar
+} from 'react-native';
 import { useRouter } from 'expo-router';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
 import { proveedorService } from '../../../services/ProveedorServices';
 import { NuevoProveedor } from '../../../types/Proveedores.interface';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useTheme } from '../../../contexts/ThemeContext';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function CrearProveedorScreen() {
     const router = useRouter();
+    const { colors, isDark } = useTheme();
     const [loading, setLoading] = useState(false);
 
+    // Estado Formulario con TODOS los campos
     const [form, setForm] = useState<NuevoProveedor>({
-        codigo: '',
-        nombre: '',
-        razon_social: '',
-        nit_ci: '',
-        direccion: null,
-        localidad: null,
-        ciudad: 'COCHABAMBA',
-        telefono: null,
-        fax: null,
-        email: null,
-        persona_contacto: null,
-        tipo: null,
-        estado: 'Vigente',
-        categoria_id: null,
-        zonas: null,
-        transportista: null,
-        comentario: null,
-        limite_credito: null,
-        autorizacion: null,
-        forma_pago: 'Contado',
-        tipo_documento: 'Factura',
-        saldo_inicial: 0,
-        moneda: 'Bs',
-        cuenta_contable: null,
-        detalle_adicional: null
+        codigo: '', nombre: '', razon_social: '', nit_ci: '',
+        direccion: null, localidad: null, ciudad: 'COCHABAMBA',
+        telefono: null, fax: null, email: null, persona_contacto: null,
+        tipo: null, estado: 'Vigente', categoria_id: null, zonas: null,
+        transportista: null, comentario: null, limite_credito: null,
+        autorizacion: null, forma_pago: 'Contado', tipo_documento: 'Factura',
+        saldo_inicial: 0, moneda: 'Bs', cuenta_contable: null, detalle_adicional: null
     });
 
     const handleChange = (campo: keyof NuevoProveedor, valor: string) => {
@@ -65,386 +55,238 @@ export default function CrearProveedorScreen() {
         }
     };
 
-    return (
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-            {/* Header Personalizado */}
-            <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.back()}>
-                    <Ionicons name="arrow-back" size={24} color="white" />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle}>Nuevo Proveedor</Text>
-                <View style={{ width: 24 }} />
+    // Input Reutilizable
+    const InputField = ({ label, icon, value, onChange, placeholder, keyboard = 'default', multiline = false }: any) => (
+        <View style={styles.inputGroup}>
+            <Text style={[styles.label, { color: colors.textMain }]}>{label}</Text>
+            <View style={[styles.inputWrapper, {
+                backgroundColor: colors.inputBg,
+                borderColor: isDark ? colors.cardBorder : 'transparent',
+                borderWidth: isDark ? 1 : 0,
+                height: multiline ? 80 : 52,
+                alignItems: multiline ? 'flex-start' : 'center',
+                paddingTop: multiline ? 12 : 0
+            }]}>
+                <MaterialCommunityIcons name={icon} size={20} color={colors.iconGray} style={{ marginRight: 12, marginTop: multiline ? 2 : 0 }} />
+                <TextInput
+                    style={[styles.input, { color: colors.textMain, height: '100%', textAlignVertical: multiline ? 'top' : 'center' }]}
+                    placeholder={placeholder}
+                    placeholderTextColor={colors.textSub}
+                    value={value?.toString()}
+                    onChangeText={onChange}
+                    keyboardType={keyboard}
+                    multiline={multiline}
+                />
             </View>
+        </View>
+    );
 
-            <ScrollView contentContainerStyle={styles.scrollContent}>
-
-                {/* --- TARJETA 1: INFORMACIÓN PRINCIPAL --- */}
-                <View style={styles.card}>
-                    <View style={styles.cardHeader}>
-                        <MaterialCommunityIcons name="domain" size={20} color="#2a8c4a" />
-                        <Text style={styles.cardTitle}>Información Principal</Text>
-                    </View>
-
-                    <Text style={styles.label}>Código</Text>
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Ej: PROV-001"
-                        value={form.codigo || ''}
-                        onChangeText={t => handleChange('codigo', t)}
-                    />
-
-                    <Text style={styles.label}>Nombre Comercial *</Text>
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Ej: Distribuidora ABC"
-                        value={form.nombre}
-                        onChangeText={t => handleChange('nombre', t)}
-                    />
-
-                    <Text style={styles.label}>Razón Social *</Text>
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Razón Social Legal"
-                        value={form.razon_social}
-                        onChangeText={t => handleChange('razon_social', t)}
-                    />
-
-                    <Text style={styles.label}>NIT / CI *</Text>
-                    <TextInput
-                        style={styles.input}
-                        placeholder="1234567"
-                        keyboardType="numeric"
-                        value={form.nit_ci}
-                        onChangeText={t => handleChange('nit_ci', t)}
-                    />
-
-                    <View style={styles.row}>
-                        <View style={{ flex: 1, marginRight: 8 }}>
-                            <Text style={styles.label}>Tipo</Text>
-                            <TextInput
-                                style={styles.input}
-                                placeholder="Ej: Proveedor"
-                                value={form.tipo || ''}
-                                onChangeText={t => handleChange('tipo', t)}
-                            />
-                        </View>
-                        <View style={{ flex: 1, marginLeft: 8 }}>
-                            <Text style={styles.label}>Estado</Text>
-                            <TextInput
-                                style={styles.input}
-                                value={form.estado}
-                                onChangeText={t => handleChange('estado', t)}
-                            />
-                        </View>
-                    </View>
-                </View>
-
-                {/* --- TARJETA 2: CONTACTO --- */}
-                <View style={styles.card}>
-                    <View style={styles.cardHeader}>
-                        <Ionicons name="call-outline" size={20} color="#2a8c4a" />
-                        <Text style={styles.cardTitle}>Datos de Contacto</Text>
-                    </View>
-
-                    <Text style={styles.label}>Dirección</Text>
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Av. Principal #123"
-                        value={form.direccion || ''}
-                        onChangeText={t => handleChange('direccion', t)}
-                    />
-
-                    <View style={styles.row}>
-                        <View style={{ flex: 1, marginRight: 8 }}>
-                            <Text style={styles.label}>Localidad</Text>
-                            <TextInput
-                                style={styles.input}
-                                placeholder="Ej: Cercado"
-                                value={form.localidad || ''}
-                                onChangeText={t => handleChange('localidad', t)}
-                            />
-                        </View>
-                        <View style={{ flex: 1, marginLeft: 8 }}>
-                            <Text style={styles.label}>Ciudad</Text>
-                            <TextInput
-                                style={styles.input}
-                                placeholder="Cochabamba"
-                                value={form.ciudad}
-                                onChangeText={t => handleChange('ciudad', t)}
-                            />
-                        </View>
-                    </View>
-
-                    <View style={styles.row}>
-                        <View style={{ flex: 1, marginRight: 8 }}>
-                            <Text style={styles.label}>Teléfono</Text>
-                            <TextInput
-                                style={styles.input}
-                                placeholder="4-4567890"
-                                keyboardType="phone-pad"
-                                value={form.telefono || ''}
-                                onChangeText={t => handleChange('telefono', t)}
-                            />
-                        </View>
-                        <View style={{ flex: 1, marginLeft: 8 }}>
-                            <Text style={styles.label}>Fax</Text>
-                            <TextInput
-                                style={styles.input}
-                                placeholder="Fax"
-                                keyboardType="phone-pad"
-                                value={form.fax || ''}
-                                onChangeText={t => handleChange('fax', t)}
-                            />
-                        </View>
-                    </View>
-
-                    <Text style={styles.label}>Email</Text>
-                    <TextInput
-                        style={styles.input}
-                        placeholder="contacto@proveedor.com"
-                        keyboardType="email-address"
-                        autoCapitalize="none"
-                        value={form.email || ''}
-                        onChangeText={t => handleChange('email', t)}
-                    />
-
-                    <Text style={styles.label}>Persona de Contacto</Text>
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Nombre del contacto"
-                        value={form.persona_contacto || ''}
-                        onChangeText={t => handleChange('persona_contacto', t)}
-                    />
-                </View>
-
-                {/* --- TARJETA 3: DATOS FINANCIEROS --- */}
-                <View style={styles.card}>
-                    <View style={styles.cardHeader}>
-                        <Ionicons name="cash-outline" size={20} color="#2a8c4a" />
-                        <Text style={styles.cardTitle}>Datos Financieros</Text>
-                    </View>
-
-                    <View style={styles.row}>
-                        <View style={{ flex: 1, marginRight: 8 }}>
-                            <Text style={styles.label}>Saldo Inicial</Text>
-                            <TextInput
-                                style={styles.input}
-                                keyboardType="numeric"
-                                placeholder="0.00"
-                                value={form.saldo_inicial.toString()}
-                                onChangeText={t => handleNumberChange('saldo_inicial', t)}
-                            />
-                        </View>
-                        <View style={{ flex: 1, marginLeft: 8 }}>
-                            <Text style={styles.label}>Moneda</Text>
-                            <TextInput
-                                style={styles.input}
-                                placeholder="Bs"
-                                value={form.moneda}
-                                onChangeText={t => handleChange('moneda', t)}
-                            />
-                        </View>
-                    </View>
-
-                    {/* Selector Forma de Pago */}
-                    <Text style={styles.label}>Forma de Pago *</Text>
-                    <View style={styles.selectorContainer}>
+    // Selector Reutilizable (Botones)
+    const SelectorGroup = ({ label, options, selected, onSelect }: any) => (
+        <View style={styles.inputGroup}>
+            <Text style={[styles.label, { color: colors.textMain }]}>{label}</Text>
+            <View style={styles.selectorContainer}>
+                {options.map((opt: string) => {
+                    const isActive = selected === opt;
+                    return (
                         <TouchableOpacity
-                            style={[styles.selectorButton, form.forma_pago === 'Contado' && styles.selectorActive]}
-                            onPress={() => handleChange('forma_pago', 'Contado')}
+                            key={opt}
+                            style={[styles.selectorBtn, {
+                                backgroundColor: isActive ? colors.brandGreen : colors.inputBg,
+                                borderColor: isActive ? colors.brandGreen : (isDark ? colors.cardBorder : 'transparent'),
+                                borderWidth: 1
+                            }]}
+                            onPress={() => onSelect(opt)}
                         >
-                            <Text style={[styles.selectorText, form.forma_pago === 'Contado' && styles.selectorTextActive]}>
-                                Contado
-                            </Text>
+                            <Text style={[styles.selectorText, { color: isActive ? '#fff' : colors.textSub }]}>{opt}</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity
-                            style={[styles.selectorButton, form.forma_pago === 'Crédito' && styles.selectorActive]}
-                            onPress={() => handleChange('forma_pago', 'Crédito')}
-                        >
-                            <Text style={[styles.selectorText, form.forma_pago === 'Crédito' && styles.selectorTextActive]}>
-                                Crédito
-                            </Text>
+                    );
+                })}
+            </View>
+        </View>
+    );
+
+    return (
+        <View style={{ flex: 1, backgroundColor: colors.bgStart }}>
+            <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+
+            {/* HEADER */}
+            <LinearGradient
+                colors={[colors.brandGreen, '#166534']}
+                style={styles.headerGradient}
+            >
+                <SafeAreaView edges={['top']} style={styles.headerContent}>
+                    <View style={styles.navBar}>
+                        <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
+                            <Ionicons name="close" size={24} color="#fff" />
                         </TouchableOpacity>
+                        <Text style={styles.headerTitle}>Proveedor</Text>
+                        <View style={{ width: 40 }} />
+                    </View>
+                    <View style={styles.headerIconRow}>
+                        <View style={styles.iconBigCircle}>
+                            <FontAwesome5 name="truck-loading" size={32} color={colors.brandGreen} />
+                        </View>
+                        <Text style={styles.headerSubtitle}>Registrar Proveedor</Text>
+                    </View>
+                </SafeAreaView>
+            </LinearGradient>
+
+            {/* FORMULARIO */}
+            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+                <ScrollView
+                    style={styles.scrollView}
+                    contentContainerStyle={{ paddingBottom: 40 }}
+                    showsVerticalScrollIndicator={false}
+                >
+
+                    {/* SECCIÓN 1: DATOS PRINCIPALES */}
+                    <View style={[styles.formCard, { backgroundColor: colors.cardBg, borderColor: isDark ? colors.cardBorder : 'transparent', borderWidth: isDark ? 1 : 0 }]}>
+                        <View style={styles.cardHeader}>
+                            <MaterialCommunityIcons name="domain" size={20} color={colors.brandGreen} />
+                            <Text style={[styles.cardTitle, { color: colors.textMain }]}>DATOS PRINCIPALES</Text>
+                        </View>
+
+                        <InputField label="Código" icon="barcode" value={form.codigo} onChange={(t: string) => handleChange('codigo', t)} placeholder="Ej: PROV-001" />
+                        <InputField label="Nombre Comercial *" icon="store" value={form.nombre} onChange={(t: string) => handleChange('nombre', t)} placeholder="Ej: Distribuidora ABC" />
+                        <InputField label="Razón Social *" icon="file-document-outline" value={form.razon_social} onChange={(t: string) => handleChange('razon_social', t)} placeholder="Razón Social Legal" />
+                        <InputField label="NIT / CI *" icon="card-account-details-outline" value={form.nit_ci} onChange={(t: string) => handleChange('nit_ci', t)} placeholder="1234567" keyboard="numeric" />
+
+                        <View style={styles.rowInputs}>
+                            <View style={{ flex: 1, marginRight: 8 }}>
+                                <InputField label="Tipo" icon="tag-outline" value={form.tipo} onChange={(t: string) => handleChange('tipo', t)} placeholder="Proveedor" />
+                            </View>
+                            <View style={{ flex: 1, marginLeft: 8 }}>
+                                <InputField label="Estado" icon="toggle-switch-outline" value={form.estado} onChange={(t: string) => handleChange('estado', t)} />
+                            </View>
+                        </View>
                     </View>
 
-                    {/* Selector Tipo de Documento */}
-                    <Text style={styles.label}>Tipo de Documento *</Text>
-                    <View style={styles.selectorContainer}>
-                        <TouchableOpacity
-                            style={[styles.selectorButton, form.tipo_documento === 'Factura' && styles.selectorActive]}
-                            onPress={() => handleChange('tipo_documento', 'Factura')}
-                        >
-                            <Text style={[styles.selectorText, form.tipo_documento === 'Factura' && styles.selectorTextActive]}>
-                                Factura
-                            </Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={[styles.selectorButton, form.tipo_documento === 'Documento' && styles.selectorActive]}
-                            onPress={() => handleChange('tipo_documento', 'Documento')}
-                        >
-                            <Text style={[styles.selectorText, form.tipo_documento === 'Documento' && styles.selectorTextActive]}>
-                                Documento
-                            </Text>
-                        </TouchableOpacity>
+                    {/* SECCIÓN 2: CONTACTO */}
+                    <View style={[styles.formCard, { backgroundColor: colors.cardBg, borderColor: isDark ? colors.cardBorder : 'transparent', borderWidth: isDark ? 1 : 0 }]}>
+                        <View style={styles.cardHeader}>
+                            <Ionicons name="call-outline" size={20} color={colors.brandGreen} />
+                            <Text style={[styles.cardTitle, { color: colors.textMain }]}>CONTACTO</Text>
+                        </View>
+
+                        <InputField label="Dirección" icon="map-marker-outline" value={form.direccion} onChange={(t: string) => handleChange('direccion', t)} placeholder="Av. Principal #123" />
+
+                        <View style={styles.rowInputs}>
+                            <View style={{ flex: 1, marginRight: 8 }}>
+                                <InputField label="Localidad" icon="map-outline" value={form.localidad} onChange={(t: string) => handleChange('localidad', t)} placeholder="Cercado" />
+                            </View>
+                            <View style={{ flex: 1, marginLeft: 8 }}>
+                                <InputField label="Ciudad" icon="city" value={form.ciudad} onChange={(t: string) => handleChange('ciudad', t)} placeholder="Cochabamba" />
+                            </View>
+                        </View>
+
+                        <View style={styles.rowInputs}>
+                            <View style={{ flex: 1, marginRight: 8 }}>
+                                <InputField label="Teléfono" icon="phone" value={form.telefono} onChange={(t: string) => handleChange('telefono', t)} placeholder="4456789" keyboard="phone-pad" />
+                            </View>
+                            <View style={{ flex: 1, marginLeft: 8 }}>
+                                <InputField label="Fax" icon="fax" value={form.fax} onChange={(t: string) => handleChange('fax', t)} placeholder="Fax" keyboard="phone-pad" />
+                            </View>
+                        </View>
+
+                        <InputField label="Email" icon="email-outline" value={form.email} onChange={(t: string) => handleChange('email', t)} placeholder="contacto@empresa.com" keyboard="email-address" />
+                        <InputField label="Persona de Contacto" icon="account-tie-outline" value={form.persona_contacto} onChange={(t: string) => handleChange('persona_contacto', t)} placeholder="Nombre del contacto" />
                     </View>
 
-                    <Text style={styles.label}>Límite de Crédito</Text>
-                    <TextInput
-                        style={styles.input}
-                        keyboardType="numeric"
-                        placeholder="0.00"
-                        value={form.limite_credito?.toString() || ''}
-                        onChangeText={t => handleNumberChange('limite_credito', t)}
-                    />
+                    {/* SECCIÓN 3: FINANCIERO */}
+                    <View style={[styles.formCard, { backgroundColor: colors.cardBg, borderColor: isDark ? colors.cardBorder : 'transparent', borderWidth: isDark ? 1 : 0 }]}>
+                        <View style={styles.cardHeader}>
+                            <Ionicons name="cash-outline" size={20} color={colors.brandGreen} />
+                            <Text style={[styles.cardTitle, { color: colors.textMain }]}>FINANCIERO</Text>
+                        </View>
 
-                    <Text style={styles.label}>Cuenta Contable</Text>
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Número de cuenta"
-                        value={form.cuenta_contable || ''}
-                        onChangeText={t => handleChange('cuenta_contable', t)}
-                    />
-                </View>
+                        <View style={styles.rowInputs}>
+                            <View style={{ flex: 1, marginRight: 8 }}>
+                                <InputField label="Saldo Inicial" icon="wallet-outline" value={form.saldo_inicial} onChange={(t: string) => handleNumberChange('saldo_inicial', t)} placeholder="0.00" keyboard="numeric" />
+                            </View>
+                            <View style={{ flex: 1, marginLeft: 8 }}>
+                                <InputField label="Moneda" icon="currency-usd" value={form.moneda} onChange={(t: string) => handleChange('moneda', t)} placeholder="Bs" />
+                            </View>
+                        </View>
 
-                {/* --- TARJETA 4: INFORMACIÓN ADICIONAL --- */}
-                <View style={styles.card}>
-                    <View style={styles.cardHeader}>
-                        <Ionicons name="document-text-outline" size={20} color="#2a8c4a" />
-                        <Text style={styles.cardTitle}>Información Adicional</Text>
+                        <SelectorGroup
+                            label="Forma de Pago *"
+                            options={['Contado', 'Crédito']}
+                            selected={form.forma_pago}
+                            onSelect={(val: string) => handleChange('forma_pago', val)}
+                        />
+
+                        <SelectorGroup
+                            label="Tipo de Documento *"
+                            options={['Factura', 'Documento']}
+                            selected={form.tipo_documento}
+                            onSelect={(val: string) => handleChange('tipo_documento', val)}
+                        />
+
+                        <InputField label="Límite de Crédito" icon="credit-card-outline" value={form.limite_credito} onChange={(t: string) => handleNumberChange('limite_credito', t)} placeholder="0.00" keyboard="numeric" />
+                        <InputField label="Cuenta Contable" icon="bank-outline" value={form.cuenta_contable} onChange={(t: string) => handleChange('cuenta_contable', t)} placeholder="Número de cuenta" />
                     </View>
 
-                    <Text style={styles.label}>Zonas</Text>
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Zonas de cobertura"
-                        value={form.zonas || ''}
-                        onChangeText={t => handleChange('zonas', t)}
-                    />
+                    {/* SECCIÓN 4: ADICIONAL */}
+                    <View style={[styles.formCard, { backgroundColor: colors.cardBg, borderColor: isDark ? colors.cardBorder : 'transparent', borderWidth: isDark ? 1 : 0 }]}>
+                        <View style={styles.cardHeader}>
+                            <Ionicons name="document-text-outline" size={20} color={colors.brandGreen} />
+                            <Text style={[styles.cardTitle, { color: colors.textMain }]}>ADICIONAL</Text>
+                        </View>
 
-                    <Text style={styles.label}>Transportista</Text>
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Nombre del transportista"
-                        value={form.transportista || ''}
-                        onChangeText={t => handleChange('transportista', t)}
-                    />
+                        <InputField label="Zonas" icon="map-marker-path" value={form.zonas} onChange={(t: string) => handleChange('zonas', t)} placeholder="Zonas de cobertura" />
+                        <InputField label="Transportista" icon="truck-delivery-outline" value={form.transportista} onChange={(t: string) => handleChange('transportista', t)} placeholder="Nombre transportista" />
+                        <InputField label="Autorización" icon="file-certificate-outline" value={form.autorizacion} onChange={(t: string) => handleChange('autorizacion', t)} placeholder="Nro Autorización" />
 
-                    <Text style={styles.label}>Comentarios</Text>
-                    <TextInput
-                        style={[styles.input, { height: 80, textAlignVertical: 'top' }]}
-                        placeholder="Notas o comentarios..."
-                        multiline
-                        numberOfLines={3}
-                        value={form.comentario || ''}
-                        onChangeText={t => handleChange('comentario', t)}
-                    />
+                        <InputField label="Comentarios" icon="comment-text-outline" value={form.comentario} onChange={(t: string) => handleChange('comentario', t)} placeholder="Notas..." multiline />
+                        <InputField label="Detalles" icon="information-outline" value={form.detalle_adicional} onChange={(t: string) => handleChange('detalle_adicional', t)} placeholder="Info extra..." multiline />
+                    </View>
 
-                    <Text style={styles.label}>Autorización</Text>
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Número de autorización"
-                        value={form.autorizacion || ''}
-                        onChangeText={t => handleChange('autorizacion', t)}
-                    />
+                    {/* BOTÓN GUARDAR */}
+                    <TouchableOpacity
+                        style={[styles.submitBtn, { backgroundColor: colors.brandGreen, shadowColor: colors.brandGreen, opacity: loading ? 0.7 : 1 }]}
+                        onPress={guardar}
+                        disabled={loading}
+                    >
+                        {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>GUARDAR PROVEEDOR</Text>}
+                    </TouchableOpacity>
 
-                    <Text style={styles.label}>Detalles Adicionales</Text>
-                    <TextInput
-                        style={[styles.input, { height: 80, textAlignVertical: 'top' }]}
-                        placeholder="Información extra..."
-                        multiline
-                        numberOfLines={3}
-                        value={form.detalle_adicional || ''}
-                        onChangeText={t => handleChange('detalle_adicional', t)}
-                    />
-                </View>
-
-                {/* BOTÓN GUARDAR */}
-                <TouchableOpacity style={styles.btnGuardar} onPress={guardar} disabled={loading}>
-                    {loading ? (
-                        <ActivityIndicator color="white" />
-                    ) : (
-                        <Text style={styles.btnText}>Guardar Proveedor</Text>
-                    )}
-                </TouchableOpacity>
-
-            </ScrollView>
-        </KeyboardAvoidingView>
+                </ScrollView>
+            </KeyboardAvoidingView>
+        </View>
     );
 }
 
 const styles = StyleSheet.create({
-    header: {
-        backgroundColor: '#2a8c4a',
-        paddingTop: 50,
-        paddingBottom: 20,
-        paddingHorizontal: 20,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-    },
-    headerTitle: { color: 'white', fontSize: 18, fontWeight: 'bold' },
-    scrollContent: { padding: 16 },
+    // HEADER
+    headerGradient: { height: 240, borderBottomLeftRadius: 40, borderBottomRightRadius: 40, paddingHorizontal: 20, position: 'absolute', top: 0, width: '100%', zIndex: 0 },
+    headerContent: { flex: 1 },
+    navBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 },
+    iconBtn: { padding: 8, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.2)' },
+    headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#fff' },
+    headerIconRow: { flexDirection: 'row', alignItems: 'center', marginTop: 25, justifyContent: 'center' },
+    iconBigCircle: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center', marginRight: 15, elevation: 5 },
+    headerSubtitle: { fontSize: 20, fontWeight: 'bold', color: '#fff' },
 
-    card: {
-        backgroundColor: 'white',
-        borderRadius: 12,
-        padding: 16,
-        marginBottom: 16,
-        elevation: 2,
-        shadowColor: '#000', shadowOpacity: 0.05, shadowOffset: { width: 0, height: 2 }
-    },
-    cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 15, borderBottomWidth: 1, borderBottomColor: '#f0f0f0', paddingBottom: 8 },
-    cardTitle: { fontSize: 16, fontWeight: 'bold', color: '#2a8c4a', marginLeft: 8 },
+    // BODY
+    scrollView: { flex: 1, marginTop: 170 },
+    formCard: { marginHorizontal: 20, borderRadius: 24, padding: 20, marginBottom: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 3 },
+    cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
+    cardTitle: { fontSize: 14, fontWeight: '800', marginLeft: 10, letterSpacing: 0.5 },
 
-    label: { fontSize: 14, color: '#666', marginBottom: 6, marginTop: 5, fontWeight: '500' },
-    input: {
-        backgroundColor: '#FAFAFA',
-        borderWidth: 1,
-        borderColor: '#E0E0E0',
-        borderRadius: 8,
-        padding: 10,
-        fontSize: 16,
-        color: '#333',
-        marginBottom: 5
-    },
-    row: { flexDirection: 'row', marginBottom: 5 },
+    // INPUTS
+    inputGroup: { marginBottom: 16 },
+    label: { fontSize: 14, fontWeight: '600', marginBottom: 8, marginLeft: 4 },
+    inputWrapper: { flexDirection: 'row', alignItems: 'center', borderRadius: 14, paddingHorizontal: 14 },
+    input: { flex: 1, fontSize: 16 },
+    rowInputs: { flexDirection: 'row' },
 
-    // Selectores
-    selectorContainer: {
-        flexDirection: 'row',
-        marginBottom: 15,
-        gap: 10
-    },
-    selectorButton: {
-        flex: 1,
-        backgroundColor: '#FAFAFA',
-        borderWidth: 1,
-        borderColor: '#E0E0E0',
-        borderRadius: 8,
-        padding: 12,
-        alignItems: 'center'
-    },
-    selectorActive: {
-        backgroundColor: '#2a8c4a',
-        borderColor: '#2a8c4a'
-    },
-    selectorText: {
-        fontSize: 15,
-        fontWeight: '600',
-        color: '#666'
-    },
-    selectorTextActive: {
-        color: 'white'
-    },
+    // SELECTORS
+    selectorContainer: { flexDirection: 'row', gap: 10 },
+    selectorBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+    selectorText: { fontWeight: '600', fontSize: 14 },
 
-    btnGuardar: {
-        backgroundColor: '#2a8c4a',
-        padding: 16,
-        borderRadius: 12,
-        alignItems: 'center',
-        marginTop: 10,
-        marginBottom: 40,
-        elevation: 4
-    },
-    btnText: { color: 'white', fontSize: 16, fontWeight: 'bold' }
+    // BUTTON
+    submitBtn: { height: 56, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginHorizontal: 20, marginBottom: 10, elevation: 6 },
+    submitBtnText: { color: '#fff', fontSize: 16, fontWeight: 'bold', letterSpacing: 1 },
 });

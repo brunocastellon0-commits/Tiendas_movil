@@ -1,26 +1,30 @@
 import React, { useState } from 'react';
-import { View, TextInput, StyleSheet, Text, Alert, TouchableOpacity, ActivityIndicator, Dimensions, KeyboardAvoidingView, Platform, ScrollView, StatusBar, Keyboard, } from 'react-native';
+import { View, TextInput, StyleSheet, Text, Alert, TouchableOpacity, ActivityIndicator, Dimensions, KeyboardAvoidingView, Platform, ScrollView, StatusBar, Keyboard, TouchableWithoutFeedback } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, withSequence, runOnJS, } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, withSequence, runOnJS } from 'react-native-reanimated';
 import { supabase } from '../../lib/supabase';
-import { useTheme } from '../../contexts/ThemeContext'; //importamos el hook de temas
+import { useTheme } from '../../contexts/ThemeContext';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
 export default function Login() {
-  // 1. HOOKS DE TEMA
+  // HOOKS DE TEMA
   const { colors, toggleTheme, isDark } = useTheme();
 
-  //LOGICA
+  // LÓGICA
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const router = useRouter();
 
-  // 3. ANIMACIÓN DEL CAMIÓN 
+  // ✅ Referencias para navegación entre inputs
+  const emailRef = React.useRef<TextInput>(null);
+  const passwordRef = React.useRef<TextInput>(null);
+
+  // ANIMACIÓN DEL CAMIÓN
   const translateX = useSharedValue(0);
   const scale = useSharedValue(1);
 
@@ -42,9 +46,9 @@ export default function Login() {
 
     // 2. Aceleración y salida
     translateX.value = withSequence(
-      withTiming(-20, { duration: 200, easing: Easing.out(Easing.cubic) }), // Retroceso
+      withTiming(-20, { duration: 200, easing: Easing.out(Easing.cubic) }),
       withTiming(
-        SCREEN_WIDTH + 200, // Salida
+        SCREEN_WIDTH + 200,
         { duration: 800, easing: Easing.in(Easing.exp) },
         (finished) => {
           if (finished) {
@@ -55,11 +59,19 @@ export default function Login() {
     );
   };
 
-  // 4. FUNCIÓN DE LOGIN 
+  // ✅ FUNCIÓN DE LOGIN MEJORADA
   async function signInWithEmail() {
     if (loading) return;
+
+    // ✅ Validación antes de cerrar el teclado
+    if (!email || !password) {
+      Alert.alert('Atención', 'Por favor completa todos los campos.');
+      return;
+    }
+
+    // ✅ Cerrar teclado después de validar
+    Keyboard.dismiss();
     setLoading(true);
-    Keyboard.dismiss(); // Ocultar teclado al iniciar
 
     const { error } = await supabase.auth.signInWithPassword({
       email,
@@ -75,7 +87,6 @@ export default function Login() {
     }
   }
 
-  // 5. RENDERIZADO CON TEMAS
   return (
     <View style={{ flex: 1, backgroundColor: colors.bgEnd }}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
@@ -99,106 +110,126 @@ export default function Login() {
         opacity: isDark ? 0.2 : 0.15
       }]} />
 
-      {/* Botón Flotante para cambiar tema (Pruébalo y luego bórralo si quieres) */}
+      {/* Botón Flotante para cambiar tema */}
       <TouchableOpacity
         onPress={toggleTheme}
         style={{ position: 'absolute', top: 50, right: 20, zIndex: 10, padding: 10 }}
+        activeOpacity={0.7}
       >
         <Ionicons name={isDark ? "sunny" : "moon"} size={24} color={colors.textMain} />
       </TouchableOpacity>
 
+      {/* ✅ KEYBOARD HANDLING PROFESIONAL */}
       <KeyboardAvoidingView
         style={{ flex: 1, zIndex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-          centerContent={true}
-        >
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            bounces={false}
+          >
 
-          {/* Tarjeta de Login */}
-          <View style={[styles.card, {
-            backgroundColor: colors.cardBg,
-            borderColor: colors.cardBorder,
-            shadowColor: colors.shadowColor
-          }]}>
-
-            <View style={styles.headerInsideCard}>
-              <Animated.Image
-                source={require('../../assets/images/logoTiendasMovil.png')}
-                style={[styles.logo, animatedTruckStyle]}
-                resizeMode="contain"
-              />
-              <Text style={[styles.welcomeText, { color: colors.textMain }]}>Bienvenido</Text>
-              <Text style={[styles.subText, { color: colors.textSub }]}>Accede a tu cuenta</Text>
-            </View>
-
-            {/* Input Email */}
-            <View style={[styles.inputContainer, {
-              backgroundColor: colors.inputBg,
-              borderColor: isDark ? colors.cardBorder : '#E2E8F0'
+            {/* Tarjeta de Login */}
+            <View style={[styles.card, {
+              backgroundColor: colors.cardBg,
+              borderColor: colors.cardBorder,
+              shadowColor: colors.shadowColor
             }]}>
-              <Ionicons name="mail" size={20} color={colors.iconGray} style={{ marginRight: 12 }} />
-              <TextInput
-                onChangeText={setEmail}
-                value={email}
-                placeholder="Correo electrónico"
-                placeholderTextColor={colors.textSub} // Color del placeholder dinámico
-                autoCapitalize="none"
-                keyboardType="email-address"
-                style={{ flex: 1, fontSize: 16, color: colors.textMain, height: '100%' }} // Color texto dinámico
-                editable={!loading}
-              />
-            </View>
 
-            {/* Input Password */}
-            <View style={[styles.inputContainer, {
-              backgroundColor: colors.inputBg,
-              borderColor: isDark ? colors.cardBorder : '#E2E8F0'
-            }]}>
-              <Ionicons name="lock-closed" size={20} color={colors.iconGray} style={{ marginRight: 12 }} />
-              <TextInput
-                onChangeText={setPassword}
-                value={password}
-                placeholder="Contraseña"
-                placeholderTextColor={colors.textSub}
-                secureTextEntry={!showPassword}
-                style={{ flex: 1, fontSize: 16, color: colors.textMain, height: '100%' }}
-                editable={!loading}
-                onSubmitEditing={signInWithEmail}
-              />
-              <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={{ padding: 8 }}>
-                <Ionicons name={showPassword ? "eye" : "eye-off"} size={20} color={colors.iconGray} />
+              <View style={styles.headerInsideCard}>
+                <Animated.Image
+                  source={require('../../assets/images/logoTiendasMovil.png')}
+                  style={[styles.logo, animatedTruckStyle]}
+                  resizeMode="contain"
+                />
+                <Text style={[styles.welcomeText, { color: colors.textMain }]}>Bienvenido</Text>
+                <Text style={[styles.subText, { color: colors.textSub }]}>Accede a tu cuenta</Text>
+              </View>
+
+              {/* ✅ Input Email con ref y navegación */}
+              <View style={[styles.inputContainer, {
+                backgroundColor: colors.inputBg,
+                borderColor: isDark ? colors.cardBorder : '#E2E8F0'
+              }]}>
+                <Ionicons name="mail" size={20} color={colors.iconGray} style={{ marginRight: 12 }} />
+                <TextInput
+                  ref={emailRef}
+                  onChangeText={setEmail}
+                  value={email}
+                  placeholder="Correo electrónico"
+                  placeholderTextColor={colors.textSub}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  style={{ flex: 1, fontSize: 16, color: colors.textMain, height: '100%' }}
+                  editable={!loading}
+                  returnKeyType="next"
+                  onSubmitEditing={() => passwordRef.current?.focus()}
+                  blurOnSubmit={false}
+                />
+              </View>
+
+              {/* ✅ Input Password con ref y submit */}
+              <View style={[styles.inputContainer, {
+                backgroundColor: colors.inputBg,
+                borderColor: isDark ? colors.cardBorder : '#E2E8F0'
+              }]}>
+                <Ionicons name="lock-closed" size={20} color={colors.iconGray} style={{ marginRight: 12 }} />
+                <TextInput
+                  ref={passwordRef}
+                  onChangeText={setPassword}
+                  value={password}
+                  placeholder="Contraseña"
+                  placeholderTextColor={colors.textSub}
+                  secureTextEntry={!showPassword}
+                  style={{ flex: 1, fontSize: 16, color: colors.textMain, height: '100%' }}
+                  editable={!loading}
+                  returnKeyType="done"
+                  onSubmitEditing={signInWithEmail}
+                />
+                <TouchableOpacity
+                  onPress={() => setShowPassword(!showPassword)}
+                  style={{ padding: 8 }}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name={showPassword ? "eye" : "eye-off"} size={20} color={colors.iconGray} />
+                </TouchableOpacity>
+              </View>
+
+              {/* Botón INGRESAR */}
+              <TouchableOpacity
+                style={[styles.loginButton, { backgroundColor: colors.brandGreen, shadowColor: colors.brandGreen }]}
+                onPress={signInWithEmail}
+                disabled={loading}
+                activeOpacity={0.8}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.loginButtonText}>INICIAR SESIÓN</Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.forgotPassword}
+                activeOpacity={0.7}
+                onPress={() => Keyboard.dismiss()}
+              >
+                <Text style={{ color: colors.textSub, textDecorationLine: 'underline' }}>
+                  ¿Olvidaste tu contraseña?
+                </Text>
               </TouchableOpacity>
             </View>
-
-            {/* Botón INGRESAR (Con funcionalidad) */}
-            <TouchableOpacity
-              style={[styles.loginButton, { backgroundColor: colors.brandGreen, shadowColor: colors.brandGreen }]}
-              onPress={signInWithEmail}
-              disabled={loading}
-              activeOpacity={0.8}
-            >
-              {loading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.loginButtonText}>INICIAR SESION</Text>
-              )}
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.forgotPassword}>
-              <Text style={{ color: colors.textSub, textDecorationLine: 'underline' }}>¿Olvidaste tu contraseña?</Text>
-            </TouchableOpacity>
-          </View>
-        </ScrollView>
+          </ScrollView>
+        </TouchableWithoutFeedback>
       </KeyboardAvoidingView>
     </View>
   );
 }
 
-// Estilos de Layout (No cambian dinámicamente)
 const styles = StyleSheet.create({
   bubble: { position: 'absolute', zIndex: 0 },
   scrollContent: { flexGrow: 1, justifyContent: 'center', padding: 24 },

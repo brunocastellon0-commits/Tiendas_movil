@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import {
     View, Text, TextInput, StyleSheet, ScrollView, TouchableOpacity,
-    Alert, ActivityIndicator, Modal, FlatList, Switch
+    Alert, ActivityIndicator, Modal, FlatList, Switch, KeyboardAvoidingView, Platform, StatusBar
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useTheme } from '../../../contexts/ThemeContext';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-// Importamos tus servicios y tipos
+// Servicios y Tipos
 import { productoService } from '../../../services/ProductoService';
 import { obtenerCategoria } from '../../../services/CategoriaService';
 import { proveedorService } from '../../../services/ProveedorServices';
@@ -16,79 +19,48 @@ import { Proveedor } from '../../../types/Proveedores.interface';
 
 export default function NuevoProductoScreen() {
     const router = useRouter();
-    const { id } = useLocalSearchParams(); // Para detectar modo edición
+    const { id } = useLocalSearchParams();
+    const { colors, isDark } = useTheme();
     const [loading, setLoading] = useState(false);
 
-    // --- 1. FORMULARIO COMPLETO (Todos los datos del escritorio) ---
+    // --- FORMULARIO ---
     const [form, setForm] = useState<Producto>({
-        id: '', // Se asignará al crear en el backend
-        // Identificación
-        codigo_producto: '',
-        nombre_producto: '',
-        estado: 'Vigente',
-        tipo: 'Producto Comercial',
-
-        // Precios
-        precio_base_venta: 0,
-        unidad_base_venta: 'UND',
-
-        // Inventario
-        stock_min: 5,
-        stock_max: 1000,
-        stock_actual: 0, // Stock Inicial
-
-        // Pesos y Medidas
-        peso_bruto: 0,
-        kg_unidad: 0,
-
-        // Comisiones
-        comision: 0,
-        comision2: 0,
-
-        // Configuración (Switches)
-        descuento_volumen: false,
-        descuento_temporada: false,
-        precios_volumen: false,
-
-        // Extras
-        observacion: '',
-        extra_1: '',
-        activo: true,
-
-        // Relaciones (Foreign Keys)
-        id_categoria: '',
-        proveedor_id: ''
+        id: '',
+        codigo_producto: '', nombre_producto: '', estado: 'Vigente', tipo: 'Producto Comercial',
+        precio_base_venta: 0, unidad_base_venta: 'UND',
+        stock_min: 5, stock_max: 1000, stock_actual: 0,
+        peso_bruto: 0, kg_unidad: 0,
+        comision: 0, comision2: 0,
+        descuento_volumen: false, descuento_temporada: false, precios_volumen: false,
+        observacion: '', extra_1: '', activo: true,
+        id_categoria: '', proveedor_id: ''
     });
 
-    // --- 2. EQUIVALENCIAS (Dinámicas) ---
+    // Estados Auxiliares
     const [listaEquivalencias, setListaEquivalencias] = useState<Equivalencia[]>([]);
     const [tempNombre, setTempNombre] = useState('');
     const [tempFactor, setTempFactor] = useState('');
     const [tempPrecio, setTempPrecio] = useState('');
 
-    // --- 3. SELECTORES ---
+    // Selectores y Modales
     const [categorias, setCategorias] = useState<Categorias[]>([]);
     const [proveedores, setProveedores] = useState<Proveedor[]>([]);
+
     const [modalCatVisible, setModalCatVisible] = useState(false);
     const [modalProvVisible, setModalProvVisible] = useState(false);
     const [modalEstadoVisible, setModalEstadoVisible] = useState(false);
+
     const [txtCategoria, setTxtCategoria] = useState('Seleccione Categoría');
     const [txtProveedor, setTxtProveedor] = useState('Seleccione Proveedor');
 
     useEffect(() => {
         cargarListas();
-        // Si hay ID, cargar datos del producto
-        if (id) {
-            cargarProductoExistente();
-        }
+        if (id) cargarProductoExistente();
     }, []);
 
     const cargarListas = async () => {
         try {
-            const [c, p] = await Promise.all([
-                obtenerCategoria(),
-                proveedorService.getProveedores()
-            ]);
+            const [c, p] = await Promise.all([obtenerCategoria(), proveedorService.getProveedores()]);
             setCategorias(c || []);
             setProveedores(p || []);
         } catch (e) { console.error(e); }
@@ -98,72 +70,60 @@ export default function NuevoProductoScreen() {
         if (!id) return;
         setLoading(true);
         try {
-            // Cargar producto
-            const producto = await productoService.getProductoById(id.toString());
-            setForm(producto);
+            const prod = await productoService.getProductoById(id.toString());
+            setForm(prod);
 
             // Cargar equivalencias
             const eqs = await productoService.getEquivalenciaProducto(id.toString());
             setListaEquivalencias(eqs);
 
-            // Actualizar textos de selectores
-            const cat = (await obtenerCategoria()).find(c => c.id === producto.id_categoria);
-            if (cat) setTxtCategoria(`${cat.nombre_categoria} - ${cat.marca}`);
+            // Setear textos de selectores
+            const cat = (await obtenerCategoria()).find(c => c.id === prod.id_categoria);
+            if (cat) setTxtCategoria(`${cat.nombre_categoria}`);
 
-            const prov = (await proveedorService.getProveedores()).find(p => p.id === producto.proveedor_id);
+            const prov = (await proveedorService.getProveedores()).find(p => p.id === prod.proveedor_id);
             if (prov) setTxtProveedor(prov.nombre);
         } catch (e: any) {
-            Alert.alert("Error", `No se pudo cargar el producto: ${e.message}`);
+            Alert.alert("Error", e.message);
             router.back();
         } finally {
             setLoading(false);
         }
     };
 
-    const updateForm = (key: keyof Producto, value: any) => {
-        setForm(prev => ({ ...prev, [key]: value }));
-    };
+    const updateForm = (key: keyof Producto, value: any) => setForm(prev => ({ ...prev, [key]: value }));
 
     const agregarEquivalencia = () => {
         if (!tempNombre || !tempFactor || !tempPrecio) {
-            Alert.alert("Faltan datos", "Llena nombre, factor y precio");
+            Alert.alert("Atención", "Completa nombre, cantidad y precio para agregar.");
             return;
         }
-
-        const nueva: Equivalencia = {
-            id: '', // Se asignará en el backend
-            nombre_unidad: tempNombre,
-            conversion_factores: parseInt(tempFactor),
-            precio_mayor: parseFloat(tempPrecio),
-            id_producto: '' // Se asignará al guardar el producto
-        };
-
-        setListaEquivalencias([...listaEquivalencias, nueva]);
+        setListaEquivalencias([...listaEquivalencias, {
+            id: '', nombre_unidad: tempNombre, conversion_factores: parseInt(tempFactor),
+            precio_mayor: parseFloat(tempPrecio), id_producto: ''
+        }]);
         setTempNombre(''); setTempFactor(''); setTempPrecio('');
     };
 
+    const borrarEquivalencia = (index: number) => {
+        setListaEquivalencias(l => l.filter((_, idx) => idx !== index));
+    };
+
     const guardarProducto = async () => {
-        // Validaciones básicas
         if (!form.codigo_producto || !form.nombre_producto || !form.id_categoria) {
-            Alert.alert("Error", "Código, Nombre y Categoría son obligatorios");
+            Alert.alert("Campos incompletos", "Código, Nombre y Categoría son obligatorios.");
             return;
         }
-
         setLoading(true);
         try {
             if (id) {
-                // Modo edición
                 await productoService.updateProducto(id.toString(), form, listaEquivalencias);
-                Alert.alert("¡Éxito!", "Producto actualizado correctamente.", [
-                    { text: "OK", onPress: () => router.back() }
-                ]);
+                Alert.alert("¡Éxito!", "Producto actualizado correctamente.");
             } else {
-                // Modo creación
                 await productoService.createProducto(form, listaEquivalencias);
-                Alert.alert("¡Éxito!", "Producto creado correctamente con todas sus opciones.", [
-                    { text: "OK", onPress: () => router.back() }
-                ]);
+                Alert.alert("¡Éxito!", "Producto creado correctamente.");
             }
+            router.back();
         } catch (e: any) {
             Alert.alert("Error", e.message);
         } finally {
@@ -171,346 +131,338 @@ export default function NuevoProductoScreen() {
         }
     };
 
-    return (
-        <View style={styles.container}>
-            {/* Header */}
-            <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.back()}>
-                    <Ionicons name="arrow-back" size={24} color="white" />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle}>{id ? 'Modificar Producto' : 'Nuevo Producto'}</Text>
-                <View style={{ width: 24 }} />
+    // --- COMPONENTES UI REUTILIZABLES ---
+
+    const InputField = ({ label, icon, value, onChange, placeholder, keyboard = 'default', multiline = false }: any) => (
+        <View style={styles.inputGroup}>
+            <Text style={[styles.label, { color: colors.textMain }]}>{label}</Text>
+            <View style={[styles.inputWrapper, {
+                backgroundColor: colors.inputBg,
+                borderColor: isDark ? colors.cardBorder : 'transparent',
+                borderWidth: isDark ? 1 : 0,
+                height: multiline ? 80 : 52,
+                alignItems: multiline ? 'flex-start' : 'center',
+                paddingTop: multiline ? 12 : 0
+            }]}>
+                <MaterialCommunityIcons name={icon} size={20} color={colors.iconGray} style={{ marginRight: 12, marginTop: multiline ? 4 : 0 }} />
+                <TextInput
+                    style={[styles.input, { color: colors.textMain, height: '100%', textAlignVertical: multiline ? 'top' : 'center' }]}
+                    value={value?.toString()}
+                    onChangeText={onChange}
+                    placeholder={placeholder}
+                    placeholderTextColor={colors.textSub}
+                    keyboardType={keyboard}
+                    multiline={multiline}
+                />
             </View>
+        </View>
+    );
 
-            <ScrollView contentContainerStyle={styles.scrollContent}>
+    const SwitchRow = ({ label, value, onToggle }: any) => (
+        <View style={[styles.switchContainer, { backgroundColor: isDark ? colors.inputBg : '#F9FAFB' }]}>
+            <Text style={[styles.labelSwitch, { color: colors.textMain }]}>{label}</Text>
+            <Switch
+                value={value}
+                onValueChange={onToggle}
+                trackColor={{ false: "#D1D5DB", true: colors.brandGreen }}
+                thumbColor={"#fff"}
+            />
+        </View>
+    );
 
-                {/* --- SECCIÓN 1: DATOS BÁSICOS --- */}
-                <View style={styles.card}>
-                    <View style={styles.cardHeader}>
-                        <MaterialCommunityIcons name="barcode" size={20} color="#2a8c4a" />
-                        <Text style={styles.cardTitle}>Identificación</Text>
-                    </View>
+    return (
+        <View style={{ flex: 1, backgroundColor: colors.bgStart }}>
+            <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
-                    <View style={styles.row}>
-                        <View style={{ flex: 1, marginRight: 5 }}>
-                            <Text style={styles.label}>Código *</Text>
-                            <TextInput
-                                style={styles.input}
-                                placeholder="Ej: ARC-001"
-                                value={form.codigo_producto}
-                                onChangeText={t => updateForm('codigo_producto', t)}
-                            />
-                        </View>
-                        <View style={{ flex: 1, marginLeft: 5 }}>
-                            <Text style={styles.label}>Estado</Text>
-                            <TouchableOpacity style={styles.selector} onPress={() => setModalEstadoVisible(true)}>
-                                <Text style={{ color: form.estado === 'Vigente' ? '#2a8c4a' : '#D32F2F', fontWeight: 'bold' }}>{form.estado}</Text>
-                                <Ionicons name="chevron-down" size={20} color="#666" />
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-
-                    <Text style={styles.label}>Nombre Producto *</Text>
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Ej: NUCITA DOBLE SABOR..."
-                        value={form.nombre_producto}
-                        onChangeText={t => updateForm('nombre_producto', t)}
-                    />
-
-                    <Text style={styles.label}>Tipo</Text>
-                    <TextInput
-                        style={styles.input}
-                        value={form.tipo}
-                        onChangeText={t => updateForm('tipo', t)}
-                    />
-                </View>
-
-                {/* --- SECCIÓN 2: PRECIOS Y UNIDADES --- */}
-                <View style={styles.card}>
-                    <View style={styles.cardHeader}>
-                        <MaterialCommunityIcons name="tag-multiple" size={20} color="#2a8c4a" />
-                        <Text style={styles.cardTitle}>Precios y Unidades</Text>
-                    </View>
-
-                    <View style={styles.row}>
-                        <View style={{ flex: 1, marginRight: 5 }}>
-                            <Text style={styles.label}>Precio Base (Bs) *</Text>
-                            <TextInput
-                                style={[styles.input, { fontWeight: 'bold', color: '#2a8c4a' }]}
-                                placeholder="0.00"
-                                keyboardType="numeric"
-                                onChangeText={t => updateForm('precio_base_venta', parseFloat(t) || 0)}
-                            />
-                        </View>
-                        <View style={{ flex: 1, marginLeft: 5 }}>
-                            <Text style={styles.label}>Unidad Base *</Text>
-                            <TextInput
-                                style={styles.input}
-                                placeholder="UND"
-                                value={form.unidad_base_venta}
-                                onChangeText={t => updateForm('unidad_base_venta', t)}
-                            />
-                        </View>
-                    </View>
-
-                    {/* Lista Dinámica de Equivalencias */}
-                    <Text style={[styles.label, { marginTop: 10 }]}>Otras presentaciones (Cajas, Docenas):</Text>
-                    {listaEquivalencias.map((eq, i) => (
-                        <View key={i} style={styles.eqItem}>
-                            <Text style={{ fontWeight: '600', color: '#333' }}>
-                                {eq.nombre_unidad} (x{eq.conversion_factores})
-                            </Text>
-                            <Text style={{ color: '#2a8c4a', fontWeight: 'bold' }}>Bs {eq.precio_mayor}</Text>
-                            <TouchableOpacity onPress={() => setListaEquivalencias(l => l.filter((_, idx) => idx !== i))}>
-                                <Ionicons name="trash" size={20} color="#D32F2F" />
-                            </TouchableOpacity>
-                        </View>
-                    ))}
-
-                    <View style={styles.addEqRow}>
-                        <TextInput style={[styles.inputSmall, { flex: 2 }]} placeholder="Ej: CAJA" value={tempNombre} onChangeText={setTempNombre} />
-                        <TextInput style={[styles.inputSmall, { flex: 1 }]} placeholder="Cant" keyboardType="numeric" value={tempFactor} onChangeText={setTempFactor} />
-                        <TextInput style={[styles.inputSmall, { flex: 1.5 }]} placeholder="Precio" keyboardType="numeric" value={tempPrecio} onChangeText={setTempPrecio} />
-                        <TouchableOpacity style={styles.btnAdd} onPress={agregarEquivalencia}>
-                            <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 12 }}>AGREGAR</Text>
+            {/* --- HEADER CURVO --- */}
+            <LinearGradient
+                colors={[colors.brandGreen, '#166534']}
+                style={styles.headerGradient}
+            >
+                <SafeAreaView edges={['top']} style={styles.headerContent}>
+                    <View style={styles.navBar}>
+                        {/* Botón Atrás: Grande y fácil de tocar */}
+                        <TouchableOpacity
+                            onPress={() => router.back()}
+                            style={styles.backBtn}
+                            activeOpacity={0.7}
+                        >
+                            <Ionicons name="arrow-back" size={24} color="#fff" />
                         </TouchableOpacity>
-                    </View>
-                </View>
 
-                {/* --- SECCIÓN 3: CLASIFICACIÓN --- */}
-                <View style={styles.card}>
-                    <View style={styles.cardHeader}>
-                        <MaterialCommunityIcons name="shape" size={20} color="#2a8c4a" />
-                        <Text style={styles.cardTitle}>Clasificación</Text>
+                        <Text style={styles.headerTitle}>{id ? 'Editar Producto' : 'Nuevo Producto'}</Text>
+
+                        {/* Espaciador para centrar título */}
+                        <View style={{ width: 40 }} />
                     </View>
 
-                    <Text style={styles.label}>Categoría *</Text>
-                    <TouchableOpacity style={styles.selector} onPress={() => setModalCatVisible(true)}>
-                        <Text style={{ color: '#333' }}>{txtCategoria}</Text>
-                        <Ionicons name="chevron-down" size={20} color="#666" />
-                    </TouchableOpacity>
-
-                    <Text style={styles.label}>Proveedor</Text>
-                    <TouchableOpacity style={styles.selector} onPress={() => setModalProvVisible(true)}>
-                        <Text style={{ color: '#333' }}>{txtProveedor}</Text>
-                        <Ionicons name="chevron-down" size={20} color="#666" />
-                    </TouchableOpacity>
-                </View>
-
-                {/* --- SECCIÓN 4: INVENTARIO, PESOS Y COMISIONES (Lo que faltaba) --- */}
-                <View style={styles.card}>
-                    <View style={styles.cardHeader}>
-                        <FontAwesome5 name="cogs" size={18} color="#2a8c4a" />
-                        <Text style={styles.cardTitle}>Configuración Avanzada</Text>
-                    </View>
-
-                    {/* Inventario */}
-                    <Text style={styles.label}>Stock Inicial (Físico Actual)</Text>
-                    <TextInput
-                        style={styles.input}
-                        keyboardType="numeric"
-                        placeholder="0"
-                        onChangeText={t => updateForm('stock_actual', parseInt(t) || 0)}
-                    />
-
-                    <View style={styles.row}>
-                        <View style={{ flex: 1, marginRight: 5 }}>
-                            <Text style={styles.label}>Stock Min</Text>
-                            <TextInput style={styles.input} keyboardType="numeric" value={form.stock_min.toString()} onChangeText={t => updateForm('stock_min', parseInt(t) || 0)} />
+                    {/* Icono Grande */}
+                    <View style={styles.headerIconRow}>
+                        <View style={styles.iconBigCircle}>
+                            <FontAwesome5 name="box-open" size={32} color={colors.brandGreen} />
                         </View>
-                        <View style={{ flex: 1, marginLeft: 5 }}>
-                            <Text style={styles.label}>Stock Max</Text>
-                            <TextInput style={styles.input} keyboardType="numeric" value={form.stock_max.toString()} onChangeText={t => updateForm('stock_max', parseInt(t) || 0)} />
+                        <Text style={styles.headerSubtitle}>Detalles del Item</Text>
+                    </View>
+                </SafeAreaView>
+            </LinearGradient>
+
+            {/* --- FORMULARIO SCROLLABLE --- */}
+            <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                style={{ flex: 1 }}
+            >
+                <ScrollView
+                    style={styles.scrollView}
+                    contentContainerStyle={{ paddingBottom: 50 }}
+                    showsVerticalScrollIndicator={false}
+                >
+                    {/* Tarjeta Contenedora Principal */}
+                    <View style={[styles.formSheet, {
+                        backgroundColor: colors.cardBg,
+                        borderColor: isDark ? colors.cardBorder : 'transparent',
+                        borderWidth: isDark ? 1 : 0
+                    }]}>
+
+                        {/* 1. IDENTIFICACIÓN */}
+                        <Text style={[styles.sectionTitle, { color: colors.brandGreen }]}>IDENTIFICACIÓN</Text>
+
+                        <InputField label="Código *" icon="barcode" value={form.codigo_producto} onChange={(t: string) => updateForm('codigo_producto', t)} placeholder="Ej: PROD-001" />
+                        <InputField label="Nombre *" icon="tag-text-outline" value={form.nombre_producto} onChange={(t: string) => updateForm('nombre_producto', t)} placeholder="Ej: Galletas Oreo" />
+
+                        <View style={styles.rowInputs}>
+                            <View style={{ flex: 1, marginRight: 8 }}>
+                                <Text style={[styles.label, { color: colors.textMain }]}>Estado</Text>
+                                <TouchableOpacity style={[styles.selectorBtn, { backgroundColor: colors.inputBg }]} onPress={() => setModalEstadoVisible(true)}>
+                                    <Text style={{ color: form.estado === 'Vigente' ? colors.brandGreen : '#EF5350', fontWeight: 'bold' }}>{form.estado}</Text>
+                                    <Ionicons name="chevron-down" size={18} color={colors.textSub} />
+                                </TouchableOpacity>
+                            </View>
+                            <View style={{ flex: 1, marginLeft: 8 }}>
+                                <InputField label="Tipo" icon="shape-outline" value={form.tipo} onChange={(t: string) => updateForm('tipo', t)} />
+                            </View>
                         </View>
-                    </View>
 
-                    {/* Pesos */}
-                    <View style={styles.row}>
-                        <View style={{ flex: 1, marginRight: 5 }}>
-                            <Text style={styles.label}>Kg x Unidad</Text>
-                            <TextInput style={styles.input} keyboardType="numeric" placeholder="0.00" onChangeText={t => updateForm('kg_unidad', parseFloat(t) || 0)} />
+                        <View style={styles.divider} />
+
+                        {/* 2. PRECIOS Y UNIDADES */}
+                        <Text style={[styles.sectionTitle, { color: colors.brandGreen }]}>PRECIOS Y UNIDADES</Text>
+
+                        <View style={styles.rowInputs}>
+                            <View style={{ flex: 1, marginRight: 8 }}>
+                                <InputField label="Precio Base *" icon="cash" value={form.precio_base_venta} onChange={(t: string) => updateForm('precio_base_venta', parseFloat(t) || 0)} keyboard="numeric" />
+                            </View>
+                            <View style={{ flex: 1, marginLeft: 8 }}>
+                                <InputField label="Unidad Base *" icon="scale" value={form.unidad_base_venta} onChange={(t: string) => updateForm('unidad_base_venta', t)} placeholder="UND" />
+                            </View>
                         </View>
-                        <View style={{ flex: 1, marginLeft: 5 }}>
-                            <Text style={styles.label}>Peso Bruto</Text>
-                            <TextInput style={styles.input} keyboardType="numeric" placeholder="0.00" onChangeText={t => updateForm('peso_bruto', parseFloat(t) || 0)} />
+
+                        {/* Tabla de Equivalencias */}
+                        <Text style={[styles.label, { color: colors.textMain, marginTop: 10 }]}>Presentaciones Adicionales</Text>
+                        <View style={[styles.eqContainer, { borderColor: isDark ? colors.cardBorder : '#E5E7EB' }]}>
+                            {listaEquivalencias.map((eq, i) => (
+                                <View key={i} style={[styles.eqItem, { borderBottomColor: isDark ? colors.cardBorder : '#F3F4F6' }]}>
+                                    <Text style={{ flex: 1, color: colors.textMain, fontWeight: '600' }}>{eq.nombre_unidad} (x{eq.conversion_factores})</Text>
+                                    <Text style={{ color: colors.brandGreen, marginRight: 15, fontWeight: 'bold' }}>Bs {eq.precio_mayor}</Text>
+                                    <TouchableOpacity onPress={() => borrarEquivalencia(i)}>
+                                        <Ionicons name="trash-outline" size={20} color="#EF5350" />
+                                    </TouchableOpacity>
+                                </View>
+                            ))}
+
+                            {/* Inputs para agregar nueva equivalencia */}
+                            <View style={styles.addEqRow}>
+                                <TextInput style={[styles.inputSmall, { flex: 2, backgroundColor: colors.inputBg, color: colors.textMain }]} placeholder="Unidad (Ej: Caja)" placeholderTextColor={colors.textSub} value={tempNombre} onChangeText={setTempNombre} />
+                                <TextInput style={[styles.inputSmall, { flex: 1, backgroundColor: colors.inputBg, color: colors.textMain }]} placeholder="Cant" placeholderTextColor={colors.textSub} keyboardType="numeric" value={tempFactor} onChangeText={setTempFactor} />
+                                <TextInput style={[styles.inputSmall, { flex: 1.5, backgroundColor: colors.inputBg, color: colors.textMain }]} placeholder="Precio" placeholderTextColor={colors.textSub} keyboardType="numeric" value={tempPrecio} onChangeText={setTempPrecio} />
+                                <TouchableOpacity style={[styles.btnAddSmall, { backgroundColor: colors.brandGreen }]} onPress={agregarEquivalencia}>
+                                    <Ionicons name="add" size={20} color="#fff" />
+                                </TouchableOpacity>
+                            </View>
                         </View>
-                    </View>
 
-                    {/* Comisiones */}
-                    <View style={styles.row}>
-                        <View style={{ flex: 1, marginRight: 5 }}>
-                            <Text style={styles.label}>% Comisión 1</Text>
-                            <TextInput style={styles.input} keyboardType="numeric" placeholder="0.00" onChangeText={t => updateForm('comision', parseFloat(t) || 0)} />
+                        <View style={styles.divider} />
+
+                        {/* 3. CLASIFICACIÓN */}
+                        <Text style={[styles.sectionTitle, { color: colors.brandGreen }]}>CLASIFICACIÓN</Text>
+
+                        <Text style={[styles.label, { color: colors.textMain }]}>Categoría</Text>
+                        <TouchableOpacity style={[styles.selectorBtn, { backgroundColor: colors.inputBg, marginBottom: 15 }]} onPress={() => setModalCatVisible(true)}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                <MaterialCommunityIcons name="shape" size={20} color={colors.iconGray} style={{ marginRight: 10 }} />
+                                <Text style={{ color: colors.textMain }}>{txtCategoria}</Text>
+                            </View>
+                            <Ionicons name="chevron-down" size={20} color={colors.textSub} />
+                        </TouchableOpacity>
+
+                        <Text style={[styles.label, { color: colors.textMain }]}>Proveedor</Text>
+                        <TouchableOpacity style={[styles.selectorBtn, { backgroundColor: colors.inputBg }]} onPress={() => setModalProvVisible(true)}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                <MaterialCommunityIcons name="truck" size={20} color={colors.iconGray} style={{ marginRight: 10 }} />
+                                <Text style={{ color: colors.textMain }}>{txtProveedor}</Text>
+                            </View>
+                            <Ionicons name="chevron-down" size={20} color={colors.textSub} />
+                        </TouchableOpacity>
+
+                        <View style={styles.divider} />
+
+                        {/* 4. CONFIGURACIÓN AVANZADA */}
+                        <Text style={[styles.sectionTitle, { color: colors.brandGreen }]}>CONFIGURACIÓN AVANZADA</Text>
+
+                        <InputField label="Stock Inicial (Físico)" icon="layers-outline" value={form.stock_actual} onChange={(t: string) => updateForm('stock_actual', parseInt(t) || 0)} keyboard="numeric" />
+
+                        <View style={styles.rowInputs}>
+                            <View style={{ flex: 1, marginRight: 8 }}>
+                                <InputField label="Stock Mínimo" icon="arrow-down" value={form.stock_min} onChange={(t: string) => updateForm('stock_min', parseInt(t) || 0)} keyboard="numeric" />
+                            </View>
+                            <View style={{ flex: 1, marginLeft: 8 }}>
+                                <InputField label="Stock Máximo" icon="arrow-up" value={form.stock_max} onChange={(t: string) => updateForm('stock_max', parseInt(t) || 0)} keyboard="numeric" />
+                            </View>
                         </View>
-                        <View style={{ flex: 1, marginLeft: 5 }}>
-                            <Text style={styles.label}>% Comisión 2</Text>
-                            <TextInput style={styles.input} keyboardType="numeric" placeholder="0.00" onChangeText={t => updateForm('comision2', parseFloat(t) || 0)} />
+
+                        <View style={styles.rowInputs}>
+                            <View style={{ flex: 1, marginRight: 8 }}>
+                                <InputField label="Peso Bruto" icon="weight" value={form.peso_bruto} onChange={(t: string) => updateForm('peso_bruto', parseFloat(t) || 0)} keyboard="numeric" />
+                            </View>
+                            <View style={{ flex: 1, marginLeft: 8 }}>
+                                <InputField label="Kg x Unidad" icon="weight-kilogram" value={form.kg_unidad} onChange={(t: string) => updateForm('kg_unidad', parseFloat(t) || 0)} keyboard="numeric" />
+                            </View>
                         </View>
+
+                        {/* Switches */}
+                        <View style={{ gap: 10, marginBottom: 15 }}>
+                            <SwitchRow label="Descuento por Volumen" value={form.descuento_volumen} onToggle={(v: boolean) => updateForm('descuento_volumen', v)} />
+                            <SwitchRow label="Descuento de Temporada" value={form.descuento_temporada} onToggle={(v: boolean) => updateForm('descuento_temporada', v)} />
+                            <SwitchRow label="Precios Diferenciados" value={form.precios_volumen} onToggle={(v: boolean) => updateForm('precios_volumen', v)} />
+                        </View>
+
+                        <InputField label="Observaciones" icon="comment-text-outline" value={form.observacion} onChange={(t: string) => updateForm('observacion', t)} multiline />
+
+                        {/* Botón Principal */}
+                        <TouchableOpacity
+                            style={[styles.submitBtn, {
+                                backgroundColor: colors.brandGreen,
+                                shadowColor: colors.brandGreen,
+                                opacity: loading ? 0.7 : 1
+                            }]}
+                            onPress={guardarProducto}
+                            disabled={loading}
+                        >
+                            {loading ? (
+                                <ActivityIndicator color="#fff" />
+                            ) : (
+                                <Text style={styles.submitBtnText}>GUARDAR PRODUCTO</Text>
+                            )}
+                        </TouchableOpacity>
+
                     </View>
+                </ScrollView>
+            </KeyboardAvoidingView>
 
-                    {/* Switches (Descuentos) */}
-                    <View style={styles.switchRow}>
-                        <Text style={styles.labelSwitch}>Descuento por Volumen</Text>
-                        <Switch
-                            value={form.descuento_volumen}
-                            onValueChange={v => updateForm('descuento_volumen', v)}
-                            trackColor={{ false: "#767577", true: "#81b0ff" }}
-                            thumbColor={form.descuento_volumen ? "#2a8c4a" : "#f4f3f4"}
-                        />
-                    </View>
-                    <View style={styles.switchRow}>
-                        <Text style={styles.labelSwitch}>Descuento Temporada</Text>
-                        <Switch
-                            value={form.descuento_temporada}
-                            onValueChange={v => updateForm('descuento_temporada', v)}
-                            trackColor={{ false: "#767577", true: "#81b0ff" }}
-                            thumbColor={form.descuento_temporada ? "#2a8c4a" : "#f4f3f4"}
-                        />
-                    </View>
-                    <View style={styles.switchRow}>
-                        <Text style={styles.labelSwitch}>Precios por Volumen</Text>
-                        <Switch
-                            value={form.precios_volumen}
-                            onValueChange={v => updateForm('precios_volumen', v)}
-                            trackColor={{ false: "#767577", true: "#81b0ff" }}
-                            thumbColor={form.precios_volumen ? "#2a8c4a" : "#f4f3f4"}
-                        />
-                    </View>
+            {/* --- MODALES --- */}
 
-                    {/* Extras */}
-                    <Text style={styles.label}>Observaciones</Text>
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Notas adicionales..."
-                        value={form.observacion}
-                        onChangeText={t => updateForm('observacion', t)}
-                    />
-                    <Text style={styles.label}>Extra 1</Text>
-                    <TextInput
-                        style={styles.input}
-                        value={form.extra_1}
-                        onChangeText={t => updateForm('extra_1', t)}
-                    />
-                </View>
-
-                {/* BOTÓN FINAL */}
-                <TouchableOpacity style={styles.btnSave} onPress={guardarProducto} disabled={loading}>
-                    {loading ? <ActivityIndicator color="white" /> : <Text style={styles.btnText}>GUARDAR PRODUCTO</Text>}
-                </TouchableOpacity>
-
-            </ScrollView>
-
-            {/* MODALES (Igual que antes) */}
+            {/* Modal Categoría */}
             <Modal visible={modalCatVisible} transparent animationType="slide">
-                <View style={styles.modalBg}>
-                    <View style={styles.modalContent}>
-                        <Text style={styles.modalTitle}>Seleccionar Categoría</Text>
-                        <FlatList data={categorias} keyExtractor={i => i.id} renderItem={({ item }) => (
-                            <TouchableOpacity style={styles.modalItem} onPress={() => {
-                                updateForm('id_categoria', item.id);
-                                setTxtCategoria(`${item.nombre_categoria} - ${item.marca}`);
-                                setModalCatVisible(false);
-                            }}>
-                                <Text style={{ fontWeight: 'bold' }}>{item.nombre_categoria}</Text>
-                                <Text style={{ fontSize: 12, color: '#666' }}>{item.empresa} • {item.linea}</Text>
+                <View style={styles.modalOverlay}><View style={[styles.modalCard, { backgroundColor: colors.cardBg }]}>
+                    <Text style={[styles.modalTitle, { color: colors.textMain }]}>Seleccionar Categoría</Text>
+                    <FlatList
+                        data={categorias}
+                        keyExtractor={i => i.id}
+                        style={{ maxHeight: 300 }}
+                        renderItem={({ item }) => (
+                            <TouchableOpacity style={[styles.modalItem, { borderBottomColor: isDark ? '#333' : '#eee' }]} onPress={() => { updateForm('id_categoria', item.id); setTxtCategoria(item.nombre_categoria); setModalCatVisible(false); }}>
+                                <Text style={{ color: colors.textMain, fontSize: 16 }}>{item.nombre_categoria}</Text>
                             </TouchableOpacity>
-                        )} />
-                        <TouchableOpacity onPress={() => setModalCatVisible(false)} style={styles.modalClose}><Text style={{ color: 'red' }}>Cerrar</Text></TouchableOpacity>
-                    </View>
-                </View>
+                        )}
+                    />
+                    <TouchableOpacity onPress={() => setModalCatVisible(false)} style={styles.modalCloseBtn}><Text style={{ color: '#EF5350', fontWeight: 'bold' }}>Cancelar</Text></TouchableOpacity>
+                </View></View>
             </Modal>
 
+            {/* Modal Proveedor */}
             <Modal visible={modalProvVisible} transparent animationType="slide">
-                <View style={styles.modalBg}>
-                    <View style={styles.modalContent}>
-                        <Text style={styles.modalTitle}>Seleccionar Proveedor</Text>
-                        <FlatList data={proveedores} keyExtractor={i => i.id || '0'} renderItem={({ item }) => (
-                            <TouchableOpacity style={styles.modalItem} onPress={() => {
-                                updateForm('proveedor_id', item.id);
-                                setTxtProveedor(item.nombre);
-                                setModalProvVisible(false);
-                            }}>
-                                <Text>{item.nombre}</Text>
+                <View style={styles.modalOverlay}><View style={[styles.modalCard, { backgroundColor: colors.cardBg }]}>
+                    <Text style={[styles.modalTitle, { color: colors.textMain }]}>Seleccionar Proveedor</Text>
+                    <FlatList
+                        data={proveedores}
+                        keyExtractor={i => i.id || '0'}
+                        style={{ maxHeight: 300 }}
+                        renderItem={({ item }) => (
+                            <TouchableOpacity style={[styles.modalItem, { borderBottomColor: isDark ? '#333' : '#eee' }]} onPress={() => { updateForm('proveedor_id', item.id); setTxtProveedor(item.nombre); setModalProvVisible(false); }}>
+                                <Text style={{ color: colors.textMain, fontSize: 16 }}>{item.nombre}</Text>
                             </TouchableOpacity>
-                        )} />
-                        <TouchableOpacity onPress={() => setModalProvVisible(false)} style={styles.modalClose}><Text style={{ color: 'red' }}>Cerrar</Text></TouchableOpacity>
-                    </View>
-                </View>
+                        )}
+                    />
+                    <TouchableOpacity onPress={() => setModalProvVisible(false)} style={styles.modalCloseBtn}><Text style={{ color: '#EF5350', fontWeight: 'bold' }}>Cancelar</Text></TouchableOpacity>
+                </View></View>
             </Modal>
 
-            {/* Modal de Estado */}
-            <Modal visible={modalEstadoVisible} transparent animationType="slide">
-                <View style={styles.modalBg}>
-                    <View style={styles.modalContent}>
-                        <Text style={styles.modalTitle}>Seleccionar Estado</Text>
-
-                        <TouchableOpacity
-                            style={[styles.modalItem, { backgroundColor: form.estado === 'Vigente' ? '#E8F5E9' : 'white' }]}
-                            onPress={() => {
-                                updateForm('estado', 'Vigente');
-                                setModalEstadoVisible(false);
-                            }}
-                        >
-                            <Ionicons name="checkmark-circle" size={24} color="#2a8c4a" />
-                            <Text style={{ fontWeight: 'bold', color: '#2a8c4a', marginLeft: 10 }}>Vigente</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                            style={[styles.modalItem, { backgroundColor: form.estado === 'No Vigente' ? '#FFEBEE' : 'white' }]}
-                            onPress={() => {
-                                updateForm('estado', 'No Vigente');
-                                setModalEstadoVisible(false);
-                            }}
-                        >
-                            <Ionicons name="close-circle" size={24} color="#D32F2F" />
-                            <Text style={{ fontWeight: 'bold', color: '#D32F2F', marginLeft: 10 }}>No Vigente</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity onPress={() => setModalEstadoVisible(false)} style={styles.modalClose}>
-                            <Text style={{ color: '#666' }}>Cancelar</Text>
-                        </TouchableOpacity>
-                    </View>
-                </View>
+            {/* Modal Estado */}
+            <Modal visible={modalEstadoVisible} transparent animationType="fade">
+                <View style={styles.modalOverlay}><View style={[styles.modalCard, { backgroundColor: colors.cardBg }]}>
+                    <Text style={[styles.modalTitle, { color: colors.textMain }]}>Estado del Producto</Text>
+                    <TouchableOpacity style={[styles.modalItem, { borderBottomColor: isDark ? '#333' : '#eee' }]} onPress={() => { updateForm('estado', 'Vigente'); setModalEstadoVisible(false); }}>
+                        <Text style={{ color: colors.brandGreen, fontWeight: 'bold', fontSize: 16 }}>Vigente</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.modalItem, { borderBottomColor: 'transparent' }]} onPress={() => { updateForm('estado', 'No Vigente'); setModalEstadoVisible(false); }}>
+                        <Text style={{ color: '#EF5350', fontWeight: 'bold', fontSize: 16 }}>No Vigente</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => setModalEstadoVisible(false)} style={styles.modalCloseBtn}><Text style={{ color: colors.textSub }}>Cancelar</Text></TouchableOpacity>
+                </View></View>
             </Modal>
+
         </View>
     );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#F0F2F5' },
-    header: { backgroundColor: '#2a8c4a', paddingTop: 50, paddingBottom: 15, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-    headerTitle: { color: 'white', fontSize: 18, fontWeight: 'bold' },
-    scrollContent: { padding: 15 },
+    // HEADER
+    headerGradient: { height: 240, borderBottomLeftRadius: 40, borderBottomRightRadius: 40, paddingHorizontal: 20, position: 'absolute', top: 0, width: '100%', zIndex: 0 },
+    headerContent: { flex: 1 },
+    navBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 },
+    // Botón Atrás Mejorado
+    backBtn: { padding: 10, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.2)' },
+    headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#fff' },
+    headerIconRow: { flexDirection: 'row', alignItems: 'center', marginTop: 25, justifyContent: 'center' },
+    iconBigCircle: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center', marginRight: 15, elevation: 5 },
+    headerSubtitle: { fontSize: 20, fontWeight: 'bold', color: '#fff' },
 
-    // Cards
-    card: { backgroundColor: 'white', borderRadius: 12, padding: 15, marginBottom: 15, elevation: 2 },
-    cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, borderBottomWidth: 1, borderBottomColor: '#f0f0f0', paddingBottom: 5 },
-    cardTitle: { fontSize: 16, fontWeight: 'bold', color: '#2a8c4a', marginLeft: 8 },
+    // BODY & FORM SHEET
+    scrollView: { flex: 1, marginTop: 170 },
+    formSheet: { marginHorizontal: 20, borderRadius: 24, padding: 24, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4, marginBottom: 30 },
 
-    label: { fontSize: 12, color: '#666', marginBottom: 4, fontWeight: '600' },
-    input: { backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, padding: 10, fontSize: 14, marginBottom: 10, color: '#333' },
-    row: { flexDirection: 'row', justifyContent: 'space-between' },
+    // TYPOGRAPHY & SPACING
+    sectionTitle: { fontSize: 12, fontWeight: '800', letterSpacing: 1, marginBottom: 15, marginTop: 5 },
+    divider: { height: 1, backgroundColor: '#E5E7EB', marginVertical: 20, opacity: 0.5 },
 
-    // Equivalencias
-    eqItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#F0FDF4', padding: 10, borderRadius: 8, marginBottom: 8, borderLeftWidth: 3, borderLeftColor: '#2a8c4a' },
-    addEqRow: { flexDirection: 'row', alignItems: 'center', marginTop: 5 },
-    inputSmall: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#DDD', borderRadius: 6, padding: 8, height: 40, marginRight: 5, fontSize: 13 },
-    btnAdd: { backgroundColor: '#2a8c4a', padding: 10, borderRadius: 6, alignItems: 'center', justifyContent: 'center', height: 40 },
+    // INPUTS
+    inputGroup: { marginBottom: 16 },
+    label: { fontSize: 14, fontWeight: '600', marginBottom: 8, marginLeft: 4 },
+    inputWrapper: { flexDirection: 'row', alignItems: 'center', borderRadius: 14, height: 52, paddingHorizontal: 14 },
+    input: { flex: 1, fontSize: 16, height: '100%' },
+    rowInputs: { flexDirection: 'row' },
 
-    // Selectors
-    selector: { backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, padding: 12, flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15 },
+    // SELECTORS
+    selectorBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: 52, borderRadius: 14, paddingHorizontal: 14 },
 
-    // Switches
-    switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, borderBottomWidth: 1, borderBottomColor: '#f9f9f9', paddingBottom: 5 },
-    labelSwitch: { fontSize: 14, color: '#333' },
+    // EQUIVALENCIAS
+    eqContainer: { borderWidth: 1, borderRadius: 14, padding: 10, marginTop: 5 },
+    eqItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1 },
+    addEqRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
+    inputSmall: { flex: 1, height: 42, borderRadius: 10, paddingHorizontal: 10 },
+    btnAddSmall: { width: 42, height: 42, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
 
-    // Botones y Modales
-    btnSave: { backgroundColor: '#1F2937', padding: 16, borderRadius: 10, alignItems: 'center', marginVertical: 20 },
-    btnText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
-    modalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },
-    modalContent: { backgroundColor: 'white', borderRadius: 12, padding: 20, maxHeight: '80%' },
-    modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 15, textAlign: 'center' },
-    modalItem: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-    modalClose: { marginTop: 15, padding: 10, alignItems: 'center' }
+    // SWITCHES
+    switchContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 12, borderRadius: 14, marginBottom: 8 },
+    labelSwitch: { fontSize: 14, fontWeight: '600' },
+
+    // BUTTON MAIN
+    submitBtn: { height: 56, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginTop: 25, elevation: 6 },
+    submitBtnText: { color: '#fff', fontSize: 16, fontWeight: 'bold', letterSpacing: 1 },
+
+    // MODALS
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 20 },
+    modalCard: { borderRadius: 20, padding: 25, elevation: 10 },
+    modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 20, textAlign: 'center' },
+    modalItem: { paddingVertical: 15, borderBottomWidth: 1 },
+    modalCloseBtn: { marginTop: 20, alignItems: 'center', padding: 10 },
 });
