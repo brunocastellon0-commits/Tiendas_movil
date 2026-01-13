@@ -1,18 +1,28 @@
-import React, { useState, useCallback } from 'react';
-import { 
-  View, Text, FlatList, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator, RefreshControl, Alert 
-} from 'react-native';
-import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useState } from 'react';
+import {
+    ActivityIndicator,
+    Alert,
+    FlatList,
+    RefreshControl,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
+} from 'react-native';
 import { clientService } from '../../services/ClienteService';
 import { Client } from '../../types/Cliente.interface';
 
 export default function ClientsListScreen() {
   const router = useRouter();
   const [clients, setClients] = useState<Client[]>([]);
+  const [filteredClients, setFilteredClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
+  const [debtFilter, setDebtFilter] = useState<'all' | 'with_debt' | 'no_debt'>('all');
 
   // Cargar datos
   const fetchClients = async () => {
@@ -44,6 +54,20 @@ export default function ClientsListScreen() {
 
     return () => clearTimeout(timer);
   }, [search]);
+
+  // Aplicar filtros de deuda
+  React.useEffect(() => {
+    let result = clients;
+
+    // Aplicar filtro de deudas
+    if (debtFilter === 'with_debt') {
+      result = result.filter(client => client.current_balance > 0);
+    } else if (debtFilter === 'no_debt') {
+      result = result.filter(client => client.current_balance === 0);
+    }
+
+    setFilteredClients(result);
+  }, [clients, debtFilter]);
 
   // Función para eliminar cliente (borrado lógico)
   const handleDelete = async (clientId: string, clientName: string) => {
@@ -125,6 +149,15 @@ export default function ClientsListScreen() {
       {/* Header Personalizado */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Cartera de Clientes</Text>
+        {/* Botón de Cobranzas */}
+        <TouchableOpacity 
+          style={styles.cobranzasButton}
+          onPress={() => router.push('/clients/Cobranzas')}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="cash-outline" size={24} color="#FFF" />
+          <Text style={styles.cobranzasButtonText}>Cobranzas</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Buscador */}
@@ -143,6 +176,51 @@ export default function ClientsListScreen() {
             </TouchableOpacity>
           )}
         </View>
+
+        {/* Chips de Filtro */}
+        <View style={styles.filterChipsContainer}>
+          <TouchableOpacity 
+            style={[styles.filterChip, debtFilter === 'all' && styles.filterChipActive]}
+            onPress={() => setDebtFilter('all')}
+          >
+            <Ionicons 
+              name="people" 
+              size={16} 
+              color={debtFilter === 'all' ? '#fff' : '#666'} 
+            />
+            <Text style={[styles.filterChipText, debtFilter === 'all' && styles.filterChipTextActive]}>
+              Todos ({clients.length})
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.filterChip, debtFilter === 'with_debt' && styles.filterChipActive]}
+            onPress={() => setDebtFilter('with_debt')}
+          >
+            <Ionicons 
+              name="alert-circle" 
+              size={16} 
+              color={debtFilter === 'with_debt' ? '#fff' : '#D32F2F'} 
+            />
+            <Text style={[styles.filterChipText, debtFilter === 'with_debt' && styles.filterChipTextActive]}>
+              Con Deuda ({clients.filter(c => c.current_balance > 0).length})
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.filterChip, debtFilter === 'no_debt' && styles.filterChipActive]}
+            onPress={() => setDebtFilter('no_debt')}
+          >
+            <Ionicons 
+              name="checkmark-circle" 
+              size={16} 
+              color={debtFilter === 'no_debt' ? '#fff' : '#388E3C'} 
+            />
+            <Text style={[styles.filterChipText, debtFilter === 'no_debt' && styles.filterChipTextActive]}>
+              Sin Deuda ({clients.filter(c => c.current_balance === 0).length})
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Lista */}
@@ -150,7 +228,7 @@ export default function ClientsListScreen() {
         <ActivityIndicator size="large" color="#2a8c4a" style={{ marginTop: 20 }} />
       ) : (
         <FlatList
-          data={clients}
+          data={filteredClients}
           renderItem={renderItem}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
@@ -185,8 +263,25 @@ const styles = StyleSheet.create({
     paddingTop: 50,
     paddingBottom: 15,
     paddingHorizontal: 20,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
-  headerTitle: { color: 'white', fontSize: 20, fontWeight: 'bold' },
+  headerTitle: { color: 'white', fontSize: 20, fontWeight: 'bold', flex: 1 },
+  cobranzasButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    gap: 6,
+  },
+  cobranzasButtonText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
   
   searchContainer: { padding: 16, paddingBottom: 8 },
   searchBar: {
@@ -198,6 +293,38 @@ const styles = StyleSheet.create({
     shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 2, elevation: 2
   },
   searchInput: { flex: 1, marginLeft: 10, fontSize: 16 },
+
+  // Filter Chips
+  filterChipsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap', // Permite que se envuelvan a la siguiente línea
+    gap: 8,
+    marginTop: 12,
+  },
+  filterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#F5F5F5',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    minWidth: 90, // Ancho mínimo para que se vean bien
+  },
+  filterChipActive: {
+    backgroundColor: '#2a8c4a',
+    borderColor: '#2a8c4a',
+  },
+  filterChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#666',
+  },
+  filterChipTextActive: {
+    color: '#fff',
+  },
 
   listContent: { padding: 16, paddingBottom: 80 }, // Padding bottom extra para el FAB
   

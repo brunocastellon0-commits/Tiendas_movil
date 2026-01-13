@@ -1,12 +1,20 @@
-import React, { useState } from 'react';
-import { 
-  View, Text, TextInput, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator 
-} from 'react-native';
-import { useRouter } from 'expo-router';
-import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
-import { clientService } from '../../services/ClienteService';
+import * as Location from 'expo-location';
+import { useRouter } from 'expo-router';
+import React, { useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text, TextInput,
+  TouchableOpacity,
+  View
+} from 'react-native';
 import { supabase } from '../../lib/supabase';
+import { clientService } from '../../services/ClienteService';
 
 export default function RegisterClientScreen() {
   const router = useRouter();
@@ -36,7 +44,13 @@ export default function RegisterClientScreen() {
         return;
       }
 
-      let location = await Location.getCurrentPositionAsync({});
+      // 🎯 IMPORTANTE: Usar precisión ALTA para ubicaciones exactas de tiendas
+      // High accuracy = GPS puro (~10m precisión)
+      // Balanced = GPS + WiFi/Celular (~100m precisión)
+      let location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High
+      });
+      
       setForm(prev => ({
         ...prev,
         latitude: location.coords.latitude,
@@ -87,7 +101,12 @@ export default function RegisterClientScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView 
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
+      enabled={Platform.OS === 'ios'}
+    >
       {/* Header Tipo Figma (Rojo) */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()}>
@@ -97,7 +116,12 @@ export default function RegisterClientScreen() {
         <View style={{ width: 24 }} /> 
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        bounces={true}
+      >
         
         {/* 🗺️ Sección Ubicación (Como en tu diseño) */}
         <View style={styles.card}>
@@ -229,7 +253,7 @@ export default function RegisterClientScreen() {
         </TouchableOpacity>
 
       </ScrollView>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

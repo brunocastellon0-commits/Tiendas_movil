@@ -1,20 +1,19 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  ScrollView, 
-  TextInput,
-  TouchableOpacity,
-  Alert,
-  ActivityIndicator,
-  FlatList
-} from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import { supabase } from '../../lib/supabase';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import {
+    ActivityIndicator,
+    Alert,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
+} from 'react-native';
 import { useAuth } from '../../contexts/AuthContext';
+import { supabase } from '../../lib/supabase';
 
 // --- Interfaces basadas en tus Tablas Reales ---
 
@@ -48,6 +47,7 @@ export default function NuevoPedido() {
   const [loadingData, setLoadingData] = useState(true);
   const [saving, setSaving] = useState(false);
   const [observation, setObservation] = useState('');
+  const [tipoPago, setTipoPago] = useState<'Contado' | 'Crédito'>('Contado'); // Método de pago
 
   // 1. Carga Inicial (Cliente + Productos)
   useEffect(() => {
@@ -129,16 +129,16 @@ export default function NuevoPedido() {
         numero_documento: Math.floor(Date.now() / 1000), // Generación temporal de Nro
         fecha_pedido: new Date().toISOString(),
         tipo_documento_pedido: 'Nota de Venta',
-        tipo_pago: 'Contado',
+        tipo_pago: tipoPago,
         almacen: 'Central',   // Valor por defecto según tu negocio
         sucursal: 'Principal', // Valor por defecto
-        dias_plazo: 0,
+        dias_plazo: tipoPago === 'Crédito' ? 30 : 0, // Si es crédito, 30 días
         
         total_venta: calculateTotal(),
         descuento_porcentaje: 0,
         descuento_monto: 0,
         observacion: observation,
-        estado: 'Pendiente',
+        estado: tipoPago === 'Contado' ? 'Pagado' : 'Pendiente', // Contado = Pagado, Crédito = Pendiente
         total_peso: 0,
         interes: '0',
         
@@ -274,6 +274,52 @@ export default function NuevoPedido() {
                   </Text>
                 </View>
               ))}
+
+              {/* Método de Pago */}
+              <View style={styles.obsBox}>
+                <Text style={styles.label}>Método de Pago:</Text>
+                <View style={styles.paymentOptions}>
+                  <TouchableOpacity 
+                    style={[
+                      styles.paymentButton, 
+                      tipoPago === 'Contado' && styles.paymentButtonActive
+                    ]}
+                    onPress={() => setTipoPago('Contado')}
+                  >
+                    <Ionicons 
+                      name="cash" 
+                      size={24} 
+                      color={tipoPago === 'Contado' ? '#2a8c4a' : '#666'} 
+                    />
+                    <Text style={[
+                      styles.paymentText,
+                      tipoPago === 'Contado' && styles.paymentTextActive
+                    ]}>
+                      Contado
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity 
+                    style={[
+                      styles.paymentButton, 
+                      tipoPago === 'Crédito' && styles.paymentButtonActive
+                    ]}
+                    onPress={() => setTipoPago('Crédito')}
+                  >
+                    <Ionicons 
+                      name="card" 
+                      size={24} 
+                      color={tipoPago === 'Crédito' ? '#2a8c4a' : '#666'} 
+                    />
+                    <Text style={[
+                      styles.paymentText,
+                      tipoPago === 'Crédito' && styles.paymentTextActive
+                    ]}>
+                      Crédito
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
 
               <View style={styles.obsBox}>
                 <Text style={styles.label}>Observaciones:</Text>
@@ -431,4 +477,34 @@ const styles = StyleSheet.create({
   },
   disabledBtn: { opacity: 0.6 },
   saveBtnText: { color: '#FFF', fontSize: 16, fontWeight: 'bold' },
+  
+  // Estilos de método de pago
+  paymentOptions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  paymentButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F9F9F9',
+    borderWidth: 2,
+    borderColor: '#E0E0E0',
+    borderRadius: 10,
+    padding: 15,
+    gap: 8,
+  },
+  paymentButtonActive: {
+    backgroundColor: '#E8F5E9',
+    borderColor: '#2a8c4a',
+  },
+  paymentText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#666',
+  },
+  paymentTextActive: {
+    color: '#2a8c4a',
+  },
 });

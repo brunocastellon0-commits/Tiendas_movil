@@ -1,10 +1,18 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  View, Text, TextInput, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator 
-} from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text, TextInput,
+  TouchableOpacity,
+  View
+} from 'react-native';
 import { clientService } from '../../../services/ClienteService';
 
 export default function EditClientScreen() {
@@ -70,7 +78,13 @@ export default function EditClientScreen() {
         return;
       }
 
-      let location = await Location.getCurrentPositionAsync({});
+      // 🎯 IMPORTANTE: Usar precisión ALTA para ubicaciones exactas de tiendas
+      // High accuracy = GPS puro (~10m precisión)
+      // Balanced = GPS + WiFi/Celular (~100m precisión)
+      let location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High
+      });
+      
       setForm(prev => ({
         ...prev,
         latitude: location.coords.latitude,
@@ -122,7 +136,12 @@ export default function EditClientScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView 
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
+      enabled={Platform.OS === 'ios'}
+    >
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={24} color="white" />
@@ -131,7 +150,12 @@ export default function EditClientScreen() {
         <View style={{ width: 24 }} /> 
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        bounces={true}
+      >
         
         {/* 🗺️ Sección Ubicación */}
         <View style={styles.card}>
@@ -263,7 +287,7 @@ export default function EditClientScreen() {
         </TouchableOpacity>
 
       </ScrollView>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

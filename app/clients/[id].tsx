@@ -1,12 +1,19 @@
-import React, { useEffect, useState } from 'react';
-import { 
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, TextInput, Modal
-} from 'react-native';
-import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import {
+    ActivityIndicator, Alert,
+    Modal,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
+} from 'react-native';
+import { useVisitTracker } from '../../hooks/hookVisita';
 import { clientService } from '../../services/ClienteService';
 import { Client } from '../../types/Cliente.interface';
-import { useVisitTracker } from '../../hooks/hookVisita';
 
 export default function ClientDetailScreen() {
   const { id, autoStartVisit } = useLocalSearchParams();
@@ -148,35 +155,55 @@ export default function ClientDetailScreen() {
               <Ionicons name="map" size={40} color="#ccc" />
               <Text style={styles.mapText}>Vista previa del mapa</Text>
            </View>
-           <View style={styles.mapActions}>
-              <TouchableOpacity style={styles.mapBtn} onPress={openMaps}>
-                <Ionicons name="navigate-circle-outline" size={20} color="#2a8c4a" />
-                <Text style={styles.mapBtnText}>Ver en mapa</Text>
-              </TouchableOpacity>
-              <View style={styles.dividerVertical} />
-              <TouchableOpacity style={styles.mapBtn}>
-                <Ionicons name="storefront-outline" size={20} color="#666" />
-                <Text style={styles.mapBtnTextGray}>Clientes cerca</Text>
-              </TouchableOpacity>
-           </View>
+           <TouchableOpacity style={styles.mapActionCenter} onPress={openMaps}>
+             <Ionicons name="navigate-circle-outline" size={20} color="#2a8c4a" />
+             <Text style={styles.mapBtnText}>Ver en mapa</Text>
+           </TouchableOpacity>
         </View>
 
         {/* Información Financiera */}
         <View style={styles.sectionCard}>
           <Text style={styles.sectionTitle}>💲 Información Financiera</Text>
           
-          <InfoRow label="Límite de Crédito" value={`Bs. ${client.credit_limit?.toFixed(2)}`} isMoney />
+          <InfoRow label="Límite de Crédito" value={`Bs. ${client.credit_limit?.toFixed(2) || '0.00'}`} isMoney />
           <InfoRow label="Días de Plazo" value={`${client.credit_days || 0} días`} />
-          <InfoRow label="Saldo Actual" value={`Bs. ${client.current_balance?.toFixed(2)}`} isMoney highlight />
-          <InfoRow label="Cuenta Contable" value="110201-001" /> 
+          <InfoRow label="Saldo Actual" value={`Bs. ${client.current_balance?.toFixed(2) || '0.00'}`} isMoney highlight />
+          <InfoRow label="Saldo Inicial" value={`Bs. ${client.initial_balance?.toFixed(2) || '0.00'}`} isMoney />
+          {client.accounting_account && <InfoRow label="Cuenta Contable" value={client.accounting_account} />}
         </View>
 
-        {/* 👤 Representante y Contacto */}
+        {/* 👤 Información de Contacto */}
         <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>👤 Contacto</Text>
+          <Text style={styles.sectionTitle}>👤 Información de Contacto</Text>
+          <InfoRow label="Código" value={client.code || 'S/C'} />
+          <InfoRow label="Nombre del Negocio" value={client.business_name || client.name} />
           <InfoRow label="Dirección" value={client.address || 'No registrada'} />
+          {client.address_ref_1 && <InfoRow label="Referencia 1" value={client.address_ref_1} />}
+          {client.address_ref_2 && <InfoRow label="Referencia 2" value={client.address_ref_2} />}
+          {client.address_ref_3 && <InfoRow label="Referencia 3" value={client.address_ref_3} />}
           <InfoRow label="Teléfono" value={client.phones || 'S/N'} />
+          <InfoRow label="Fax" value={client.fax || 'S/N'} />
+        </View>
+
+        {/* 📋 Información Fiscal y Legal */}
+        <View style={styles.sectionCard}>
+          <Text style={styles.sectionTitle}>📋 Información Fiscal</Text>
           <InfoRow label="NIT/CI" value={client.tax_id || 'S/N'} />
+          {client.tax_id_complement && <InfoRow label="Complemento" value={client.tax_id_complement} />}
+          {client.representative && <InfoRow label="Representante Legal" value={client.representative} />}
+          {client.representative_ci && <InfoRow label="CI Representante" value={client.representative_ci} />}
+        </View>
+
+        {/* 🏢 Información del Negocio */}
+        <View style={styles.sectionCard}>
+          <Text style={styles.sectionTitle}>🏢 Datos del Negocio</Text>
+          {client.zone_name && <InfoRow label="Zona" value={client.zone_name} />}
+          {client.branch_name && <InfoRow label="Sucursal" value={client.branch_name} />}
+          {client.category && <InfoRow label="Categoría" value={client.category} />}
+          {client.city && <InfoRow label="Ciudad" value={client.city} />}
+          {client.client_type && <InfoRow label="Tipo de Cliente" value={client.client_type} />}
+          {client.document_type && <InfoRow label="Tipo de Documento" value={client.document_type} />}
+          {client.payment_method && <InfoRow label="Método de Pago" value={client.payment_method} />}
         </View>
 
       </ScrollView>
@@ -378,11 +405,17 @@ const styles = StyleSheet.create({
   },
   mapPlaceholder: { height: 120, backgroundColor: '#EEE', alignItems: 'center', justifyContent: 'center' },
   mapText: { color: '#888', marginTop: 8 },
-  mapActions: { flexDirection: 'row', padding: 12 },
-  mapBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
-  mapBtnText: { color: '#2a8c4a', fontWeight: '600' },
-  mapBtnTextGray: { color: '#666', fontWeight: '600' },
-  dividerVertical: { width: 1, backgroundColor: '#EEE' },
+  mapActionCenter: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    gap: 8, 
+    padding: 14,
+    backgroundColor: '#F0FDF4',
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB'
+  },
+  mapBtnText: { color: '#2a8c4a', fontWeight: '600', fontSize: 15 },
 
   // Info Card
   sectionCard: {

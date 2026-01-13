@@ -5,6 +5,7 @@
 export interface Client {
   id: string;              // UUID único generado por Postgres
   created_at: string;      // Fecha ISO
+  updated_at?: string | null; // Última actualización
   
   // Identificación
   code: string;            // Código legacy (ej: 0-00003)
@@ -18,7 +19,11 @@ export interface Client {
   
   // Contacto
   address?: string | null;
+  address_ref_1?: string | null; // Referencia de dirección 1
+  address_ref_2?: string | null; // Referencia de dirección 2
+  address_ref_3?: string | null; // Referencia de dirección 3
   phones?: string | null;
+  fax?: string | null;
   
   // Ubicación (PostGIS devuelve esto como string WKT o GeoJSON, o null)
   location?: string | any; 
@@ -30,12 +35,22 @@ export interface Client {
   branch_name?: string | null;
   zone_name?: string | null;
   vendor_id: string;       // UUID del preventista asignado
+  
+  // Representante Legal
+  representative?: string | null;
+  representative_ci?: string | null;
 
   // Financiero
   credit_limit: number;
   credit_days?: number;
   current_balance: number; // Saldo actual (Deuda)
   initial_balance?: number;
+  accounting_account?: string | null; // Cuenta contable
+  
+  // Tipos de cliente y documento
+  client_type?: string | null; // Tipo de cliente
+  document_type?: string | null; // Tipo de documento
+  payment_method?: string | null; // Método de pago preferido
 }
 
 /**
