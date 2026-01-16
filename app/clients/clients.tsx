@@ -1,13 +1,20 @@
-import React, { useState, useCallback, useMemo } from 'react';
-import {
-  View, Text, FlatList, StyleSheet, TouchableOpacity, TextInput,
-  ActivityIndicator, RefreshControl, StatusBar, Alert
-} from 'react-native';
-import { useRouter, useFocusEffect } from 'expo-router';
-import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
+import { FontAwesome5, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useTheme } from '../../contexts/ThemeContext';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useMemo, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  RefreshControl, StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTheme } from '../../contexts/ThemeContext';
 
 // Servicios
 import { clientService } from '../../services/ClienteService';
@@ -87,6 +94,7 @@ export default function ClientsListScreen() {
   const { colors, isDark } = useTheme();
 
   const [clients, setClients] = useState<Client[]>([]);
+  const [filteredClients, setFilteredClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');

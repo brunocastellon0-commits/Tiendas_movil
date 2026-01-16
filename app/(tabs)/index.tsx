@@ -1,15 +1,22 @@
-import React, { useState, useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, StatusBar, Image, Dimensions
+  ActivityIndicator,
+  Dimensions,
+  Image,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 // Librerías de iconos (Ionicons para UI general, MaterialCommunityIcons para cosas específicas como camiones)
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 // SafeAreaView asegura que el contenido no choque con el "notch" o la barra de estado del celular
 import { SafeAreaView } from 'react-native-safe-area-context';
 // Hooks propios y de navegación
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
-import { useRouter, useFocusEffect } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 // Componente para degradados de color (usado en el Header)
 import { LinearGradient } from 'expo-linear-gradient';
@@ -19,7 +26,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 // Definimos la estructura de datos de un Pedido (TypeScript)
 interface Order {
   id: string;
-  client_id: string;
+  clients_id: string;
   total_amount: number;
   status: string;
   created_at: string;
@@ -70,35 +77,81 @@ export default function HomeScreen() {
 
   const fetchOrders = async () => {
     try {
-      if (!session?.user) return; // Si no hay usuario, no hacemos nada
+      console.log('🔄 Iniciando fetchOrders...', { isAdmin, hasSession: !!session?.user });
+      
+      if (!session?.user) {
+        console.log('⚠️ No hay sesión, saliendo...');
+        return;
+      }
 
-      const today = new Date().toISOString().split('T')[0]; // Fecha de hoy (YYYY-MM-DD)
+      const today = new Date().toISOString().split('T')[0];
+      console.log('📅 Fecha de hoy:', today);
 
-      // Consulta a Supabase: Pedidos del usuario actual, de hoy en adelante
-      const { data, error } = await supabase
-        .from('pedidos_auxiliares')
-        .select(`id, client_id, total_amount, status, created_at, clients:client_id ( name )`)
-        .eq('seller_id', session.user.id)
-        .gte('created_at', `${today}T00:00:00`)
-        .order('created_at', { ascending: false })
-        .limit(10); // Traemos solo los últimos 10
+      // Consulta a Supabase: Pedidos con lógica de admin (SIN JOIN por ahora)
+      let ordersQuery = supabase
+        .from('pedidos')
+        .select(`
+          id, 
+          clients_id, 
+          total_venta, 
+          estado, 
+          crated_at
+        `)
+        .gte('crated_at', `${today}T00:00:00`)
+        .order('crated_at', { ascending: false })
+        .limit(10);
+
+      // Solo filtrar por empleado_id si NO es admin
+      if (!isAdmin) {
+        ordersQuery = ordersQuery.eq('empleado_id', session.user.id);
+        console.log('🔒 Filtrando por empleado:', session.user.id);
+      } else {
+        console.log('👨‍💼 Admin: cargando TODOS los pedidos');
+      }
+
+      const { data, error } = await ordersQuery;
+
+      console.log('📦 Respuesta de Supabase:', {
+        hayDatos: !!data,
+        cantidadPedidos: data?.length || 0,
+        error: error?.message || null
+      });
+
+      if (error) {
+        console.error('❌ Error en query:', error);
+        return;
+      }
 
       if (data) {
-        // Formateamos los datos (a veces Supabase devuelve arrays en relaciones)
+        // Formateamos los datos
         const ordersWithClients = data.map(order => ({
           ...order,
-          clients: Array.isArray(order.clients) ? order.clients[0] : order.clients
+          client_id: order.clients_id, // Mapear para compatibilidad
+          total_amount: order.total_venta,
+          status: order.estado,
+          created_at: order.crated_at,
+          clients: { name: 'Cliente' } // Por ahora mostramos texto genérico
         }));
         setOrders(ordersWithClients as Order[]);
 
-        // Calculamos estadísticas al vuelo (suma de ventas, conteo de estados)
+        // Calculamos estadísticas
         setStats({
-          totalSales: data.reduce((sum, order) => sum + (order.total_amount || 0), 0),
-          pendingCount: data.filter(o => o.status === 'pending').length,
-          deliveredCount: data.filter(o => o.status === 'delivered').length,
+          totalSales: data.reduce((sum, order) => sum + (order.total_venta || 0), 0),
+          pendingCount: data.filter(o => o.estado === 'pending' || o.estado === 'pendiente').length,
+          deliveredCount: data.filter(o => o.estado === 'delivered' || o.estado === 'entregado').length,
+        });
+        
+        console.log('✅ Pedidos cargados en home:', {
+          isAdmin,
+          count: data.length,
+          total: data.reduce((sum, order) => sum + (order.total_venta || 0), 0)
         });
       }
-    } catch (error) { console.error(error); } finally { setLoading(false); }
+    } catch (error) { 
+      console.error('💥 Error en fetchOrders:', error); 
+    } finally { 
+      setLoading(false); 
+    }
   };
 
   // useFocusEffect ejecuta fetchOrders cada vez que la pantalla vuelve a tener el foco (al volver atrás)

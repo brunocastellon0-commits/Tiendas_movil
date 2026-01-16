@@ -3,14 +3,20 @@ import { Client, CreateClientDTO } from '../types/Cliente.interface';
 
 export const clientService = {
   async createClient(data: CreateClientDTO) {
-    // 1. Convertir coordenadas a formato PostGIS (WKT)
-    // Formato: POINT(LONGITUD LATITUD) -> Ojo: Longitud va primero
+    // 🌍 Formato WKT (Well-Known Text) para PostGIS
+    // CRÍTICO: POINT(LONGITUDE LATITUDE) - El orden es (X, Y)
+    // Es decir: LONGITUDE primero, LATITUDE segundo
+    // NO invertir este orden, o el punto aparecerá en un lugar incorrecto
     let locationVal = null;
     if (data.latitude && data.longitude) {
-      locationVal = `SRID=4326;POINT(${data.longitude} ${data.latitude})`;
+      // Validar que no sean coordenadas nulas (0,0 = océano frente a África)
+      if (data.latitude !== 0 && data.longitude !== 0) {
+        // Formato: POINT(longitude latitude)
+        // Ejemplo: POINT(-66.1568 -17.3935) = Cochabamba
+        locationVal = `POINT(${data.longitude} ${data.latitude})`;
+      }
     }
 
-    // 2. Preparar payload para Supabase
     const payload = {
       code: data.code,
       name: data.name,
@@ -18,10 +24,10 @@ export const clientService = {
       tax_id: data.tax_id,
       address: data.address,
       phones: data.phones,
-      location: locationVal, // Campo geográfico
+      location: locationVal,
       credit_limit: data.credit_limit || 0,
       vendor_id: data.vendor_id,
-      status: 'Vigente', // Default
+      status: 'Vigente',
       initial_balance: 0,
       current_balance: 0
     };
@@ -35,6 +41,7 @@ export const clientService = {
     if (error) {
       throw new Error(error.message);
     }
+    
     return newClient;
   },
   
@@ -83,10 +90,16 @@ export const clientService = {
   },
 
   async updateClient(id: string, data: Partial<CreateClientDTO>) {
-    // Convertir coordenadas a PostGIS si están presentes
+    // 🌍 Formato WKT (Well-Known Text) para PostGIS
+    // CRÍTICO: POINT(LONGITUDE LATITUDE) - El orden es (X, Y)
     let locationVal = undefined;
     if (data.latitude && data.longitude) {
-      locationVal = `SRID=4326;POINT(${data.longitude} ${data.latitude})`;
+      // Validar que no sean coordenadas nulas (0,0 = océano frente a África)
+      if (data.latitude !== 0 && data.longitude !== 0) {
+        // Formato: SRID=4326;POINT(longitude latitude)
+        // SRID=4326 es el estándar WGS84 usado por GPS
+        locationVal = `SRID=4326;POINT(${data.longitude} ${data.latitude})`;
+      }
     }
 
     const payload: any = {
@@ -142,4 +155,3 @@ export const clientService = {
     }
   }
 };
-

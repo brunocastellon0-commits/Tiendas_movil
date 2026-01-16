@@ -1,349 +1,363 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  ScrollView, 
-  TextInput,
-  TouchableOpacity,
-  Alert,
-  ActivityIndicator
-} from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import { supabase } from '../../lib/supabase';
-import { Client } from '../../types/Cliente.interface';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import {
+    ActivityIndicator,
+    Alert,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
+} from 'react-native';
 import { useAuth } from '../../contexts/AuthContext';
+import { supabase } from '../../lib/supabase';
 
-// Estructura para los items que se guardarán en JSONB
-interface OrderItem {
-  name: string;      // Nombre del producto
-  qty: number;       // Cantidad
-  price: number;     // Precio unitario
-}
+// --- Interfaces basadas en tus Tablas Reales ---
 
-// Producto con ID temporal para la UI
-interface ProductWithId extends OrderItem {
+// Tabla 'productos'
+interface Product {
   id: string;
+  nombre_producto: string;
+  codigo_producto: string;
+  precio_base_venta: number;
+  unidad_base_venta: string;
+  stock_actual: number;
+  activo: boolean;
 }
 
-// Productos disponibles (hardcoded mientras no hay tabla de productos)
-const AVAILABLE_PRODUCTS: ProductWithId[] = [
-  { id: '1', name: 'Coca Cola 2L', qty: 0, price: 10 },
-  { id: '2', name: 'Coca Cola 1L', qty: 0, price: 6 },
-  { id: '3', name: 'Pepsi 2L', qty: 0, price: 9 },
-  { id: '4', name: 'Pepsi 1L', qty: 0, price: 5 },
-  { id: '5', name: 'Agua Vital 2L', qty: 0, price: 5 },
-  { id: '6', name: 'Agua Vital 500ml', qty: 0, price: 2 },
-  { id: '7', name: 'Fanta Naranja 2L', qty: 0, price: 9 },
-  { id: '8', name: 'Sprite 2L', qty: 0, price: 9 },
-  { id: '9', name: 'Cerveza Paceña', qty: 0, price: 7 },
-  { id: '10', name: 'Cerveza Huari', qty: 0, price: 6 },
-  { id: '11', name: 'Jugo Del Valle Naranja 1L', qty: 0, price: 8 },
-  { id: '12', name: 'Jugo Del Valle Durazno 1L', qty: 0, price: 8 },
-];
+// Extensión para el manejo en el carrito local
+interface CartItem extends Product {
+  qty: number;
+}
 
 export default function NuevoPedido() {
   const router = useRouter();
   const { session } = useAuth();
-  const { clientId, visitId } = useLocalSearchParams();
+  const { clientId } = useLocalSearchParams(); 
   
-  const [client, setClient] = useState<Client | null>(null);
-  const [orderItems, setOrderItems] = useState<ProductWithId[]>([]);
+  // Estados
+  const [client, setClient] = useState<any | null>(null);
+  const [products, setProducts] = useState<Product[]>([]); // Lista real de BD
+  const [cart, setCart] = useState<CartItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [loading, setLoading] = useState(true);
+  
+  const [loadingData, setLoadingData] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [deliveryDate, setDeliveryDate] = useState('');
+  const [observation, setObservation] = useState('');
+  const [tipoPago, setTipoPago] = useState<'Contado' | 'Crédito'>('Contado'); // Método de pago
 
-  // Cargar información del cliente
+  // 1. Carga Inicial (Cliente + Productos)
   useEffect(() => {
-    if (clientId) {
-      loadClient();
-    } else {
-      Alert.alert('Error', 'No se especificó un cliente', [
-        { text: 'OK', onPress: () => router.back() }
-      ]);
+    if (!clientId) {
+      Alert.alert('Error', 'Falta el ID del cliente');
+      router.back();
+      return;
     }
+    loadInitialData();
   }, [clientId]);
 
-  const loadClient = async () => {
+  const loadInitialData = async () => {
     try {
-      setLoading(true);
+      setLoadingData(true);
 
+      // A. Cargar Cliente
       const { data: clientData, error: clientError } = await supabase
         .from('clients')
         .select('*')
         .eq('id', clientId)
         .single();
-
       if (clientError) throw clientError;
       setClient(clientData);
-    } catch (error) {
+
+      // B. Cargar Productos Activos (Tabla 'productos')
+      const { data: prodData, error: prodError } = await supabase
+        .from('productos')
+        .select('id, nombre_producto, codigo_producto, precio_base_venta, unidad_base_venta, stock_actual, activo')
+        .eq('activo', true) // Solo productos activos
+        .order('nombre_producto', { ascending: true });
+        
+      if (prodError) throw prodError;
+      setProducts(prodData || []);
+
+    } catch (error: any) {
       console.error('Error cargando datos:', error);
-      Alert.alert('Error', 'No se pudo cargar la información del cliente');
+      Alert.alert('Error', 'No se pudieron cargar los datos iniciales');
     } finally {
-      setLoading(false);
+      setLoadingData(false);
     }
   };
 
-  const addProductToOrder = (product: ProductWithId) => {
-    const existingItem = orderItems.find(item => item.id === product.id);
-    
-    if (existingItem) {
-      // Incrementar cantidad
-      setOrderItems(orderItems.map(item =>
-        item.id === product.id
-          ? { ...item, qty: item.qty + 1 }
-          : item
-      ));
+  // 2. Lógica del Carrito
+  const addToCart = (product: Product) => {
+    const existing = cart.find(p => p.id === product.id);
+    if (existing) {
+      updateQty(product.id, existing.qty + 1);
     } else {
-      // Agregar nuevo producto con cantidad 1
-      setOrderItems([
-        ...orderItems,
-        { ...product, qty: 1 }
-      ]);
+      setCart([...cart, { ...product, qty: 1 }]);
     }
   };
 
-  const updateQuantity = (productId: string, newQuantity: number) => {
-    if (newQuantity <= 0) {
-      setOrderItems(orderItems.filter(item => item.id !== productId));
+  const updateQty = (id: string, newQty: number) => {
+    if (newQty <= 0) {
+      setCart(cart.filter(p => p.id !== id));
     } else {
-      setOrderItems(orderItems.map(item =>
-        item.id === productId
-          ? { ...item, qty: newQuantity }
-          : item
-      ));
+      setCart(cart.map(p => p.id === id ? { ...p, qty: newQty } : p));
     }
   };
 
-  const removeItem = (productId: string) => {
-    setOrderItems(orderItems.filter(item => item.id !== productId));
-  };
+  const calculateTotal = () => cart.reduce((acc, item) => acc + (item.qty * item.precio_base_venta), 0);
 
-  const calculateTotal = () => {
-    return orderItems.reduce((sum, item) => sum + (item.qty * item.price), 0);
-  };
-
+  // 3. GUARDAR PEDIDO (Header + Detalle)
   const saveOrder = async () => {
-    if (orderItems.length === 0) {
-      Alert.alert('Error', 'Agrega al menos un producto al pedido');
-      return;
-    }
-
-    if (!session?.user) {
-      Alert.alert('Error', 'No se pudo identificar al usuario');
-      return;
-    }
+    if (cart.length === 0) return Alert.alert('Carrito vacío', 'Agrega productos antes de guardar.');
+    if (!session?.user) return Alert.alert('Error', 'Sesión inválida');
 
     setSaving(true);
     try {
-      // A. Capturar ubicación GPS
-      let { status } = await Location.requestForegroundPermissionsAsync();
+      // A. Obtener GPS
+      const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert(
-          "Permiso Requerido", 
-          "La ubicación es necesaria para validar el pedido y mostrarlo en el mapa."
-        );
-        setSaving(false);
-        return;
+        throw new Error('Permiso de ubicación denegado');
       }
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
 
-      // Obtener coordenadas con alta precisión
-      const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High
-      });
-
-      // B. Convertir los items al formato JSONB
-      const itemsForDB: OrderItem[] = orderItems.map(item => ({
-        name: item.name,
-        qty: item.qty,
-        price: item.price
-      }));
-
-      // C. Preparar el payload
-      const orderPayload: any = {
-        client_id: clientId,
-        seller_id: session.user.id,
-        items: itemsForDB,
-        total_amount: calculateTotal(),
-        status: 'pending',
-        order_location: `POINT(${location.coords.longitude} ${location.coords.latitude})`
+      // B. Insertar Cabecera (Tabla 'pedidos')
+      const orderPayload = {
+        numero_documento: Math.floor(Date.now() / 1000), // Generación temporal de Nro
+        fecha_pedido: new Date().toISOString(),
+        tipo_documento_pedido: 'Nota de Venta',
+        tipo_pago: tipoPago,
+        almacen: 'Central',   // Valor por defecto según tu negocio
+        sucursal: 'Principal', // Valor por defecto
+        dias_plazo: tipoPago === 'Crédito' ? 30 : 0, // Si es crédito, 30 días
+        
+        total_venta: calculateTotal(),
+        descuento_porcentaje: 0,
+        descuento_monto: 0,
+        observacion: observation,
+        estado: tipoPago === 'Contado' ? 'Pagado' : 'Pendiente', // Contado = Pagado, Crédito = Pendiente
+        total_peso: 0,
+        interes: '0',
+        
+        ubicacion_venta: `POINT(${loc.coords.longitude} ${loc.coords.latitude})`,
+        clients_id: clientId,         // FK Cliente
+        empleado_id: session.user.id  // FK Empleado
       };
 
-      if (visitId) {
-        orderPayload.visit_id = visitId;
-      }
-
-      if (deliveryDate) {
-        orderPayload.delivery_date = deliveryDate;
-      }
-
       const { data: orderData, error: orderError } = await supabase
-        .from('pedidos_auxiliares')
+        .from('pedidos')
         .insert(orderPayload)
-        .select()
+        .select('id') // Necesitamos el ID para los detalles
         .single();
 
       if (orderError) throw orderError;
+      const newOrderId = orderData.id;
 
-      Alert.alert(
-        '✅ Pedido Creado',
-        `Pedido #${orderData.id} registrado correctamente\n` +
-        `Total: Bs. ${calculateTotal().toFixed(2)}`,
-        [
-          {
-            text: 'OK',
-            onPress: () => router.back()
-          }
-        ]
-      );
+      // C. Insertar Detalles (Tabla 'detalle_pedido')
+      const detailsPayload = cart.map(item => ({
+        pedido_id: newOrderId,          // FK al pedido recién creado
+        producto_id: item.id,           // FK al producto
+        
+        unidad_seleccionada: item.unidad_base_venta || 'UNID',
+        factor_aplicado: 1,             // Por defecto 1 si no manejas conversiones complejas
+        precio_unitario: item.precio_base_venta,
+        cantidad: item.qty,
+        subtotal: item.qty * item.precio_base_venta
+      }));
+
+      const { error: detailsError } = await supabase
+        .from('detalle_pedido')
+        .insert(detailsPayload);
+
+      if (detailsError) {
+        // Nota: En producción, aquí podrías borrar el pedido cabecera si fallan los detalles (Rollback manual)
+        throw detailsError;
+      }
+
+      Alert.alert('¡Éxito!', 'Pedido registrado correctamente', [
+        { text: 'OK', onPress: () => router.back() }
+      ]);
+
     } catch (error: any) {
-      Alert.alert('❌ Error', 'No se pudo guardar el pedido: ' + error.message);
+      console.error('Error guardando pedido:', error);
+      Alert.alert('Error', error.message || 'Ocurrió un error al guardar');
     } finally {
       setSaving(false);
     }
   };
 
-  const filteredProducts = AVAILABLE_PRODUCTS.filter(p =>
-    p.name.toLowerCase().includes(searchQuery.toLowerCase())
+  // Filtrado de productos en memoria
+  const filteredProducts = products.filter(p => 
+    p.nombre_producto.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    p.codigo_producto?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  if (loading) {
+  if (loadingData) {
     return (
-      <View style={styles.loadingContainer}>
+      <View style={styles.center}>
         <ActivityIndicator size="large" color="#2a8c4a" />
-        <Text style={styles.loadingText}>Cargando...</Text>
+        <Text style={{marginTop: 10, color: '#666'}}>Cargando catálogo...</Text>
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      {/* Header con información del cliente */}
+      {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
+        <TouchableOpacity onPress={router.back}>
+          <Ionicons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
-        <View style={styles.headerInfo}>
+        <View style={{marginLeft: 15}}>
           <Text style={styles.headerTitle}>Nuevo Pedido</Text>
-          {client && (
-            <View style={styles.clientInfoHeader}>
-              <Text style={styles.clientName}>{client.name}</Text>
-              <Text style={styles.clientCode}>{client.code}</Text>
-            </View>
-          )}
+          <Text style={styles.headerSubtitle}>{client?.name || 'Cliente'}</Text>
         </View>
       </View>
 
-      <ScrollView style={styles.content}>
-        {/* Sección de búsqueda de productos */}
-        <View style={styles.searchSection}>
-          <Text style={styles.sectionTitle}>Agregar Productos</Text>
-          <View style={styles.searchBox}>
-            <Ionicons name="search" size={20} color="#666" />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Buscar producto..."
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-            />
-          </View>
+      <View style={{flex: 1}}>
+        {/* Buscador */}
+        <View style={styles.searchContainer}>
+          <Ionicons name="search" size={20} color="#999" />
+          <TextInput 
+            style={styles.searchInput}
+            placeholder="Buscar producto por nombre o código..."
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+        </View>
 
-          {/* Lista de productos disponibles */}
-          <View style={styles.productsGrid}>
-            {filteredProducts.map(product => (
-              <TouchableOpacity
-                key={product.id}
-                style={styles.productCard}
-                onPress={() => addProductToOrder(product)}
-              >
-                <View style={styles.productInfo}>
-                  <Text style={styles.productName}>{product.name}</Text>
-                  <Text style={styles.productPrice}>Bs. {product.price.toFixed(2)}</Text>
+        <ScrollView style={styles.content}>
+          
+          {/* Grilla de Productos */}
+          <Text style={styles.sectionTitle}>Catálogo</Text>
+          <View style={styles.grid}>
+            {filteredProducts.map(p => (
+              <TouchableOpacity key={p.id} style={styles.prodCard} onPress={() => addToCart(p)}>
+                <View>
+                  <Text style={styles.prodName}>{p.nombre_producto}</Text>
+                  <Text style={styles.prodCode}>{p.codigo_producto}</Text>
                 </View>
-                <Ionicons name="add-circle" size={32} color="#2a8c4a" />
+                <View style={styles.prodFooter}>
+                  <Text style={styles.prodPrice}>Bs {p.precio_base_venta}</Text>
+                  <Ionicons name="add-circle" size={28} color="#2a8c4a" />
+                </View>
               </TouchableOpacity>
             ))}
           </View>
-        </View>
 
-        {/* Carrito / Items del pedido */}
-        {orderItems.length > 0 && (
-          <View style={styles.cartSection}>
-            <Text style={styles.sectionTitle}>Pedido Actual ({orderItems.length} productos)</Text>
-            {orderItems.map(item => (
-              <View key={item.id} style={styles.cartItem}>
-                <View style={styles.cartItemInfo}>
-                  <Text style={styles.cartItemName}>{item.name}</Text>
-                  <Text style={styles.cartItemPrice}>Bs. {item.price.toFixed(2)} c/u</Text>
-                </View>
-                
-                <View style={styles.quantityControls}>
-                  <TouchableOpacity
-                    onPress={() => updateQuantity(item.id, item.qty - 1)}
-                    style={styles.quantityButton}
-                  >
-                    <Ionicons name="remove" size={20} color="#fff" />
-                  </TouchableOpacity>
+          {/* Carrito */}
+          {cart.length > 0 && (
+            <View style={styles.cartContainer}>
+              <Text style={styles.sectionTitle}>Resumen del Pedido</Text>
+              {cart.map(item => (
+                <View key={item.id} style={styles.cartRow}>
+                  <View style={{flex: 1}}>
+                    <Text style={styles.cartName}>{item.nombre_producto}</Text>
+                    <Text style={styles.cartPrice}>Bs {item.precio_base_venta} x {item.qty}</Text>
+                  </View>
                   
-                  <Text style={styles.quantityText}>{item.qty}</Text>
+                  <View style={styles.qtyControls}>
+                    <TouchableOpacity onPress={() => updateQty(item.id, item.qty - 1)}>
+                      <Ionicons name="remove-circle" size={26} color="#ccc" />
+                    </TouchableOpacity>
+                    <Text style={styles.qtyText}>{item.qty}</Text>
+                    <TouchableOpacity onPress={() => updateQty(item.id, item.qty + 1)}>
+                      <Ionicons name="add-circle" size={26} color="#2a8c4a" />
+                    </TouchableOpacity>
+                  </View>
                   
-                  <TouchableOpacity
-                    onPress={() => updateQuantity(item.id, item.qty + 1)}
-                    style={styles.quantityButton}
-                  >
-                    <Ionicons name="add" size={20} color="#fff" />
-                  </TouchableOpacity>
-                </View>
-
-                <View style={styles.cartItemTotal}>
-                  <Text style={styles.subtotalText}>
-                    Bs. {(item.qty * item.price).toFixed(2)}
+                  <Text style={styles.rowTotal}>
+                    Bs {(item.qty * item.precio_base_venta).toFixed(2)}
                   </Text>
-                  <TouchableOpacity
-                    onPress={() => removeItem(item.id)}
-                    style={styles.removeButton}
+                </View>
+              ))}
+
+              {/* Método de Pago */}
+              <View style={styles.obsBox}>
+                <Text style={styles.label}>Método de Pago:</Text>
+                <View style={styles.paymentOptions}>
+                  <TouchableOpacity 
+                    style={[
+                      styles.paymentButton, 
+                      tipoPago === 'Contado' && styles.paymentButtonActive
+                    ]}
+                    onPress={() => setTipoPago('Contado')}
                   >
-                    <Ionicons name="trash-outline" size={20} color="#2a8c4a" />
+                    <Ionicons 
+                      name="cash" 
+                      size={24} 
+                      color={tipoPago === 'Contado' ? '#2a8c4a' : '#666'} 
+                    />
+                    <Text style={[
+                      styles.paymentText,
+                      tipoPago === 'Contado' && styles.paymentTextActive
+                    ]}>
+                      Contado
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity 
+                    style={[
+                      styles.paymentButton, 
+                      tipoPago === 'Crédito' && styles.paymentButtonActive
+                    ]}
+                    onPress={() => setTipoPago('Crédito')}
+                  >
+                    <Ionicons 
+                      name="card" 
+                      size={24} 
+                      color={tipoPago === 'Crédito' ? '#2a8c4a' : '#666'} 
+                    />
+                    <Text style={[
+                      styles.paymentText,
+                      tipoPago === 'Crédito' && styles.paymentTextActive
+                    ]}>
+                      Crédito
+                    </Text>
                   </TouchableOpacity>
                 </View>
               </View>
-            ))}
 
-            {/* Campo de fecha de entrega (opcional) */}
-            <View style={styles.deliverySection}>
-              <Text style={styles.deliveryLabel}>Fecha de entrega (opcional):</Text>
-              <TextInput
-                style={styles.deliveryInput}
-                placeholder="YYYY-MM-DD"
-                value={deliveryDate}
-                onChangeText={setDeliveryDate}
-              />
+              <View style={styles.obsBox}>
+                <Text style={styles.label}>Observaciones:</Text>
+                <TextInput 
+                  style={styles.inputObs}
+                  placeholder="Notas adicionales..."
+                  value={observation}
+                  onChangeText={setObservation}
+                  multiline
+                />
+              </View>
+
+              <View style={styles.totalRow}>
+                <Text style={styles.totalLabel}>TOTAL A PAGAR:</Text>
+                <Text style={styles.totalAmount}>Bs {calculateTotal().toFixed(2)}</Text>
+              </View>
             </View>
-          </View>
-        )}
-      </ScrollView>
+          )}
+          
+          {/* Espacio extra al final para scroll */}
+          <View style={{height: 100}} />
+        </ScrollView>
+      </View>
 
-      {/* Footer con total y botón de confirmar */}
-      {orderItems.length > 0 && (
+      {/* Footer Flotante */}
+      {cart.length > 0 && (
         <View style={styles.footer}>
-          <View style={styles.totalSection}>
-            <Text style={styles.totalLabel}>Total:</Text>
-            <Text style={styles.totalAmount}>Bs. {calculateTotal().toFixed(2)}</Text>
-          </View>
-          <TouchableOpacity
-            style={[styles.confirmButton, saving && styles.confirmButtonDisabled]}
+          <TouchableOpacity 
+            style={[styles.saveBtn, saving && styles.disabledBtn]} 
             onPress={saveOrder}
             disabled={saving}
           >
             {saving ? (
-              <ActivityIndicator color="#fff" />
+              <ActivityIndicator color="#FFF" />
             ) : (
               <>
-                <Ionicons name="checkmark-circle" size={24} color="#fff" />
-                <Text style={styles.confirmText}>Confirmar Pedido</Text>
+                <Ionicons name="checkmark-circle-outline" size={24} color="#FFF" />
+                <Text style={styles.saveBtnText}>Confirmar Pedido</Text>
               </>
             )}
           </TouchableOpacity>
@@ -353,234 +367,144 @@ export default function NuevoPedido() {
   );
 }
 
+// --- Estilos ---
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F9FAFB',
-  },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: '#666',
-  },
+  container: { flex: 1, backgroundColor: '#F5F7FA' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  
   header: {
     backgroundColor: '#2a8c4a',
     paddingTop: 50,
-    paddingBottom: 20,
     paddingHorizontal: 20,
+    paddingBottom: 20,
     flexDirection: 'row',
     alignItems: 'center',
   },
-  backButton: {
-    marginRight: 15,
-  },
-  headerInfo: {
-    flex: 1,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 5,
-  },
-  clientInfoHeader: {
+  headerTitle: { color: '#FFF', fontSize: 20, fontWeight: 'bold' },
+  headerSubtitle: { color: '#E8F5E9', fontSize: 14 },
+  
+  searchContainer: {
     flexDirection: 'row',
+    backgroundColor: '#FFF',
+    margin: 15,
+    padding: 10,
+    borderRadius: 8,
     alignItems: 'center',
-    gap: 10,
+    elevation: 2,
   },
-  clientName: {
-    fontSize: 16,
-    color: '#fff',
-    opacity: 0.9,
-  },
-  clientCode: {
-    fontSize: 14,
-    color: '#fff',
-    opacity: 0.7,
-  },
-  content: {
-    flex: 1,
-  },
-  searchSection: {
-    padding: 20,
-    backgroundColor: '#fff',
-    marginBottom: 10,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1F2937',
-    marginBottom: 15,
-  },
-  searchBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F3F4F6',
+  searchInput: { flex: 1, marginLeft: 10, fontSize: 16 },
+  
+  content: { paddingHorizontal: 15 },
+  sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#333', marginBottom: 10, marginTop: 10 },
+  
+  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+  prodCard: {
+    backgroundColor: '#FFF',
+    width: '48%',
     borderRadius: 10,
-    paddingHorizontal: 15,
-    paddingVertical: 12,
+    padding: 12,
     marginBottom: 15,
-  },
-  searchInput: {
-    flex: 1,
-    marginLeft: 10,
-    fontSize: 16,
-    color: '#1F2937',
-  },
-  productsGrid: {
-    gap: 10,
-  },
-  productCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#F9FAFB',
+    elevation: 2,
+  },
+  prodName: { fontSize: 14, fontWeight: '600', color: '#333', marginBottom: 4 },
+  prodCode: { fontSize: 12, color: '#999', marginBottom: 8 },
+  prodFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  prodPrice: { fontSize: 15, fontWeight: 'bold', color: '#2a8c4a' },
+  
+  cartContainer: {
+    backgroundColor: '#FFF',
+    borderRadius: 12,
     padding: 15,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
+    marginTop: 10,
+    elevation: 3,
   },
-  productInfo: {
-    flex: 1,
-  },
-  productName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1F2937',
-    marginBottom: 4,
-  },
-  productPrice: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#2a8c4a',
-  },
-  cartSection: {
-    padding: 20,
-    backgroundColor: '#fff',
-  },
-  cartItem: {
+  cartRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 15,
+    paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: '#F0F0F0',
   },
-  cartItemInfo: {
-    flex: 1,
-  },
-  cartItemName: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#1F2937',
-    marginBottom: 4,
-  },
-  cartItemPrice: {
+  cartName: { fontSize: 14, color: '#333', fontWeight: '500' },
+  cartPrice: { fontSize: 12, color: '#666' },
+  qtyControls: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 10 },
+  qtyText: { fontSize: 16, fontWeight: 'bold', marginHorizontal: 8, minWidth: 20, textAlign: 'center' },
+  rowTotal: { fontSize: 14, fontWeight: 'bold', color: '#333', width: 70, textAlign: 'right' },
+  
+  obsBox: { marginTop: 15 },
+  label: { fontSize: 12, color: '#666', marginBottom: 5 },
+  inputObs: {
+    backgroundColor: '#F9F9F9',
+    borderRadius: 6,
+    padding: 10,
     fontSize: 14,
-    color: '#6B7280',
+    color: '#333',
+    minHeight: 60,
+    textAlignVertical: 'top',
   },
-  quantityControls: {
+  
+  totalRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 15,
-  },
-  quantityButton: {
-    backgroundColor: '#2a8c4a',
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  quantityText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1F2937',
-    marginHorizontal: 12,
-    minWidth: 30,
-    textAlign: 'center',
-  },
-  cartItemTotal: {
-    alignItems: 'flex-end',
-  },
-  subtotalText: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#2a8c4a',
-    marginBottom: 5,
-  },
-  removeButton: {
-    padding: 5,
-  },
-  deliverySection: {
+    justifyContent: 'space-between',
     marginTop: 20,
     paddingTop: 15,
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
+    borderTopWidth: 2,
+    borderTopColor: '#F0F0F0',
   },
-  deliveryLabel: {
-    fontSize: 14,
-    color: '#6B7280',
-    marginBottom: 8,
-  },
-  deliveryInput: {
-    backgroundColor: '#F3F4F6',
-    borderRadius: 8,
-    paddingHorizontal: 15,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: '#1F2937',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
+  totalLabel: { fontSize: 16, fontWeight: 'bold', color: '#333' },
+  totalAmount: { fontSize: 20, fontWeight: 'bold', color: '#2a8c4a' },
+  
   footer: {
-    backgroundColor: '#fff',
-    paddingHorizontal: 20,
-    paddingVertical: 15,
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#FFF',
+    padding: 15,
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 5,
+    borderTopColor: '#EEE',
+    elevation: 10,
   },
-  totalSection: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 15,
-  },
-  totalLabel: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1F2937',
-  },
-  totalAmount: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#2a8c4a',
-  },
-  confirmButton: {
+  saveBtn: {
     backgroundColor: '#2a8c4a',
+    paddingVertical: 15,
+    borderRadius: 10,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+  },
+  disabledBtn: { opacity: 0.6 },
+  saveBtnText: { color: '#FFF', fontSize: 16, fontWeight: 'bold' },
+  
+  // Estilos de método de pago
+  paymentOptions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  paymentButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 15,
+    backgroundColor: '#F9F9F9',
+    borderWidth: 2,
+    borderColor: '#E0E0E0',
     borderRadius: 10,
-    gap: 10,
+    padding: 15,
+    gap: 8,
   },
-  confirmButtonDisabled: {
-    opacity: 0.6,
+  paymentButtonActive: {
+    backgroundColor: '#E8F5E9',
+    borderColor: '#2a8c4a',
   },
-  confirmText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
+  paymentText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#666',
+  },
+  paymentTextActive: {
+    color: '#2a8c4a',
   },
 });

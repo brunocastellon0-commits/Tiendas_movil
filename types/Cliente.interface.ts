@@ -5,7 +5,8 @@
 export interface Client {
   id: string;              // UUID único generado por Postgres
   created_at: string;      // Fecha ISO
-
+  updated_at?: string | null; // Última actualización
+  
   // Identificación
   code: string;            // Código legacy (ej: 0-00003)
   legacy_id?: number | null;
@@ -19,6 +20,9 @@ export interface Client {
 
   // Contacto
   address?: string | null;
+  address_ref_1?: string | null; // Referencia de dirección 1
+  address_ref_2?: string | null; // Referencia de dirección 2
+  address_ref_3?: string | null; // Referencia de dirección 3
   phones?: string | null;
   fax?: string | null;      // Nuevo
   email?: string | null;    // Nuevo

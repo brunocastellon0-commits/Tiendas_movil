@@ -18,6 +18,7 @@
         "backgroundImage": "./assets/images/logoTiendasMovil.png",
         "monochromeImage": "./assets/images/logoTiendasMovil.png"
       },
+      "softInputMode": "adjustResize",
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
     },

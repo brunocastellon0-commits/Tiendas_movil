@@ -1,9 +1,8 @@
 import { Slot, useRouter, useSegments } from 'expo-router';
 import { useEffect } from 'react';
+import { ActivityIndicator, View } from 'react-native';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
-import { View, ActivityIndicator } from 'react-native';
 //para los temas
-import { Stack } from 'expo-router';
 import { ThemeProvider } from '../contexts/ThemeContext';
 
 // proteccion de rutas

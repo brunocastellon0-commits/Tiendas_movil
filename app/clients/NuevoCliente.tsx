@@ -1,19 +1,31 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView, Alert,
-  KeyboardAvoidingView, Platform, StatusBar, ActivityIndicator, Keyboard, Modal, FlatList, TouchableWithoutFeedback
-} from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import * as Location from 'expo-location';
-import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useTheme } from '../../contexts/ThemeContext';
+import * as Location from 'expo-location';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Keyboard,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text, TextInput,
+  TouchableOpacity,
+  TouchableWithoutFeedback,
+  View
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTheme } from '../../contexts/ThemeContext';
 
 // Servicios
+import { supabase } from '../../lib/supabase';
 import { clientService } from '../../services/ClienteService';
 import { zonaService } from '../../services/ZonaService';
-import { supabase } from '../../lib/supabase';
 import { Zona } from '../../types/Zonas.interface';
 
 // ✅ COMPONENTE INPUT MEJORADO

@@ -1,24 +1,24 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
-  View,
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  StatusBar,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  FlatList,
-  StyleSheet,
-  Alert,
-  ActivityIndicator,
-  StatusBar
+  View
 } from 'react-native';
 // 1. IMPORTACIONES DE ICONOS
 // Importamos MaterialCommunityIcons para iconos específicos de roles (ej. shield-account)
-import { Ionicons, MaterialIcons, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter, useFocusEffect } from 'expo-router';
-import { supabase } from '../../lib/supabase';
+import { FontAwesome5, Ionicons, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { supabase } from '../../lib/supabase'; // Ajusta la ruta a tu cliente
 // Hook para acceder a los colores del tema (Dark/Light)
-import { useTheme } from '../../contexts/ThemeContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTheme } from '../../contexts/ThemeContext';
 
 // --- 2. DEFINICIÓN DE TIPOS ---
 // Estructura de datos que esperamos recibir de Supabase
@@ -26,6 +26,10 @@ interface Employee {
   id: string;
   full_name: string;
   email: string;
+  role: 'Administrador' | 'Preventista' | 'Auditor' | 'vendedor'; 
+  job_title?: string;
+  // El status ahora es estricto según tu CHECK constraint
+  status: 'Habilitado' | 'Deshabilitado' | 'Vacaciones'; 
   role: 'Administrador' | 'Preventista' | 'vendedor';
   job_title?: string;
   created_at: string;
@@ -131,6 +135,7 @@ export default function EmployeeManagementScreen() {
       Alert.alert('Error', error.message);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 

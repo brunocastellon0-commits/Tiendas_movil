@@ -1,25 +1,25 @@
-import React, { useState, useEffect } from 'react';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
 import {
-  View,
-  Text,
-  TextInput,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
-  ActivityIndicator,
-  StatusBar
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
-import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
 // Importamos los iconos correctos
-import { Ionicons, MaterialIcons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
-import { supabase } from '../../../lib/supabase';
+import { FontAwesome5, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { supabase } from '../../../lib/supabase';
 // Hook de tema global
-import { useTheme } from '../../../contexts/ThemeContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTheme } from '../../../contexts/ThemeContext';
 
 interface Employee {
   id: string;
@@ -87,20 +87,63 @@ export default function EditEmployeeScreen() {
 
     setSaving(true);
     try {
-      const { error } = await supabase
+      // 3. Actualizar en la tabla employees
+      console.log('Intentando actualizar empleado:', id);
+      console.log('Datos a actualizar:', {
+        full_name: formData.fullName,
+        phone: formData.phone || null,
+        role: formData.role,
+        job_title: formData.role,
+      });
+
+      const { data: updateData, error: updateError, count } = await supabase
         .from('employees')
         .update({
           full_name: formData.fullName,
           phone: formData.phone || null,
           role: formData.role,
+          job_title: formData.role, // Sincronizar job_title con role
         })
         .eq('id', id);
 
-      if (error) throw error;
+      if (updateError) {
+        console.error('Error completo:', JSON.stringify(updateError, null, 2));
+        throw updateError;
+      }
 
-      Alert.alert('¡Actualizado!', 'La información ha sido guardada correctamente.', [
-        { text: 'OK', onPress: () => router.back() }
-      ]);
+      if (!updateData || updateData.length === 0) {
+        throw new Error('No se actualizó ningún registro. Verifica las políticas RLS en Supabase.');
+      }
+
+      console.log('✅ Empleado actualizado exitosamente en la tabla employees');
+
+      // 4. Si cambió el email, actualizar en auth.users mediante Edge Function
+      if (formData.email !== employee?.email) {
+        const { error: emailError } = await supabase.functions.invoke('update-user-email', {
+          body: {
+            user_id: id,
+            new_email: formData.email,
+          }
+        });
+
+        if (emailError) {
+          // El empleado se actualizó pero el email no
+          Alert.alert(
+            'Actualización parcial',
+            'Se actualizó la información del empleado, pero no se pudo cambiar el email. Por favor contacta al administrador.',
+            [{ text: 'OK', onPress: () => router.replace('/admin/Empleados' as any) }]
+          );
+          return;
+        }
+      }
+
+      // 5. Éxito total
+      Alert.alert(
+        '¡Éxito!',
+        `Los datos de ${formData.fullName} han sido actualizados correctamente.`,
+        [{ text: 'OK', onPress: () => router.replace('/admin/Empleados' as any) }]
+      );
+
     } catch (error: any) {
       Alert.alert('Error', error.message || 'No se pudo actualizar.');
     } finally {
@@ -126,9 +169,11 @@ export default function EditEmployeeScreen() {
               const { error } = await supabase.from('employees').delete().eq('id', id);
               if (error) throw error;
 
-              Alert.alert('Eliminado', 'El empleado ha sido removido del sistema.', [
-                { text: 'OK', onPress: () => router.back() }
-              ]);
+              Alert.alert(
+                'Empleado eliminado',
+                'El empleado ha sido eliminado del sistema.',
+                [{ text: 'OK', onPress: () => router.replace('/admin/Empleados' as any) }]
+              );
             } catch (error: any) {
               Alert.alert('Error', 'No se pudo eliminar: ' + error.message);
             } finally {
