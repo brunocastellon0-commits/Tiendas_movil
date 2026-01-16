@@ -110,14 +110,7 @@ export default function Login() {
         opacity: isDark ? 0.2 : 0.15
       }]} />
 
-      {/* Botón Flotante para cambiar tema */}
-      <TouchableOpacity
-        onPress={toggleTheme}
-        style={{ position: 'absolute', top: 50, right: 20, zIndex: 10, padding: 10 }}
-        activeOpacity={0.7}
-      >
-        <Ionicons name={isDark ? "sunny" : "moon"} size={24} color={colors.textMain} />
-      </TouchableOpacity>
+
 
       {/* ✅ KEYBOARD HANDLING PROFESIONAL */}
       <KeyboardAvoidingView
