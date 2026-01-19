@@ -3,16 +3,16 @@ import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    FlatList,
-    Keyboard,
-    StyleSheet,
-    Switch,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Keyboard,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { useAuth } from '../../contexts/AuthContext';
@@ -289,7 +289,7 @@ export default function LeafletMapScreen() {
               });
             }, 1000); 
           } catch (locError) {
-            console.log('No se pudo obtener la ubicación GPS, usando coordenadas por defecto');
+
             // Si falla, usamos coordenadas por defecto (Cochabamba)
             setTimeout(() => {
               sendMessage({ 
@@ -301,16 +301,16 @@ export default function LeafletMapScreen() {
           }
         }
       } catch (permError) {
-        console.log('Error al solicitar permisos de ubicación');
+
       }
 
       // Clientes desde Supabase
       try {
         // 🔍 DEBUG: Ver cuántos clientes hay en total
         const { data, error } = await supabase.from('clients').select('*');
-        console.log('🗺️ CARGANDO CLIENTES DEL MAPA:');
-        console.log(`  ➡️ Total clientes en DB:`, data?.length || 0);
-        console.log(`  ➡️ Error:`, error);
+
+
+
         
         if (data) {
           // 🗺️ EXTRAER COORDENADAS REALES DE POSTGIS
@@ -318,16 +318,16 @@ export default function LeafletMapScreen() {
             let lat = null;
             let lng = null;
 
-            console.log(`\n📍 Procesando cliente: ${c.name}`);
-            console.log(`  ➡️ location raw:`, c.location);
-            console.log(`  ➡️ location type:`, typeof c.location);
+
+
+
 
             if (c.location) {
               // GeoJSON format: {"type": "Point", "coordinates": [lng, lat]}
               if (typeof c.location === 'object' && c.location.coordinates && Array.isArray(c.location.coordinates)) {
                 lng = c.location.coordinates[0]; // Longitud está en posición [0]
                 lat = c.location.coordinates[1]; // Latitud está en posición [1]
-                console.log(`  ✅ GeoJSON detectado: Lon=${lng}, Lat=${lat}`);
+
               }
               // WKT string format: "POINT(lng lat)"
               else if (typeof c.location === 'string' && c.location.includes('POINT(')) {
@@ -335,7 +335,7 @@ export default function LeafletMapScreen() {
                 if (match) {
                   lng = parseFloat(match[1]); // Longitud primero
                   lat = parseFloat(match[2]); // Latitud segundo
-                  console.log(`  ✅ WKT detectado: Lon=${lng}, Lat=${lat}`);
+
                 }
               }
               // WKB hexadecimal format (PostGIS binary) - ESTE ES EL FORMATO QUE USA SUPABASE
@@ -362,16 +362,16 @@ export default function LeafletMapScreen() {
                   }
                   lat = latView.getFloat64(0, true);
                   
-                  console.log(`  ✅ WKB Hexadecimal parseado: Lon=${lng}, Lat=${lat}`);
+
                 } catch (e) {
-                  console.log(`  ❌ Error parseando WKB:`, e);
+
                 }
               }
               else {
-                console.log(`  ⚠️ Formato desconocido de location`);
+
               }
             } else {
-              console.log(`  ⚠️ Cliente sin location`);
+
             }
 
             return {
@@ -381,10 +381,10 @@ export default function LeafletMapScreen() {
             };
           });
           
-          console.log(`\n📊 RESUMEN:`);
-          console.log(`  ➡️ Clientes procesados:`, processed.length);
-          console.log(`  ➡️ Con ubicación:`, processed.filter(p => p.lat && p.lng).length);
-          console.log(`  ➡️ Sin ubicación:`, processed.filter(p => !p.lat || !p.lng).length);
+
+
+
+
           
           setClients(processed);
           
@@ -415,54 +415,21 @@ export default function LeafletMapScreen() {
             // Solo filtrar por empleado_id si NO es admin
             if (!isAdmin) {
               ordersQuery = ordersQuery.eq('empleado_id', session.session.user.id);
-              console.log('🔒 Cargando pedidos SOLO del vendedor');
+
             } else {
               // Si es admin y seleccionó un empleado específico, filtrar por ese empleado
               if (selectedEmployeeId) {
                 ordersQuery = ordersQuery.eq('empleado_id', selectedEmployeeId);
-                console.log(`👨‍💼 ADMIN: Cargando pedidos del empleado: ${selectedEmployeeId}`);
+
               } else {
-                console.log('👨‍💼 ADMIN: Cargando TODOS los pedidos');
+
               }
             }
             
             const { data: ordersData, error: ordersError } = await ordersQuery;
-            
-            console.log('📦 Pedidos cargados:', {
-              isAdmin,
-              count: ordersData?.length || 0,
-              error: ordersError,
-              today
-            });
 
-            // 🔍 DEBUG: Ver TODOS los pedidos de hoy (incluso sin ubicación)
-            const { data: allOrdersDebug } = await supabase
-              .from('pedidos')
-              .select('id, total_venta, crated_at, ubicacion_venta, empleado_id')
-              .gte('crated_at', `${today}T00:00:00`);
-            
-            console.log('🔍 DEBUG - Todos los pedidos de hoy:', {
-              total: allOrdersDebug?.length || 0,
-              conUbicacion: allOrdersDebug?.filter(o => o.ubicacion_venta).length || 0,
-              sinUbicacion: allOrdersDebug?.filter(o => !o.ubicacion_venta).length || 0,
-              primeros3: allOrdersDebug?.slice(0, 3)
-            });
 
-            // 🔍 DEBUG: Ver los ÚLTIMOS pedidos sin filtro de fecha
-            const { data: lastOrdersDebug } = await supabase
-              .from('pedidos')
-              .select('id, crated_at, ubicacion_venta')
-              .order('crated_at', { ascending: false })
-              .limit(5);
-            
-            console.log('🔍 DEBUG - Últimos 5 pedidos (sin filtro fecha):', {
-              count: lastOrdersDebug?.length || 0,
-              datos: lastOrdersDebug?.map(o => ({
-                id: o.id,
-                fecha: o.crated_at,
-                tieneUbicacion: !!o.ubicacion_venta
-              }))
-            });
+
 
             if (!ordersError && ordersData && ordersData.length > 0) {
               orderMarkers = ordersData.map((o: any) => {
@@ -551,26 +518,7 @@ export default function LeafletMapScreen() {
             }
             
             const { data: visitsData, error: visitsError } = await visitsQuery;
-            
-            console.log('🚶 Visitas cargadas:', {
-              isAdmin,
-              count: visitsData?.length || 0,
-              error: visitsError
-            });
 
-            // 🔍 DEBUG: Ver TODAS las visitas de hoy (incluso sin ubicación o pendientes)
-            const { data: allVisitsDebug } = await supabase  
-              .from('visits')
-              .select('id, outcome, end_time, check_out_location, seller_id')
-              .gte('start_time', `${today}T00:00:00`);
-            
-            console.log('🔍 DEBUG - Todas las visitas de hoy:', {
-              total: allVisitsDebug?.length || 0,
-              finalizadas: allVisitsDebug?.filter(v => v.outcome !== 'pending').length || 0,
-              pendientes: allVisitsDebug?.filter(v => v.outcome === 'pending').length || 0,
-              conUbicacion: allVisitsDebug?.filter(v => v.check_out_location).length || 0,
-              primeras3: allVisitsDebug?.slice(0, 3)
-            });
 
             if (!visitsError && visitsData && visitsData.length > 0) {
               // Extraer los visit_ids que ya tienen pedido para evitar duplicados
@@ -697,7 +645,7 @@ export default function LeafletMapScreen() {
                   return null;
                 }).filter((e: any) => e !== null);
 
-                console.log(`👥 Empleados cargados: ${employeeMarkers.length}`);
+
               }
             }
           }
@@ -713,7 +661,7 @@ export default function LeafletMapScreen() {
           }, 1500);
         }
       } catch (dbError) {
-        console.error('Error cargando clientes:', dbError);
+
         Alert.alert('Error', 'No se pudieron cargar los clientes');
       }
     })();
@@ -740,7 +688,7 @@ export default function LeafletMapScreen() {
 
   // Cargar lista de empleados para el filtro (solo si es admin)
   useEffect(() => {
-    console.log('🔍 DEBUG Filtro:', { isAdmin, employeesCount: employees.length });
+
     
     if (isAdmin) {
       (async () => {
@@ -749,12 +697,7 @@ export default function LeafletMapScreen() {
           .select('id, full_name, role, job_title')
           .eq('status', 'active')
           .order('full_name');
-        
-        console.log('👥 Empleados para filtro:', { 
-          count: data?.length || 0,
-          error,
-          datos: data?.slice(0, 3)
-        });
+
         
         if (data) {
           setEmployees(data);
@@ -1045,64 +988,64 @@ export default function LeafletMapScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-  map: { flex: 1 },
+  container: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
+  map: {
+    flex: 1,
+  },
   searchContainer: {
     position: 'absolute',
     top: 50,
     left: 20,
     right: 20,
-    zIndex: 100, // Asegurar que esté por encima del mapa
+    zIndex: 1000,
   },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#fff',
-    borderRadius: 12, // Más redondeado
+    borderRadius: 8,
     paddingHorizontal: 15,
     height: 50,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
-    elevation: 8,
-    borderWidth: 1,
-    borderColor: '#eee',
+    elevation: 5,
   },
-  input: { flex: 1, fontSize: 16, color: '#1F2937' },
-  
+  input: {
+    flex: 1,
+    fontSize: 16,
+    color: '#333',
+  },
   suggestionsList: {
-    marginTop: 8,
     backgroundColor: '#fff',
-    borderRadius: 12,
-    paddingVertical: 5,
-    maxHeight: 250,
+    borderRadius: 8,
+    marginTop: 5,
+    maxHeight: 200,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 10,
-    borderWidth: 1,
-    borderColor: '#f0f0f0',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 5,
   },
   suggestionItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 15,
+    padding: 15,
     borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
+    borderBottomColor: '#eee',
   },
   suggestionIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#d0fdd7',
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#e6f4ea',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
-    borderWidth: 1,
-    borderColor: '#9bfab0'
+    marginRight: 10,
   },
   suggestionInitial: {
     color: '#2a8c4a',
@@ -1110,38 +1053,96 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   suggestionName: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#1F2937',
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#333',
   },
   suggestionCode: {
     fontSize: 12,
-    color: '#6B7280',
+    color: '#666',
   },
-  
-  // Estilos del Toggle de Ubicación
-  trackingContainer: {
+  employeeFilterContainer: {
     position: 'absolute',
-    top: 115,  // Debajo del buscador
+    top: 110,
     left: 20,
     right: 20,
-    zIndex: 99,
+    zIndex: 999,
+  },
+  filterButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 25,
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  filterButtonText: {
+    flex: 1,
+    marginLeft: 10,
+    fontSize: 14,
+    color: '#333',
+    fontWeight: '500',
+  },
+  employeeList: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    marginTop: 10,
+    maxHeight: 250,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 6,
+    padding: 5,
+  },
+  employeeItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 8,
+  },
+  employeeItemSelected: {
+    backgroundColor: '#f0fdf4',
+  },
+  employeeName: {
+    fontSize: 14,
+    color: '#374151',
+    fontWeight: '500',
+    marginLeft: 10,
+  },
+  employeeNameSelected: {
+    color: '#166534',
+    fontWeight: '700',
+  },
+  employeeRole: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginLeft: 10,
+  },
+  trackingContainer: {
+    position: 'absolute',
+    bottom: 30,
+    left: 20,
+    right: 20,
+    zIndex: 1000,
   },
   trackingCard: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: '#fff',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    borderRadius: 16,
+    padding: 15,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
     elevation: 6,
-    borderWidth: 1,
-    borderColor: '#eee',
   },
   trackingInfo: {
     flexDirection: 'row',
@@ -1153,84 +1154,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   trackingTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#1F2937',
-    marginBottom: 2,
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#111827',
   },
   trackingSubtitle: {
-    fontSize: 12,
-    color: '#6B7280',
-  },
-  
-  // Estilos del filtro de empleados
-  employeeFilterContainer: {
-    position: 'absolute',
-    top: 130,
-    left: 20,
-    right: 20,
-    zIndex: 99,
-  },
-  filterButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    paddingHorizontal: 15,
-    paddingVertical: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 8,
-    borderWidth: 1,
-    borderColor: '#eee',
-    gap: 10,
-  },
-  filterButtonText: {
-    flex: 1,
-    fontSize: 15,
-    color: '#1F2937',
-    fontWeight: '500',
-  },
-  employeeList: {
-    marginTop: 8,
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    paddingVertical: 5,
-    maxHeight: 300,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 10,
-    borderWidth: 1,
-    borderColor: '#f0f0f0',
-  },
-  employeeItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 15,
-    gap: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
-  },
-  employeeItemSelected: {
-    backgroundColor: '#f0fdf4',
-  },
-  employeeName: {
-    fontSize: 15,
-    color: '#1F2937',
-    fontWeight: '500',
-  },
-  employeeNameSelected: {
-    color: '#2a8c4a',
-    fontWeight: '600',
-  },
-  employeeRole: {
     fontSize: 12,
     color: '#6B7280',
     marginTop: 2,
   },
 });
+
+

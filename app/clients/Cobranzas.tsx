@@ -116,15 +116,8 @@ export default function CobranzasScreen() {
       }
 
       const { data, error } = await query;
+if (error) {
 
-      console.log('📊 Cobranzas cargadas:', {
-        isAdmin,
-        count: data?.length || 0,
-        error: error?.message
-      });
-
-      if (error) {
-        console.error('Error:', error);
         return;
       }
 
@@ -168,7 +161,7 @@ export default function CobranzasScreen() {
         setTotales(totals);
       }
     } catch (error) {
-      console.error('Error cargando cobranzas:', error);
+
     } finally {
       setLoading(false);
     }

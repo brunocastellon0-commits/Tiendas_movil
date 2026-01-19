@@ -1,15 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
   ActivityIndicator,
   Alert,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 
@@ -89,7 +89,6 @@ export default function OrderDetailScreen() {
         .single();
 
       if (error) {
-        console.error('Error fetching order:', error);
         Alert.alert('Error', 'No se pudo cargar el detalle del pedido');
         return;
       }
@@ -132,7 +131,6 @@ export default function OrderDetailScreen() {
         setOrder(formattedOrder);
       }
     } catch (error) {
-      console.error('Error:', error);
       Alert.alert('Error', 'Ocurrió un error inesperado');
     } finally {
       setLoading(false);

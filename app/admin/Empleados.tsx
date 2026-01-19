@@ -1,14 +1,14 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+    ActivityIndicator,
+    Alert,
+    FlatList,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
 // 1. IMPORTACIONES DE ICONOS
 // Importamos MaterialCommunityIcons para iconos específicos de roles (ej. shield-account)
@@ -29,11 +29,10 @@ interface Employee {
   role: 'Administrador' | 'Preventista' | 'Auditor' | 'vendedor'; 
   job_title?: string;
   // El status ahora es estricto según tu CHECK constraint
-  status: 'Habilitado' | 'Deshabilitado' | 'Vacaciones'; 
-  role: 'Administrador' | 'Preventista' | 'vendedor';
-  job_title?: string;
+  status?: 'Habilitado' | 'Deshabilitado' | 'Vacaciones'; 
   created_at: string;
 }
+
 
 // --- 3. COMPONENTE TARJETA DE EMPLEADO ---
 // Este componente renderiza cada fila de la lista.
@@ -118,6 +117,7 @@ export default function EmployeeManagementScreen() {
   const [loading, setLoading] = useState(true); // Indicador de carga
   const [searchText, setSearchText] = useState(''); // Texto del buscador
   const [activeFilter, setActiveFilter] = useState<'Todos' | 'Preventista' | 'Administrador'>('Todos'); // Filtro activo
+  const [refreshing, setRefreshing] = useState(false); // Estado de refresh
 
   // --- FUNCIÓN PARA CARGAR DATOS ---
   const fetchEmployees = async () => {
@@ -171,7 +171,7 @@ export default function EmployeeManagementScreen() {
       >
         <SafeAreaView edges={['top']} style={styles.headerContent}>
 
-          {/* Fila Superior: Botón Atrás, Título y Botón Agregar */}
+          {/* Fila Superior: Botón Atrás, Título y Botones de Acción */}
           <View style={styles.navBar}>
             <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
               <Ionicons name="arrow-back" size={24} color="#fff" />
@@ -179,13 +179,25 @@ export default function EmployeeManagementScreen() {
 
             <Text style={styles.headerTitle}>Equipo de Trabajo</Text>
 
-            <TouchableOpacity
-              onPress={() => router.push('/admin/RegistrarEmpleado' as any)}
-              style={[styles.iconBtn, { backgroundColor: 'rgba(255,255,255,0.2)' }]}
-            >
-              <Ionicons name="add" size={24} color="#fff" />
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {/* Botón Ver Empleados en Línea */}
+              <TouchableOpacity
+                onPress={() => router.push('/admin/EmpleadosEnLinea' as any)}
+                style={[styles.iconBtn, { backgroundColor: 'rgba(255,255,255,0.2)' }]}
+              >
+                <Ionicons name="navigate" size={24} color="#fff" />
+              </TouchableOpacity>
+
+              {/* Botón Agregar Empleado */}
+              <TouchableOpacity
+                onPress={() => router.push('/admin/RegistrarEmpleado' as any)}
+                style={[styles.iconBtn, { backgroundColor: 'rgba(255,255,255,0.2)' }]}
+              >
+                <Ionicons name="add" size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
           </View>
+
 
           {/* Buscador: Integrado visualmente dentro del área verde */}
           <View style={styles.searchSection}>

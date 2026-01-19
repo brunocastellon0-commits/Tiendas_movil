@@ -54,7 +54,7 @@ export default function ProductoScreen() {
       setProductos(prods || []);
       setCategorias(cats || []);
     } catch (error) {
-      console.error(error);
+
     } finally {
       setLoading(false);
     }

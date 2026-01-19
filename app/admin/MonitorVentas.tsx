@@ -79,7 +79,7 @@ export default function AdminOrdersScreen() {
         setOrders(formattedData);
       }
     } catch (error) {
-      console.error('Error cargando pedidos:', error);
+
     } finally {
       setLoading(false);
       setRefreshing(false);

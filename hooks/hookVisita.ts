@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
-import { Alert } from 'react-native';
 import * as Location from 'expo-location';
-import { supabase } from '../lib/supabase';
+import { useEffect, useState } from 'react';
+import { Alert } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../lib/supabase';
+import { GPSSecurityService } from '../services/GPSSecurityService';
 
 export const useVisitTracker = () => {
   const { session } = useAuth();
@@ -37,8 +38,7 @@ export const useVisitTracker = () => {
         setIsVisiting(true);
       }
     } catch (error) {
-      // No hay visita activa, esto es normal
-      console.log('No hay visitas activas');
+      // No hay visita activa
     }
   };
 
@@ -59,6 +59,36 @@ export const useVisitTracker = () => {
     
     setLoading(true);
     try {
+      // Verificar si el empleado está bloqueado
+      const blockStatus = await GPSSecurityService.isEmployeeBlocked();
+      if (blockStatus.isBlocked) {
+        Alert.alert(
+          '🚨 Cuenta Bloqueada',
+          blockStatus.message || 'Tu cuenta ha sido bloqueada por actividad sospechosa de GPS.',
+          [{ text: 'Entendido' }]
+        );
+        setLoading(false);
+        return;
+      }
+
+      // Validar ubicación GPS
+      const validation = await GPSSecurityService.validateAndSaveLocation();
+      
+      if (!validation.success) {
+        // Mensaje específico si no tiene ubicación activada
+        const message = validation.message.includes('No se pudo obtener ubicación')
+          ? 'Por favor activa la ubicación GPS de tu dispositivo para iniciar visitas.'
+          : validation.message;
+        
+        Alert.alert(
+          '⚠️ GPS Requerido',
+          message,
+          [{ text: 'Entendido' }]
+        );
+        setLoading(false);
+        return;
+      }
+
       const start = new Date();
       
       // Creamos la fila "abierta" en la BD
@@ -68,22 +98,19 @@ export const useVisitTracker = () => {
           seller_id: session.user.id,
           client_id: clientId,
           start_time: start.toISOString(),
-          outcome: 'pending' // Estado inicial
+          outcome: 'pending'
         })
         .select()
         .single();
 
       if (error) throw error;
 
-      // Guardamos el ID en memoria para usarlo en los pedidos
       setVisitId(data.id);
       setStartTime(start);
       setIsVisiting(true);
       
-      Alert.alert('✅ Visita Iniciada', 'El cronómetro ha comenzado.');
-      
     } catch (error: any) {
-      console.error(error);
+
       Alert.alert('Error', 'No se pudo iniciar la visita. Revisa tu conexión.');
     } finally {
       setLoading(false);
@@ -102,6 +129,37 @@ export const useVisitTracker = () => {
     setLoading(true);
 
     try {
+      // Validar ubicación GPS antes de cerrar
+      const validation = await GPSSecurityService.validateAndSaveLocation();
+      
+      if (!validation.success) {
+        // Mensaje específico si no tiene ubicación activada
+        const message = validation.message.includes('No se pudo obtener ubicación')
+          ? 'Por favor activa la ubicación GPS de tu dispositivo para finalizar visitas.'
+          : validation.message;
+        
+        Alert.alert(
+          '⚠️ GPS Requerido',
+          message,
+          [
+            { text: 'Cancelar', style: 'cancel' },
+            { 
+              text: 'Forzar Cierre', 
+              style: 'destructive',
+              onPress: async () => {
+                await GPSSecurityService.updateTrustScore(
+                  20, 
+                  'Forzó cierre de visita con GPS inválido'
+                );
+                await finalizarVisitaSinValidacion(outcome, notes);
+              }
+            }
+          ]
+        );
+        setLoading(false);
+        return;
+      }
+
       // A. Pedir Permisos GPS
       let { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
@@ -118,7 +176,6 @@ export const useVisitTracker = () => {
       const endTime = new Date();
       const duration = Math.round((endTime.getTime() - startTime.getTime()) / 1000);
 
-      // Preparar los datos de actualización
       const updateData = {
         end_time: endTime.toISOString(),
         duration_seconds: duration,
@@ -128,34 +185,23 @@ export const useVisitTracker = () => {
         check_out_location: `POINT(${location.coords.longitude} ${location.coords.latitude})`
       };
 
-      console.log('🔄 Actualizando visita ID:', visitId);
-      console.log('📊 Datos a actualizar:', updateData);
-
-      // C. ACTUALIZAR (UPDATE) la visita que abrimos al principio
       const { data, error } = await supabase
         .from('visits')
         .update(updateData)
         .eq('id', visitId)
-        .select(); // Pedir que devuelva los datos actualizados
+        .select();
 
       if (error) {
-        console.error('❌ Error al actualizar visita:', error);
-        throw new Error(`Error de base de datos: ${error.message}\nCódigo: ${error.code}`);
+        throw new Error(`Error de base de datos: ${error.message}`);
       }
 
       if (!data || data.length === 0) {
-        console.error('⚠️ La actualización no afectó ninguna fila');
-        throw new Error('No se pudo actualizar la visita. Verifica las políticas de RLS en Supabase.');
+        throw new Error('No se pudo actualizar la visita.');
       }
-
-      console.log('✅ Visita actualizada exitosamente:', data);
-
-      const outcomeText = outcome === 'sale' ? 'Venta realizada' : 
-                          outcome === 'no_sale' ? 'Sin venta' : 'Tienda cerrada';
 
       Alert.alert(
         '✅ Visita Finalizada', 
-        `${outcomeText}\nDuración: ${Math.floor(duration/60)}min ${duration % 60}seg`
+        'La visita se ha guardado correctamente.'
       );
 
       // Resetear estado
@@ -164,10 +210,42 @@ export const useVisitTracker = () => {
       setStartTime(null);
 
     } catch (error: any) {
-      console.error(error);
-      Alert.alert('Error', 'No se pudo cerrar la visita: ' + error.message);
+      Alert.alert('Error', 'No se pudo cerrar la visita.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Función auxiliar para forzar cierre sin validación (penaliza al usuario)
+  const finalizarVisitaSinValidacion = async (
+    outcome: 'sale' | 'no_sale' | 'closed',
+    notes: string
+  ) => {
+    try {
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+
+      const endTime = new Date();
+      const duration = startTime ? Math.round((endTime.getTime() - startTime.getTime()) / 1000) : 0;
+
+      await supabase
+        .from('visits')
+        .update({
+          end_time: endTime.toISOString(),
+          duration_seconds: duration,
+          outcome: outcome,
+          notes: notes + ' [FORZADO - GPS INVÁLIDO]',
+          gps_accuracy_meters: location.coords.accuracy,
+          check_out_location: `POINT(${location.coords.longitude} ${location.coords.latitude})`
+        })
+        .eq('id', visitId);
+
+      setIsVisiting(false);
+      setVisitId(null);
+      setStartTime(null);
+    } catch (error: any) {
+      Alert.alert('Error', 'No se pudo cerrar la visita.');
     }
   };
 

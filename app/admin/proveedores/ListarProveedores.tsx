@@ -30,7 +30,7 @@ export default function ListaProveedoresScreen() {
             const data = await proveedorService.getProveedores(busqueda);
             setProveedores(data);
         } catch (error: any) {
-            console.error('Error cargando proveedores:', error.message);
+
         } finally {
             setLoading(false);
             setRefreshing(false);

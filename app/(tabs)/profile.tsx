@@ -63,7 +63,7 @@ export default function ProfileScreen() {
         setRole(data.job_title || data.role || 'Empleado');
       }
     } catch (error: any) {
-      console.error('Error cargando perfil:', error);
+
       Alert.alert('Error', 'No se pudo cargar el perfil: ' + error.message);
     } finally {
       setFetching(false);

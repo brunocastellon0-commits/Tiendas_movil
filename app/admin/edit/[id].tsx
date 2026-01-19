@@ -38,6 +38,8 @@ export default function EditEmployeeScreen() {
   // Estados de carga y formulario
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  // Estado para guardar el email original y detectar cambios
+  const [initialEmail, setInitialEmail] = useState('');
 
   const [formData, setFormData] = useState({
     fullName: '',
@@ -63,6 +65,7 @@ export default function EditEmployeeScreen() {
       if (error) throw error;
 
       if (data) {
+        setInitialEmail(data.email || ''); // Guardamos email original
         setFormData({
           fullName: data.full_name || '',
           email: data.email || '',
@@ -88,15 +91,8 @@ export default function EditEmployeeScreen() {
     setSaving(true);
     try {
       // 3. Actualizar en la tabla employees
-      console.log('Intentando actualizar empleado:', id);
-      console.log('Datos a actualizar:', {
-        full_name: formData.fullName,
-        phone: formData.phone || null,
-        role: formData.role,
-        job_title: formData.role,
-      });
-
-      const { data: updateData, error: updateError, count } = await supabase
+      // 3. Actualizar en la tabla employees
+      const { data: updateData, error: updateError } = await supabase
         .from('employees')
         .update({
           full_name: formData.fullName,
@@ -104,10 +100,10 @@ export default function EditEmployeeScreen() {
           role: formData.role,
           job_title: formData.role, // Sincronizar job_title con role
         })
-        .eq('id', id);
+        .eq('id', id)
+        .select(); // <--- IMPORTANTE: .select() necesario para devolver datos y evitar error 'never'
 
       if (updateError) {
-        console.error('Error completo:', JSON.stringify(updateError, null, 2));
         throw updateError;
       }
 
@@ -115,10 +111,10 @@ export default function EditEmployeeScreen() {
         throw new Error('No se actualizó ningún registro. Verifica las políticas RLS en Supabase.');
       }
 
-      console.log('✅ Empleado actualizado exitosamente en la tabla employees');
+
 
       // 4. Si cambió el email, actualizar en auth.users mediante Edge Function
-      if (formData.email !== employee?.email) {
+      if (formData.email !== initialEmail) {
         const { error: emailError } = await supabase.functions.invoke('update-user-email', {
           body: {
             user_id: id,
@@ -127,7 +123,6 @@ export default function EditEmployeeScreen() {
         });
 
         if (emailError) {
-          // El empleado se actualizó pero el email no
           Alert.alert(
             'Actualización parcial',
             'Se actualizó la información del empleado, pero no se pudo cambiar el email. Por favor contacta al administrador.',

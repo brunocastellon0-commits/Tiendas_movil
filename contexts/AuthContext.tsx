@@ -33,7 +33,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   // Función centralizada para validar perfil y permisos
   const checkUserProfile = async (userId: string): Promise<boolean> => {
     try {
-      console.log('[AuthContext] Verificando perfil del usuario:', userId);
+
       
       // Consultamos status y role frescos de la DB
       const { data, error } = await supabase
@@ -43,21 +43,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         .single();
 
       if (error) {
-        console.error('[AuthContext] Error verificando perfil:', error);
+
         // Si RLS bloquea la lectura, es probable que esté deshabilitado
         return false;
       }
 
       if (data) {
-        console.log('[AuthContext] Perfil obtenido:', { 
-          role: data.role, 
-          status: data.status,
-          job_title: data.job_title 
-        });
-
-        // --- KILL SWITCH: Seguridad Crítica ---
+// --- KILL SWITCH: Seguridad Crítica ---
         if (data.status === 'Deshabilitado') {
-          console.warn('[AuthContext] ⚠️ Usuario deshabilitado detectado. Cerrando sesión...');
+
           
           Alert.alert(
             'Acceso Denegado', 
@@ -82,7 +76,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       return false;
     } catch (error) {
-      console.error('[AuthContext] Error inesperado:', error);
+
       return false;
     }
   };
@@ -100,7 +94,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         
         if (isValid && session.user.id) {
           // 3. Configurar suscripción en tiempo real para detectar cambios de status
-          console.log('[AuthContext] Configurando suscripción en tiempo real...');
+
           
           statusSubscription = supabase
             .channel('employee-status-changes')
@@ -113,14 +107,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                 filter: `id=eq.${session.user.id}`
               },
               async (payload) => {
-                console.log('[AuthContext] 🔄 Cambio detectado en employee:', payload);
+
                 
                 // Re-verificar perfil cuando hay cambios
                 if (payload.new) {
                   const newStatus = (payload.new as any).status;
                   
                   if (newStatus === 'Deshabilitado') {
-                    console.warn('[AuthContext] ⚠️ Status cambiado a Deshabilitado en tiempo real');
+
                     
                     Alert.alert(
                       'Acceso Revocado',
@@ -141,7 +135,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
               }
             )
             .subscribe((status) => {
-              console.log('[AuthContext] Estado de suscripción:', status);
+
             });
         }
       }
@@ -151,7 +145,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     // 2. Escuchar cambios de autenticación (Login, Logout, Auto-refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      console.log('[AuthContext] Auth state cambió:', _event);
+
       
       setSession(session);
       
@@ -166,7 +160,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         
         // Limpiar suscripción en tiempo real
         if (statusSubscription) {
-          console.log('[AuthContext] Cancelando suscripción en tiempo real...');
+
           statusSubscription.unsubscribe();
           statusSubscription = null;
         }

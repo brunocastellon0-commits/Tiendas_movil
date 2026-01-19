@@ -94,7 +94,6 @@ export default function ClientsListScreen() {
   const { colors, isDark } = useTheme();
 
   const [clients, setClients] = useState<Client[]>([]);
-  const [filteredClients, setFilteredClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
@@ -106,7 +105,7 @@ export default function ClientsListScreen() {
       const data = await clientService.getClients(search);
       setClients(data);
     } catch (error) {
-      console.error(error);
+
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -212,7 +211,7 @@ export default function ClientsListScreen() {
                 // IR A DETALLE
                 onPress={() => router.push(`/clients/${item.id}` as any)}
                 // IR A EDITAR (Archivo separado)
-                onEdit={() => router.push({ pathname: '/clients/EditarCliente', params: { id: item.id } })}
+                onEdit={() => router.push(`/clients/edit/${item.id}` as any)}
                 onDelete={() => handleDelete(item.id, item.name)}
                 colors={colors}
                 isDark={isDark}

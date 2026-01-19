@@ -83,7 +83,7 @@ export default function NuevoPedido() {
       setProducts(prodData || []);
 
     } catch (error: any) {
-      console.error('Error cargando datos:', error);
+
       Alert.alert('Error', 'No se pudieron cargar los datos iniciales');
     } finally {
       setLoadingData(false);
@@ -173,8 +173,22 @@ export default function NuevoPedido() {
         .insert(detailsPayload);
 
       if (detailsError) {
-        // Nota: En producción, aquí podrías borrar el pedido cabecera si fallan los detalles (Rollback manual)
         throw detailsError;
+      }
+
+      // D. DESCONTAR STOCK DE PRODUCTOS
+      for (const item of cart) {
+        const { error: stockError } = await supabase
+          .from('productos')
+          .update({ 
+            stock_actual: item.stock_actual - item.qty 
+          })
+          .eq('id', item.id);
+
+        if (stockError) {
+
+          // Continuar con los demás productos aunque uno falle
+        }
       }
 
       Alert.alert('¡Éxito!', 'Pedido registrado correctamente', [
@@ -182,7 +196,7 @@ export default function NuevoPedido() {
       ]);
 
     } catch (error: any) {
-      console.error('Error guardando pedido:', error);
+
       Alert.alert('Error', error.message || 'Ocurrió un error al guardar');
     } finally {
       setSaving(false);

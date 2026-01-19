@@ -48,7 +48,7 @@ export default function EntradaMercaderiaScreen() {
             const data = await productoService.getProductos(search);
             setProductos(data || []);
         } catch (error) {
-            console.error(error);
+
         } finally {
             setLoading(false);
         }

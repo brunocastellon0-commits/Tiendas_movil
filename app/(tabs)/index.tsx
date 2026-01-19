@@ -1,14 +1,14 @@
 import React, { useCallback, useState } from 'react';
 import {
-  ActivityIndicator,
-  Dimensions,
-  Image,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View
+    ActivityIndicator,
+    Dimensions,
+    Image,
+    ScrollView,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from 'react-native';
 // Librerías de iconos (Ionicons para UI general, MaterialCommunityIcons para cosas específicas como camiones)
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -77,15 +77,15 @@ export default function HomeScreen() {
 
   const fetchOrders = async () => {
     try {
-      console.log('🔄 Iniciando fetchOrders...', { isAdmin, hasSession: !!session?.user });
+
       
       if (!session?.user) {
-        console.log('⚠️ No hay sesión, saliendo...');
+
         return;
       }
 
       const today = new Date().toISOString().split('T')[0];
-      console.log('📅 Fecha de hoy:', today);
+
 
       // Consulta a Supabase: Pedidos con lógica de admin (SIN JOIN por ahora)
       let ordersQuery = supabase
@@ -104,21 +104,14 @@ export default function HomeScreen() {
       // Solo filtrar por empleado_id si NO es admin
       if (!isAdmin) {
         ordersQuery = ordersQuery.eq('empleado_id', session.user.id);
-        console.log('🔒 Filtrando por empleado:', session.user.id);
+
       } else {
-        console.log('👨‍💼 Admin: cargando TODOS los pedidos');
+
       }
 
       const { data, error } = await ordersQuery;
+if (error) {
 
-      console.log('📦 Respuesta de Supabase:', {
-        hayDatos: !!data,
-        cantidadPedidos: data?.length || 0,
-        error: error?.message || null
-      });
-
-      if (error) {
-        console.error('❌ Error en query:', error);
         return;
       }
 
@@ -140,15 +133,9 @@ export default function HomeScreen() {
           pendingCount: data.filter(o => o.estado === 'pending' || o.estado === 'pendiente').length,
           deliveredCount: data.filter(o => o.estado === 'delivered' || o.estado === 'entregado').length,
         });
-        
-        console.log('✅ Pedidos cargados en home:', {
-          isAdmin,
-          count: data.length,
-          total: data.reduce((sum, order) => sum + (order.total_venta || 0), 0)
-        });
       }
     } catch (error) { 
-      console.error('💥 Error en fetchOrders:', error); 
+
     } finally { 
       setLoading(false); 
     }

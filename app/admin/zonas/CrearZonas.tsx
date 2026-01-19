@@ -59,7 +59,7 @@ export default function FormZona() {
                 if (vendedorActual) setTxtVendedor(vendedorActual.full_name);
             }
         } catch (e) {
-            console.error(e);
+
         } finally {
             setLoading(false);
         }

@@ -1,20 +1,31 @@
-import React, { useState, useEffect } from 'react';
-import {
-    View, Text, TextInput, StyleSheet, ScrollView, TouchableOpacity,
-    Alert, ActivityIndicator, Modal, FlatList, Switch, KeyboardAvoidingView, Platform, StatusBar
-} from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
+import { FontAwesome5, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useTheme } from '../../../contexts/ThemeContext';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import {
+    ActivityIndicator,
+    Alert,
+    FlatList,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    ScrollView,
+    StatusBar,
+    StyleSheet,
+    Switch,
+    Text, TextInput,
+    TouchableOpacity,
+    View
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTheme } from '../../../contexts/ThemeContext';
 
 // Servicios y Tipos
-import { productoService } from '../../../services/ProductoService';
 import { obtenerCategoria } from '../../../services/CategoriaService';
+import { productoService } from '../../../services/ProductoService';
 import { proveedorService } from '../../../services/ProveedorServices';
-import { Producto, Equivalencia } from '../../../types/Producto.interface';
 import { Categorias } from '../../../types/Categorias.inteface';
+import { Equivalencia, Producto } from '../../../types/Producto.interface';
 import { Proveedor } from '../../../types/Proveedores.interface';
 
 export default function NuevoProductoScreen() {
@@ -63,7 +74,9 @@ export default function NuevoProductoScreen() {
             const [c, p] = await Promise.all([obtenerCategoria(), proveedorService.getProveedores()]);
             setCategorias(c || []);
             setProveedores(p || []);
-        } catch (e) { console.error(e); }
+        } catch (e) {
+            // Error silencioso al cargar listas auxiliares
+        }
     };
 
     const cargarProductoExistente = async () => {

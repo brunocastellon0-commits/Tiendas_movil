@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import { Alert } from 'react-native';
 import { supabase } from '../lib/supabase';
+import { NotificationService } from './NotificationService';
 
 const LOCATION_TRACKING_KEY = 'location_tracking_enabled';
 const TRACKING_INTERVAL = 30000; // 30 segundos
@@ -44,14 +45,14 @@ export const LocationService = {
 
       // Validar que no sean coordenadas nulas (0,0 = "Island Null" en océano)
       if (latitude === 0 && longitude === 0) {
-        console.log('⚠️ GPS devolvió coordenadas nulas (0,0), omitiendo actualización');
+
         return;
       }
 
       // B. Obtener ID del usuario actual
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        console.log('⚠️ No hay usuario autenticado');
+
         return;
       }
 
@@ -67,13 +68,13 @@ export const LocationService = {
         .eq('id', user.id);
 
       if (error) {
-        console.error('❌ Error subiendo ubicación:', error);
+
       } else {
-        console.log(`📍 Ubicación actualizada: [Lon: ${longitude}, Lat: ${latitude}]`);
+
       }
 
     } catch (error) {
-      console.error('❌ Error en servicio de ubicación:', error);
+
     }
   },
 
@@ -90,7 +91,7 @@ export const LocationService = {
 
       // Validar coordenadas
       if (latitude === 0 && longitude === 0) {
-        console.log('⚠️ GPS devolvió coordenadas nulas, omitiendo historial');
+
         return;
       }
 
@@ -110,16 +111,16 @@ export const LocationService = {
         });
 
       if (error) {
-        console.error('❌ Error guardando historial:', error);
+
       } else {
-        console.log(`🛣️ Historial guardado: [${latitude}, ${longitude}]`);
+
       }
 
       // También actualizar la ubicación actual del empleado
       await this.updateMyLocation();
 
     } catch (error) {
-      console.error('❌ Error en saveLocationToHistory:', error);
+
     }
   },
 
@@ -146,13 +147,13 @@ export const LocationService = {
         });
 
       if (error) {
-        console.error('❌ Error registrando evento:', error);
+
       } else {
-        console.log(`📝 Evento registrado: ${eventType}`);
+
       }
 
     } catch (error) {
-      console.error('❌ Error en logLocationEvent:', error);
+
     }
   },
 
@@ -164,7 +165,7 @@ export const LocationService = {
       const value = await AsyncStorage.getItem(LOCATION_TRACKING_KEY);
       return value === 'true';
     } catch (error) {
-      console.error('Error leyendo estado de tracking:', error);
+
       return false;
     }
   },
@@ -178,6 +179,21 @@ export const LocationService = {
       const hasPermission = await this.requestPermissions();
       if (!hasPermission) return false;
 
+      // Obtener nombre del empleado para la notificación
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: employee } = await supabase
+          .from('employees')
+          .select('full_name')
+          .eq('id', user.id)
+          .single();
+
+        // Enviar notificación a administradores
+        if (employee?.full_name) {
+          await NotificationService.notifyEmployeeConnected(employee.full_name);
+        }
+      }
+
       // Guardar estado
       await AsyncStorage.setItem(LOCATION_TRACKING_KEY, 'true');
       
@@ -190,11 +206,11 @@ export const LocationService = {
       // Iniciar intervalo de tracking
       this.startTrackingInterval();
 
-      console.log('✅ Tracking activado');
+
       return true;
 
     } catch (error) {
-      console.error('❌ Error activando tracking:', error);
+
       return false;
     }
   },
@@ -204,6 +220,36 @@ export const LocationService = {
    */
   async disableTracking(reason?: string): Promise<void> {
     try {
+      // Obtener nombre del empleado para la notificación
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: employee } = await supabase
+          .from('employees')
+          .select('full_name')
+          .eq('id', user.id)
+          .single();
+
+        // Enviar notificación a administradores
+        if (employee?.full_name) {
+          await NotificationService.notifyEmployeeDisconnected(
+            employee.full_name,
+            reason || 'Usuario desactivó tracking desde mapa'
+          );
+        }
+
+        // IMPORTANTE: Limpiar la ubicación en Supabase para que el empleado NO aparezca en el mapa
+        const { error } = await supabase
+          .from('employees')
+          .update({ location: null })
+          .eq('id', user.id);
+
+        if (error) {
+
+        } else {
+
+        }
+      }
+
       // Guardar estado
       await AsyncStorage.setItem(LOCATION_TRACKING_KEY, 'false');
       
@@ -213,10 +259,10 @@ export const LocationService = {
       // Detener intervalo
       this.stopTrackingInterval();
 
-      console.log('⏸️ Tracking desactivado');
+
 
     } catch (error) {
-      console.error('❌ Error desactivando tracking:', error);
+
     }
   },
 
@@ -237,7 +283,7 @@ export const LocationService = {
       }
     }, TRACKING_INTERVAL);
 
-    console.log('⏱️ Intervalo de tracking iniciado (cada 30s)');
+
   },
 
   /**
@@ -247,7 +293,7 @@ export const LocationService = {
     if (this.trackingInterval) {
       clearInterval(this.trackingInterval);
       this.trackingInterval = null;
-      console.log('⏹️ Intervalo de tracking detenido');
+
     }
   },
 
@@ -257,7 +303,7 @@ export const LocationService = {
   async initialize(): Promise<void> {
     const isEnabled = await this.isTrackingEnabled();
     if (isEnabled) {
-      console.log('🔄 Restaurando tracking automático...');
+
       this.startTrackingInterval();
     }
   }

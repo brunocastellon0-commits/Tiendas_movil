@@ -57,7 +57,7 @@ export const productoService = {
             .single();
 
         if (error) {
-            console.error("Error al crear el producto", error);
+
             throw new Error("No se pudo guardar el producto: " + error.message);
         }
         if (!data) {
@@ -81,7 +81,7 @@ export const productoService = {
                 .from('equivalencias')
                 .insert(listaGuardar);
             if (errorhijos) {
-                console.error("Error guardando equivalencias", errorhijos);
+
             }
         }
         return nuevoProducto;
@@ -143,7 +143,7 @@ export const productoService = {
             .single();
 
         if (error) {
-            console.error("Error al actualizar el producto", error);
+
             throw new Error("No se pudo actualizar el producto: " + error.message);
         }
 
@@ -166,7 +166,7 @@ export const productoService = {
                 .from('equivalencias')
                 .insert(listaGuardar);
             if (errorEquiv) {
-                console.error("Error guardando equivalencias", errorEquiv);
+
             }
         }
         return data;

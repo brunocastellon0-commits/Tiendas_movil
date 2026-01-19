@@ -32,7 +32,7 @@ export default function ListaCategorias() {
             const datos = await obtenerCategoria(busqueda);
             setCategorias(datos || []);
         } catch (error: any) {
-            console.error(error);
+
         } finally {
             setLoading(false);
             setRefreshing(false);

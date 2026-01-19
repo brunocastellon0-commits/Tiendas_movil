@@ -4,12 +4,41 @@ import { ActivityIndicator, View } from 'react-native';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
 //para los temas
 import { ThemeProvider } from '../contexts/ThemeContext';
+import { supabase } from '../lib/supabase';
+import { NotificationService } from '../services/NotificationService';
 
 // proteccion de rutas
 const InitialLayout = () => {
   const { session, loading } = useAuth();
   const segments = useSegments();
   const router = useRouter();
+
+  // Inicializar notificaciones para administradores
+  useEffect(() => {
+    if (session) {
+      (async () => {
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user) return;
+
+          // Verificar si es administrador
+          const { data: employee } = await supabase
+            .from('employees')
+            .select('role')
+            .eq('id', user.id)
+            .single();
+
+          // Solo solicitar permisos si es administrador
+          if (employee?.role === 'Administrador') {
+            await NotificationService.requestPermissions();
+
+          }
+        } catch (error) {
+
+        }
+      })();
+    }
+  }, [session]);
 
   useEffect(() => {
     if (loading) return;

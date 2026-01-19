@@ -21,7 +21,7 @@ export default function ListaZonas() {
             const datos = await zonaService.getZonas(busqueda);
             setZonas(datos || []);
         } catch (error) {
-            console.error(error);
+
         } finally {
             setLoading(false);
         }

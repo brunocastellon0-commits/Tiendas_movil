@@ -65,7 +65,7 @@ export const clientService = {
 
       return data as Client[];
     } catch (error: any) {
-      console.error('Error fetching clients:', error);
+
       throw new Error('Error al cargar clientes');
     }
   },
@@ -84,7 +84,7 @@ export const clientService = {
       if (error) throw error;
       return data as Client;
     } catch (error) {
-      console.error('Error fetching client details:', error);
+
       return null;
     }
   },
@@ -139,7 +139,7 @@ export const clientService = {
         .select();
 
       if (error) {
-        console.error('Error en deleteClient:', error);
+
         throw new Error(`Error al suspender cliente: ${error.message}`);
       }
 
@@ -147,10 +147,10 @@ export const clientService = {
         throw new Error('No se pudo actualizar el cliente');
       }
 
-      console.log('Cliente suspendido exitosamente:', data);
+
       return true;
     } catch (error: any) {
-      console.error('Error capturado en deleteClient:', error);
+
       throw error;
     }
   }

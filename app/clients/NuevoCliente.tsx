@@ -176,7 +176,7 @@ export default function RegisterClientScreen() {
       const data = await zonaService.getZonas('');
       setZonasDisponibles(data || []);
     } catch (error) {
-      console.error("Error zonas", error);
+
     }
   };
 
