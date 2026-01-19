@@ -1,14 +1,14 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    FlatList,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 // 1. IMPORTACIONES DE ICONOS
 // Importamos MaterialCommunityIcons para iconos específicos de roles (ej. shield-account)
@@ -26,10 +26,10 @@ interface Employee {
   id: string;
   full_name: string;
   email: string;
-  role: 'Administrador' | 'Preventista' | 'Auditor' | 'vendedor'; 
+  role: 'Administrador' | 'Preventista' | 'Auditor' | 'vendedor';
   job_title?: string;
   // El status ahora es estricto según tu CHECK constraint
-  status?: 'Habilitado' | 'Deshabilitado' | 'Vacaciones'; 
+  status: 'Habilitado' | 'Deshabilitado' | 'Vacaciones';
   created_at: string;
 }
 
@@ -115,6 +115,7 @@ export default function EmployeeManagementScreen() {
   // Estados locales
   const [employees, setEmployees] = useState<Employee[]>([]); // Lista completa
   const [loading, setLoading] = useState(true); // Indicador de carga
+  const [refreshing, setRefreshing] = useState(false); // Estado de pull-to-refresh
   const [searchText, setSearchText] = useState(''); // Texto del buscador
   const [activeFilter, setActiveFilter] = useState<'Todos' | 'Preventista' | 'Administrador'>('Todos'); // Filtro activo
   const [refreshing, setRefreshing] = useState(false); // Estado de refresh
@@ -126,7 +127,7 @@ export default function EmployeeManagementScreen() {
       // Consulta a Supabase: Trae todos los empleados ordenados por fecha
       const { data, error } = await supabase
         .from('employees')
-        .select('id, full_name, email, role, job_title, created_at')
+        .select('id, full_name, email, role, job_title, status, created_at')
         .order('created_at', { ascending: false });
 
       if (error) throw error;

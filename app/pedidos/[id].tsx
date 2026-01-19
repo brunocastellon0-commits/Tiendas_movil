@@ -100,19 +100,19 @@ export default function OrderDetailScreen() {
         const jsonItems = rawData.items || [];
         const mappedItems: OrderItem[] = Array.isArray(jsonItems)
           ? jsonItems.map((item: any) => ({
-              name: item.name || 'Producto sin nombre',
-              qty: Number(item.qty || item.quantity || 0),
-              price: Number(item.price || item.unit_price || 0)
-            }))
+            name: item.name || 'Producto sin nombre',
+            qty: Number(item.qty || item.quantity || 0),
+            price: Number(item.price || item.unit_price || 0)
+          }))
           : [];
 
         // Manejo del cliente (array vs objeto) y corrección de phones
         const rawClient = Array.isArray(rawData.clients) ? rawData.clients[0] : rawData.clients;
-        
+
         const mappedClient = {
-            name: rawClient?.name || 'Sin nombre',
-            address: rawClient?.address || 'Sin dirección',
-            phone: rawClient?.phones || 'Sin teléfono' 
+          name: rawClient?.name || 'Sin nombre',
+          address: rawClient?.address || 'Sin dirección',
+          phone: rawClient?.phones || 'Sin teléfono'
         };
 
         const formattedOrder: OrderDetail = {
@@ -171,13 +171,13 @@ export default function OrderDetailScreen() {
   }
 
   const status = statusConfig[order.status as keyof typeof statusConfig] || statusConfig.pending;
-  
+
   const orderDate = new Date(order.created_at).toLocaleDateString('es-BO', {
     day: '2-digit',
     month: 'long',
     year: 'numeric',
   });
-  
+
   const orderTime = new Date(order.created_at).toLocaleTimeString('es-BO', {
     hour: '2-digit',
     minute: '2-digit',
@@ -186,7 +186,7 @@ export default function OrderDetailScreen() {
   return (
     <View style={styles.container}>
       <Stack.Screen options={{ headerShown: false }} />
-      
+
       {/* Header */}
       <View style={styles.header}>
         <SafeAreaView edges={['top']}>
@@ -203,7 +203,7 @@ export default function OrderDetailScreen() {
         </SafeAreaView>
       </View>
 
-      <ScrollView 
+      <ScrollView
         style={styles.content}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 30 }}
@@ -253,30 +253,30 @@ export default function OrderDetailScreen() {
               <View style={styles.clientRow}>
                 <Ionicons name="time-outline" size={20} color="#3B82F6" />
                 <Text style={styles.clientText}>
-                  Duración: {order.visits.duration_seconds 
+                  Duración: {order.visits.duration_seconds
                     ? `${Math.floor(order.visits.duration_seconds / 60)}m ${order.visits.duration_seconds % 60}s`
                     : 'N/A'}
                 </Text>
               </View>
               <View style={styles.clientRow}>
-                <Ionicons 
+                <Ionicons
                   name={
-                    order.visits.outcome === 'sale' ? 'checkmark-circle-outline' : 
-                    order.visits.outcome === 'no_sale' ? 'close-circle-outline' : 
-                    'lock-closed-outline'
-                  } 
-                  size={20} 
+                    order.visits.outcome === 'sale' ? 'checkmark-circle-outline' :
+                      order.visits.outcome === 'no_sale' ? 'close-circle-outline' :
+                        'lock-closed-outline'
+                  }
+                  size={20}
                   color={
-                    order.visits.outcome === 'sale' ? '#10B981' : 
-                    order.visits.outcome === 'no_sale' ? '#F59E0B' : 
-                    '#6B7280'
+                    order.visits.outcome === 'sale' ? '#10B981' :
+                      order.visits.outcome === 'no_sale' ? '#F59E0B' :
+                        '#6B7280'
                   }
                 />
                 <Text style={styles.clientText}>
                   Resultado: {
-                    order.visits.outcome === 'sale' ? 'Venta' : 
-                    order.visits.outcome === 'no_sale' ? 'Sin Venta' : 
-                    'Cerrado'
+                    order.visits.outcome === 'sale' ? 'Venta' :
+                      order.visits.outcome === 'no_sale' ? 'Sin Venta' :
+                        'Cerrado'
                   }
                 </Text>
               </View>
@@ -296,7 +296,7 @@ export default function OrderDetailScreen() {
           {order.items && order.items.length > 0 ? (
             order.items.map((item: OrderItem, index: number) => {
               const itemTotal = item.qty * item.price;
-              
+
               return (
                 <View key={index} style={styles.itemRow}>
                   <View style={styles.itemLeft}>

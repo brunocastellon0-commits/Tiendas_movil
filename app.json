@@ -20,7 +20,8 @@
       },
       "softInputMode": "adjustResize",
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.brunocastellon0.tiendas_movil"
     },
     "web": {
       "output": "static",
@@ -44,6 +45,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "88bc7b3d-0335-4fc7-94ae-decc75693776"
+      }
     }
   }
 }
