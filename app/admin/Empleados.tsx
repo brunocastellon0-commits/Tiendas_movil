@@ -1,14 +1,14 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+    ActivityIndicator,
+    Alert,
+    FlatList,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
 // 1. IMPORTACIONES DE ICONOS
 // Importamos MaterialCommunityIcons para iconos específicos de roles (ej. shield-account)
@@ -118,7 +118,7 @@ export default function EmployeeManagementScreen() {
   const [refreshing, setRefreshing] = useState(false); // Estado de pull-to-refresh
   const [searchText, setSearchText] = useState(''); // Texto del buscador
   const [activeFilter, setActiveFilter] = useState<'Todos' | 'Preventista' | 'Administrador'>('Todos'); // Filtro activo
-  const [refreshing, setRefreshing] = useState(false); // Estado de refresh
+
 
   // --- FUNCIÓN PARA CARGAR DATOS ---
   const fetchEmployees = async () => {
