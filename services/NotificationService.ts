@@ -1,6 +1,5 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
-import { supabase } from '../lib/supabase';
 
 // Configurar cómo se muestran las notificaciones cuando la app está en primer plano
 Notifications.setNotificationHandler({
@@ -21,18 +20,14 @@ export const NotificationService = {
     try {
       const { status: existingStatus } = await Notifications.getPermissionsAsync();
       let finalStatus = existingStatus;
-      
+
       if (existingStatus !== 'granted') {
         const { status } = await Notifications.requestPermissionsAsync();
         finalStatus = status;
       }
-      
-      if (finalStatus !== 'granted') {
 
-        return false;
-      }
+      if (finalStatus !== 'granted') return false;
 
-      // Configurar canal de notificaciones para Android
       if (Platform.OS === 'android') {
         await Notifications.setNotificationChannelAsync('employee-tracking', {
           name: 'Rastreo de Empleados',
@@ -43,20 +38,15 @@ export const NotificationService = {
       }
 
       return true;
-    } catch (error) {
-
+    } catch (_) {
       return false;
     }
   },
 
   /**
-   * Enviar notificación local (solo para administradores)
+   * Enviar notificación local inmediata
    */
-  async sendLocalNotification(
-    title: string,
-    body: string,
-    data?: any
-  ): Promise<void> {
+  async sendLocalNotification(title: string, body: string, data?: any): Promise<void> {
     try {
       await Notifications.scheduleNotificationAsync({
         content: {
@@ -66,92 +56,52 @@ export const NotificationService = {
           sound: true,
           priority: Notifications.AndroidNotificationPriority.HIGH,
         },
-        trigger: null, // Inmediato
+        trigger: null,
       });
-    } catch (error) {
-
-    }
+    } catch (_) {}
   },
 
   /**
-   * Notificar a administradores sobre conexión de empleado
-   * Solo envía alerta local, NO guarda en base de datos
+   * Notificar activación de ubicación.
+   * NOTA: El bug anterior verificaba si el usuario actual era admin antes de notificar,
+   * lo que siempre era false en el celular del vendedor. Ahora la notificación se muestra
+   * siempre en el dispositivo donde se activa. El admin puede ver los eventos via
+   * location_events en Supabase (que el LocationService ya guarda correctamente).
    */
   async notifyEmployeeConnected(employeeName: string): Promise<void> {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      // Verificar si el usuario actual es admin
-      const { data: employee } = await supabase
-        .from('employees')
-        .select('role')
-        .eq('id', user.id)
-        .single();
-
-      // Solo notificar si es administrador
-      if (employee?.role === 'Administrador') {
-        await this.sendLocalNotification(
-          '🟢 Empleado Conectado',
-          `${employeeName} activó su ubicación GPS`,
-          { type: 'employee_connected', employeeName }
-        );
-
-      }
-    } catch (error) {
-
-    }
+    await this.sendLocalNotification(
+      '🟢 Ubicación Activada',
+      `${employeeName} está registrando su recorrido GPS`,
+      { type: 'employee_connected', employeeName }
+    );
   },
 
   /**
-   * Notificar a administradores sobre desconexión de empleado
-   * Solo envía alerta local, NO guarda en base de datos
+   * Notificar desactivación de ubicación.
    */
   async notifyEmployeeDisconnected(employeeName: string, reason?: string): Promise<void> {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+    const msg = reason
+      ? `${employeeName} pausó el tracking: ${reason}`
+      : `${employeeName} pausó el tracking de ubicación`;
 
-      // Verificar si el usuario actual es admin
-      const { data: employee } = await supabase
-        .from('employees')
-        .select('role')
-        .eq('id', user.id)
-        .single();
-
-      // Solo notificar si es administrador
-      if (employee?.role === 'Administrador') {
-        const message = reason 
-          ? `${employeeName} desactivó su ubicación GPS: ${reason}`
-          : `${employeeName} desactivó su ubicación GPS`;
-
-        await this.sendLocalNotification(
-          '🔴 Empleado Desconectado',
-          message,
-          { type: 'employee_disconnected', employeeName, reason }
-        );
-
-      }
-    } catch (error) {
-
-    }
+    await this.sendLocalNotification(
+      '🔴 Ubicación Pausada',
+      msg,
+      { type: 'employee_disconnected', employeeName, reason }
+    );
   },
 
   /**
-   * Configurar listener para notificaciones recibidas
+   * Listener para notificaciones recibidas
    */
-  setupNotificationListener(callback: (notification: Notifications.Notification) => void) {
-    const subscription = Notifications.addNotificationReceivedListener(callback);
-    return subscription;
+  setupNotificationListener(callback: (n: Notifications.Notification) => void) {
+    return Notifications.addNotificationReceivedListener(callback);
   },
 
   /**
-   * Configurar listener para cuando el usuario toca una notificación
+   * Listener para cuando el usuario toca una notificación
    */
-  setupNotificationResponseListener(
-    callback: (response: Notifications.NotificationResponse) => void
-  ) {
-    const subscription = Notifications.addNotificationResponseReceivedListener(callback);
-    return subscription;
+  setupNotificationResponseListener(callback: (r: Notifications.NotificationResponse) => void) {
+    return Notifications.addNotificationResponseReceivedListener(callback);
   },
 };

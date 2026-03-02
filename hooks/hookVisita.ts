@@ -182,7 +182,7 @@ export const useVisitTracker = () => {
         outcome: outcome,
         notes: notes,
         gps_accuracy_meters: location.coords.accuracy,
-        check_out_location: `POINT(${location.coords.longitude} ${location.coords.latitude})`
+        check_out_location: `SRID=4326;POINT(${location.coords.longitude} ${location.coords.latitude})`
       };
 
       const { data, error } = await supabase
@@ -237,7 +237,7 @@ export const useVisitTracker = () => {
           outcome: outcome,
           notes: notes + ' [FORZADO - GPS INVÁLIDO]',
           gps_accuracy_meters: location.coords.accuracy,
-          check_out_location: `POINT(${location.coords.longitude} ${location.coords.latitude})`
+          check_out_location: `SRID=4326;POINT(${location.coords.longitude} ${location.coords.latitude})`
         })
         .eq('id', visitId);
 

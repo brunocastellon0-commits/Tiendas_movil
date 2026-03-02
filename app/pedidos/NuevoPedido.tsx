@@ -40,7 +40,7 @@ export default function NuevoPedido() {
   const router = useRouter();
   const { session } = useAuth();
   const { colors, isDark } = useTheme();
-  const { clientId } = useLocalSearchParams();
+  const { clientId, visitId } = useLocalSearchParams();
 
   // Estados de Datos
   const [client, setClient] = useState<any | null>(null);
@@ -178,11 +178,16 @@ export default function NuevoPedido() {
         sucursal: 'Principal',
         dias_plazo: tipoPago === 'Crédito' ? 30 : 0,
         total_venta: calculateTotal(),
+        descuento_porcentaje: getDescuentoPorcentaje(),
+        descuento_monto: getDescuentoMonto(),
+        interes: getInteresMonto(),
         observacion: observation,
         estado: tipoPago === 'Contado' ? 'Pagado' : 'Pendiente',
-        ubicacion_venta: `POINT(${loc.coords.longitude} ${loc.coords.latitude})`,
+        ubicacion_venta: `SRID=4326;POINT(${loc.coords.longitude} ${loc.coords.latitude})`,
         clients_id: clientId,
-        empleado_id: session?.user.id
+        empleado_id: session?.user.id,
+        // visit_id vincula el pedido con la visita activa para aperecer en el mapa
+        ...(visitId ? { visit_id: visitId } : {})
       };
 
       const { data: orderData, error: orderError } = await supabase
