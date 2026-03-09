@@ -29,11 +29,20 @@ export const NotificationService = {
       if (finalStatus !== 'granted') return false;
 
       if (Platform.OS === 'android') {
+        // Canal para tracking GPS (conexión/desconexión)
         await Notifications.setNotificationChannelAsync('employee-tracking', {
           name: 'Rastreo de Empleados',
           importance: Notifications.AndroidImportance.HIGH,
           vibrationPattern: [0, 250, 250, 250],
           lightColor: '#2a8c4a',
+        });
+
+        // Canal para visitas (inicio/fin con colores de resultado)
+        await Notifications.setNotificationChannelAsync('visit-tracking', {
+          name: 'Visitas a Clientes',
+          importance: Notifications.AndroidImportance.HIGH,
+          vibrationPattern: [0, 150, 150, 150],
+          lightColor: '#3B82F6',
         });
       }
 
@@ -62,11 +71,8 @@ export const NotificationService = {
   },
 
   /**
-   * Notificar activación de ubicación.
-   * NOTA: El bug anterior verificaba si el usuario actual era admin antes de notificar,
-   * lo que siempre era false en el celular del vendedor. Ahora la notificación se muestra
-   * siempre en el dispositivo donde se activa. El admin puede ver los eventos via
-   * location_events en Supabase (que el LocationService ya guarda correctamente).
+   * Notificar activación de ubicación GPS.
+   * Se muestra en el dispositivo del empleado al activar el tracking.
    */
   async notifyEmployeeConnected(employeeName: string): Promise<void> {
     await this.sendLocalNotification(
@@ -77,7 +83,8 @@ export const NotificationService = {
   },
 
   /**
-   * Notificar desactivación de ubicación.
+   * Notificar desactivación de ubicación GPS.
+   * Se muestra en el dispositivo del empleado al pausar el tracking.
    */
   async notifyEmployeeDisconnected(employeeName: string, reason?: string): Promise<void> {
     const msg = reason
@@ -88,6 +95,39 @@ export const NotificationService = {
       '🔴 Ubicación Pausada',
       msg,
       { type: 'employee_disconnected', employeeName, reason }
+    );
+  },
+
+  /**
+   * Notificar inicio de visita a un cliente.
+   * 📍 Se muestra en el dispositivo del vendedor.
+   */
+  async notifyVisitStarted(clientName: string): Promise<void> {
+    await this.sendLocalNotification(
+      '📍 Visita Iniciada',
+      `Visita a ${clientName} registrada. GPS guardado correctamente.`,
+      { type: 'visit_started' }
+    );
+  },
+
+  /**
+   * Notificar finalización de visita.
+   * 🟢 Venta  →  Verde
+   * 🟡 Sin venta → Amarillo
+   * 🔴 Cerrado →  Rojo
+   */
+  async notifyVisitEnded(
+    clientName: string,
+    outcome: 'sale' | 'no_sale' | 'closed',
+    durationMinutes: number
+  ): Promise<void> {
+    const emojiMap = { sale: '🟢', no_sale: '🟡', closed: '🔴' };
+    const labelMap = { sale: 'Venta realizada', no_sale: 'Sin venta', closed: 'Tienda cerrada' };
+
+    await this.sendLocalNotification(
+      `${emojiMap[outcome]} Visita Finalizada — ${labelMap[outcome]}`,
+      `${clientName} · Duración: ${durationMinutes} min.`,
+      { type: 'visit_ended', outcome }
     );
   },
 

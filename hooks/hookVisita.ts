@@ -4,6 +4,7 @@ import { Alert } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { GPSSecurityService } from '../services/GPSSecurityService';
+import { NotificationService } from '../services/NotificationService';
 
 export const useVisitTracker = () => {
   const { session } = useAuth();
@@ -75,7 +76,6 @@ export const useVisitTracker = () => {
       const validation = await GPSSecurityService.validateAndSaveLocation();
       
       if (!validation.success) {
-        // Mensaje específico si no tiene ubicación activada
         const message = validation.message.includes('No se pudo obtener ubicación')
           ? 'Por favor activa la ubicación GPS de tu dispositivo para iniciar visitas.'
           : validation.message;
@@ -89,16 +89,28 @@ export const useVisitTracker = () => {
         return;
       }
 
+      // ✅ Capturar GPS exacto en el momento de CHECK-IN
+      let checkInLocation: string | null = null;
+      try {
+        const loc = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.High,
+        });
+        checkInLocation = `SRID=4326;POINT(${loc.coords.longitude} ${loc.coords.latitude})`;
+      } catch (_) {
+        // Si falla el GPS, la visita igualmente se crea (ya validamos arriba)
+      }
+
       const start = new Date();
       
-      // Creamos la fila "abierta" en la BD
+      // Creamos la fila "abierta" en la BD con ubicación de inicio
       const { data, error } = await supabase
         .from('visits')
         .insert({
-          seller_id: session.user.id,
-          client_id: clientId,
-          start_time: start.toISOString(),
-          outcome: 'pending'
+          seller_id:         session.user.id,
+          client_id:         clientId,
+          start_time:        start.toISOString(),
+          outcome:           'pending',
+          check_in_location: checkInLocation,   // ✅ Ubicación exacta al llegar
         })
         .select()
         .single();
@@ -108,9 +120,15 @@ export const useVisitTracker = () => {
       setVisitId(data.id);
       setStartTime(start);
       setIsVisiting(true);
+
+      // ✅ Notificación local al iniciar visita
+      await NotificationService.sendLocalNotification(
+        '📍 Visita Iniciada',
+        'La visita ha sido registrada. GPS guardado correctamente.',
+        { type: 'visit_started', visitId: data.id }
+      );
       
     } catch (error: any) {
-
       Alert.alert('Error', 'No se pudo iniciar la visita. Revisa tu conexión.');
     } finally {
       setLoading(false);
@@ -198,6 +216,15 @@ export const useVisitTracker = () => {
       if (!data || data.length === 0) {
         throw new Error('No se pudo actualizar la visita.');
       }
+
+      // ✅ Notificación local con resultado de visita (colores por outcome)
+      const outcomeEmoji = outcome === 'sale' ? '🟢' : outcome === 'no_sale' ? '🟡' : '🔴';
+      const outcomeLabel = outcome === 'sale' ? 'Venta realizada' : outcome === 'no_sale' ? 'Sin venta' : 'Tienda cerrada';
+      await NotificationService.sendLocalNotification(
+        `${outcomeEmoji} Visita Finalizada`,
+        `${outcomeLabel}. Duración: ${Math.round(duration / 60)} min.`,
+        { type: 'visit_ended', visitId, outcome }
+      );
 
       Alert.alert(
         '✅ Visita Finalizada', 

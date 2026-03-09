@@ -1,7 +1,7 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Session } from '@supabase/supabase-js';
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import { Alert, Platform } from 'react-native';
 import { supabase } from '../lib/supabase';
-import { Alert } from 'react-native';
 
 type AuthContextType = {
   session: Session | null;
@@ -81,6 +81,37 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
+  // ──────────────────────────────────────────────────────
+  // Registrar login en la tabla user_logins
+  // ──────────────────────────────────────────────────────
+  const registerLogin = async (userId: string) => {
+    try {
+      // Obtener datos frescos del empleado
+      const { data: emp } = await supabase
+        .from('employees')
+        .select('full_name, email, role, job_title')
+        .eq('id', userId)
+        .single();
+
+      if (!emp) return; // Si no existe el empleado, no registrar
+
+      const deviceInfo = `${Platform.OS} ${Platform.Version}`;
+
+      await supabase.from('user_logins').insert({
+        employee_id: userId,
+        email:       emp.email,
+        full_name:   emp.full_name,
+        role:        emp.role,
+        job_title:   emp.job_title,
+        status:      'success',
+        device_info: deviceInfo,
+      });
+    } catch (err) {
+      // No interrumpir el flujo de login si falla el registro
+      console.warn('[AuthContext] No se pudo registrar el login:', err);
+    }
+  };
+
   useEffect(() => {
     let statusSubscription: any = null;
 
@@ -146,26 +177,29 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     // 2. Escuchar cambios de autenticación (Login, Logout, Auto-refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
 
-      
       setSession(session);
-      
+
       if (session?.user) {
-        // Al loguearse o refrescar token, verificamos status nuevamente
-        await checkUserProfile(session.user.id);
+        // Al loguearse o refrescar token, verificamos status
+        const isValid = await checkUserProfile(session.user.id);
+
+        // ✅ Solo registrar login en SIGNED_IN (no en cada refresh de token)
+        if (isValid && _event === 'SIGNED_IN') {
+          await registerLogin(session.user.id);
+        }
       } else {
         // Limpieza al cerrar sesión
         setRole(null);
         setJobTitle(null);
         setStatus(null);
-        
+
         // Limpiar suscripción en tiempo real
         if (statusSubscription) {
-
           statusSubscription.unsubscribe();
           statusSubscription = null;
         }
       }
-      
+
       setLoading(false);
     });
 

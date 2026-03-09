@@ -168,6 +168,9 @@ export default function LeafletMapScreen() {
   const [assignLoading, setAssignLoading] = useState(false);
   const [savingAssign,  setSavingAssign]  = useState(false);
 
+  // Controla si el WebView ya cargó Leaflet y está listo para recibir mensajes
+  const [webViewReady, setWebViewReady] = useState(false);
+
   // ── Enviar mensajes al WebView ────────────────────────────────────────────────
   const sendMessage = useCallback((payload: any) => {
     webViewRef.current?.postMessage(JSON.stringify(payload));
@@ -190,11 +193,16 @@ export default function LeafletMapScreen() {
       const processedClients = (clientsData || []).map((c: any) => { const { lat, lng } = parseGeoPoint(c.location); return { ...c, lat, lng }; });
       setClients(processedClients);
 
-      // Route points
-      let rq = supabase.from('route_points').select('id,latitude,longitude,label,color,client_id,zona_id,clients:client_id(name),zonas:zona_id(descripcion)');
+      // Route points — sin join a zonas (la columna 'descripcion' no existe en esa tabla)
+      let rq = supabase.from('route_points').select('id,latitude,longitude,label,color,client_id,zona_id,clients:client_id(name)');
       if (selectedZoneId)     rq = rq.eq('zona_id', selectedZoneId);
       if (selectedEmployeeId) rq = rq.eq('vendor_id', selectedEmployeeId);
-      const { data: rpData } = await rq;
+      const { data: rpData, error: rpError } = await rq;
+
+      if (rpError) {
+        console.warn('[route_points] Error:', rpError.message);
+      }
+
       const routeMarkers = (rpData || []).map((rp: any) => ({
         lat:        rp.latitude,
         lng:        rp.longitude,
@@ -202,7 +210,7 @@ export default function LeafletMapScreen() {
         color:      rp.color || '#6366F1',
         clientId:   rp.client_id,
         clientName: Array.isArray(rp.clients) ? rp.clients[0]?.name : rp.clients?.name,
-        zoneName:   Array.isArray(rp.zonas)   ? rp.zonas[0]?.descripcion : rp.zonas?.descripcion,
+        zoneName:   null, // zona se elimina del join hasta conocer el nombre de columna correcto
         pointId:    rp.id,
       }));
 
@@ -226,23 +234,35 @@ export default function LeafletMapScreen() {
           return { id: o.id, lat, lng, total: o.total_venta, outcome: vd?.outcome || null, time: new Date(o.crated_at).toLocaleTimeString('es-BO',{hour:'2-digit',minute:'2-digit'}) };
         }).filter(Boolean);
 
-        let vq = supabase.from('visits').select('id,outcome,end_time,check_out_location')
-          .gte('end_time', `${today}T00:00:00`).not('check_out_location','is',null).neq('outcome','pending');
+        let vq = supabase.from('visits').select('id,outcome,end_time,check_in_location,check_out_location')
+          .gte('end_time', `${today}T00:00:00`)
+          .or('check_in_location.not.is.null,check_out_location.not.is.null')
+          .neq('outcome','pending');
         if (!isAdmin) vq = vq.eq('seller_id', userId);
         else if (selectedEmployeeId) vq = vq.eq('seller_id', selectedEmployeeId);
         const { data: vd } = await vq;
         const visitIdsWithOrders = (od || []).map((o: any) => o.visit_id).filter(Boolean);
         const visitMarkers = (vd || []).filter((v: any) => !visitIdsWithOrders.includes(v.id)).map((v: any) => {
-          const { lat, lng } = parseGeoPoint(v.check_out_location);
+          // ✅ Usar check_in_location (donde estaba AL LLEGAR) como posición principal
+          // Si no hay check_in, usar check_out como fallback (registros antiguos)
+          const locationToUse = v.check_in_location || v.check_out_location;
+          const { lat, lng } = parseGeoPoint(locationToUse);
           if (!lat || !lng) return null;
-          return { id: `visit-${v.id}`, lat, lng, total: 0, outcome: v.outcome, time: new Date(v.end_time).toLocaleTimeString('es-BO',{hour:'2-digit',minute:'2-digit'}) };
+          return {
+            id: `visit-${v.id}`,
+            lat, lng,
+            total:   0,
+            outcome: v.outcome,
+            time:    new Date(v.end_time).toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit' })
+          };
         }).filter(Boolean);
         orderMarkers = [...orderMarkers, ...visitMarkers];
 
         if (isAdmin) {
+          // ✅ Corregido: status debe ser 'Habilitado' (no 'active')
           const { data: ed } = await supabase.from('employees')
             .select('id,full_name,job_title,role,location,updated_at')
-            .eq('status','active').not('location','is',null).neq('id', userId);
+            .eq('status','Habilitado').not('location','is',null).neq('id', userId);
           employeeMarkers = (ed || []).map((emp: any) => {
             const { lat, lng } = parseGeoPoint(emp.location);
             if (!lat || !lng) return null;
@@ -259,7 +279,10 @@ export default function LeafletMapScreen() {
     }
   }, [isAdmin, selectedEmployeeId, selectedZoneId, sendMessage]);
 
-  useEffect(() => { loadMapData(); }, [selectedEmployeeId, selectedZoneId]);
+  // ← Cargar datos SOLO cuando el WebView está listo o cambian los filtros
+  useEffect(() => {
+    if (webViewReady) loadMapData();
+  }, [webViewReady, selectedEmployeeId, selectedZoneId]);
 
   useEffect(() => {
     (async () => {
@@ -392,8 +415,20 @@ export default function LeafletMapScreen() {
     <View style={styles.container}>
 
       {/* MAPA */}
-      <WebView ref={webViewRef} originWhitelist={['*']} source={{ html: LEAFLET_HTML }}
-        style={styles.map} onMessage={handleMessage} scrollEnabled={false} javaScriptEnabled domStorageEnabled />
+      <WebView
+        ref={webViewRef}
+        originWhitelist={['*']}
+        source={{ html: LEAFLET_HTML }}
+        style={styles.map}
+        onMessage={handleMessage}
+        scrollEnabled={false}
+        javaScriptEnabled
+        domStorageEnabled
+        onLoadEnd={() => {
+          // El HTML de Leaflet terminó de cargarse → ya podemos enviar datos
+          setWebViewReady(true);
+        }}
+      />
 
       {/* TOP BAR */}
       <View style={styles.topBar}>
