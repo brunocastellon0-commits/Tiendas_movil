@@ -193,30 +193,34 @@ export default function LeafletMapScreen() {
       const processedClients = (clientsData || []).map((c: any) => { const { lat, lng } = parseGeoPoint(c.location); return { ...c, lat, lng }; });
       setClients(processedClients);
 
-      // Route points — sin join a zonas (la columna 'descripcion' no existe en esa tabla)
-      let rq = supabase.from('route_points').select('id,latitude,longitude,label,color,client_id,zona_id,clients:client_id(name)');
-      if (selectedZoneId)     rq = rq.eq('zona_id', selectedZoneId);
-      if (selectedEmployeeId) rq = rq.eq('vendor_id', selectedEmployeeId);
-      const { data: rpData, error: rpError } = await rq;
-
-      if (rpError) {
-        console.warn('[route_points] Error:', rpError.message);
-      }
-
-      const routeMarkers = (rpData || []).map((rp: any) => ({
-        lat:        rp.latitude,
-        lng:        rp.longitude,
-        label:      rp.label || '',
-        color:      rp.color || '#6366F1',
-        clientId:   rp.client_id,
-        clientName: Array.isArray(rp.clients) ? rp.clients[0]?.name : rp.clients?.name,
-        zoneName:   null, // zona se elimina del join hasta conocer el nombre de columna correcto
-        pointId:    rp.id,
-      }));
-
-      const today = new Date().toISOString().split('T')[0];
       const { data: sd } = await supabase.auth.getSession();
       const userId = sd?.session?.user?.id;
+
+      let routeMarkers: any[] = [];
+      // Para empleados, solo descargar puntos si hay una zona/ruta seleccionada.
+      // Así "por defecto no tiene seleccionada" = "no ve puntos".
+      if (isAdmin || (!isAdmin && selectedZoneId)) {
+        let rq = supabase.from('route_points').select('id,latitude,longitude,label,color,client_id,zona_id,clients:client_id(name)');
+        if (selectedZoneId) rq = rq.eq('zona_id', selectedZoneId);
+        if (!isAdmin && userId) rq = rq.eq('vendor_id', userId);
+        else if (selectedEmployeeId) rq = rq.eq('vendor_id', selectedEmployeeId);
+        
+        const { data: rpData, error: rpError } = await rq;
+        if (rpError) console.warn('[route_points] Error:', rpError.message);
+
+        routeMarkers = (rpData || []).map((rp: any) => ({
+          lat:        rp.latitude,
+          lng:        rp.longitude,
+          label:      rp.label || '',
+          color:      rp.color || '#6366F1',
+          clientId:   rp.client_id,
+          clientName: Array.isArray(rp.clients) ? rp.clients[0]?.name : rp.clients?.name,
+          zoneName:   null, // se podría enlazar después
+          pointId:    rp.id,
+        }));
+      }
+
+      const today = new Date().toISOString().split('T')[0];
       let orderMarkers: any[] = [];
       let employeeMarkers: any[] = [];
 
@@ -295,14 +299,31 @@ export default function LeafletMapScreen() {
   }, []);
 
   useEffect(() => {
-    if (!isAdmin) return;
     (async () => {
-      const [{ data: emps }, { data: zns }] = await Promise.all([
-        supabase.from('employees').select('id,full_name,job_title').eq('status','active').order('full_name'),
-        supabase.from('zonas').select('id,codigo_zona,descripcion').eq('estado','Habilitado').order('codigo_zona'),
-      ]);
-      if (emps) setEmployees(emps);
-      if (zns)  setZones(zns);
+      const { data: sd } = await supabase.auth.getSession();
+      const userId = sd?.session?.user?.id;
+      if (!userId) return;
+
+      if (isAdmin) {
+        const [{ data: emps }, { data: zns }] = await Promise.all([
+          supabase.from('employees').select('id,full_name,job_title').eq('status','Habilitado').order('full_name'),
+          supabase.from('zonas').select('id,codigo_zona,descripcion').eq('estado','Habilitado').order('codigo_zona'),
+        ]);
+        if (emps) setEmployees(emps);
+        if (zns)  setZones(zns);
+      } else {
+        // Para vendedor: cargar solo las zonas donde tiene route_points
+        const { data: misPuntos } = await supabase.from('route_points').select('zona_id').eq('vendor_id', userId);
+        if (misPuntos && misPuntos.length > 0) {
+          const zoneIds = Array.from(new Set(misPuntos.map(p => p.zona_id).filter(Boolean)));
+          if (zoneIds.length > 0) {
+            const { data: myZones } = await supabase.from('zonas').select('id,codigo_zona,descripcion').in('id', zoneIds).order('codigo_zona');
+            setZones(myZones || []);
+          } else setZones([]);
+        } else {
+          setZones([]);
+        }
+      }
     })();
   }, [isAdmin]);
 
@@ -402,11 +423,15 @@ export default function LeafletMapScreen() {
     } finally { setSavingAssign(false); }
   };
 
+  useEffect(() => {
+    if (!isAdmin) setActiveFilter('zone');
+  }, [isAdmin]);
+
   const filterLabel = () => {
     const parts = [];
     if (selectedEmployeeId) parts.push(employees.find(e => e.id === selectedEmployeeId)?.full_name || 'Empleado');
-    if (selectedZoneId)     parts.push(zones.find(z => z.id === selectedZoneId)?.codigo_zona || 'Zona');
-    return parts.length ? parts.join(' · ') : 'Filtros';
+    if (selectedZoneId)     parts.push(zones.find(z => z.id === selectedZoneId)?.codigo_zona || 'Ruta seleccionada');
+    return parts.length ? parts.join(' · ') : 'Filtrar';
   };
   const hasActiveFilter = !!(selectedEmployeeId || selectedZoneId);
 
@@ -479,36 +504,36 @@ export default function LeafletMapScreen() {
           </View>
         )}
 
-        {/* Filtros (solo admin) */}
-        {isAdmin && (
-          <TouchableOpacity style={[styles.filterBtn, hasActiveFilter && styles.filterBtnActive]}
-            onPress={() => setShowFilters(!showFilters)}>
-            <Ionicons name="options" size={16} color={hasActiveFilter ? '#fff' : '#2a8c4a'} />
-            <Text style={[styles.filterBtnText, hasActiveFilter && { color: '#fff' }]}>
-              {hasActiveFilter ? filterLabel() : 'Filtrar'}
-            </Text>
-            {hasActiveFilter && (
-              <TouchableOpacity onPress={() => { setSelectedEmployeeId(null); setSelectedZoneId(null); }}>
-                <Ionicons name="close-circle" size={15} color="#fff" style={{ marginLeft: 4 }} />
-              </TouchableOpacity>
-            )}
-          </TouchableOpacity>
-        )}
+        {/* Filtros (ahora para todos) */}
+        <TouchableOpacity style={[styles.filterBtn, hasActiveFilter && styles.filterBtnActive]}
+          onPress={() => setShowFilters(!showFilters)}>
+          <Ionicons name="options" size={16} color={hasActiveFilter ? '#fff' : '#2a8c4a'} />
+          <Text style={[styles.filterBtnText, hasActiveFilter && { color: '#fff' }]}>
+            {hasActiveFilter ? filterLabel() : (isAdmin ? 'Filtrar' : 'Elegir Ruta')}
+          </Text>
+          {hasActiveFilter && (
+            <TouchableOpacity onPress={() => { setSelectedEmployeeId(null); setSelectedZoneId(null); }}>
+              <Ionicons name="close-circle" size={15} color="#fff" style={{ marginLeft: 6 }} />
+            </TouchableOpacity>
+          )}
+        </TouchableOpacity>
 
         {/* Panel filtros */}
-        {showFilters && isAdmin && (
+        {showFilters && (
           <View style={styles.filtersPanel}>
-            <View style={styles.filterTabs}>
-              {(['employee','zone'] as const).map(tab => (
-                <TouchableOpacity key={tab} style={[styles.filterTab, activeFilter === tab && styles.filterTabActive]}
-                  onPress={() => setActiveFilter(activeFilter === tab ? null : tab)}>
-                  <Ionicons name={tab === 'employee' ? 'people' : 'map'} size={13} color={activeFilter === tab ? '#fff' : '#2a8c4a'} />
-                  <Text style={[styles.filterTabText, activeFilter === tab && { color: '#fff' }]}>{tab === 'employee' ? 'Empleado' : 'Zona'}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            {isAdmin && (
+              <View style={styles.filterTabs}>
+                {(['employee','zone'] as const).map(tab => (
+                  <TouchableOpacity key={tab} style={[styles.filterTab, activeFilter === tab && styles.filterTabActive]}
+                    onPress={() => setActiveFilter(activeFilter === tab ? null : tab)}>
+                    <Ionicons name={tab === 'employee' ? 'people' : 'map'} size={13} color={activeFilter === tab ? '#fff' : '#2a8c4a'} />
+                    <Text style={[styles.filterTabText, activeFilter === tab && { color: '#fff' }]}>{tab === 'employee' ? 'Empleado' : 'Zona'}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
 
-            {activeFilter === 'employee' && (
+            {isAdmin && activeFilter === 'employee' && (
               <ScrollView style={styles.filterList} nestedScrollEnabled>
                 <TouchableOpacity style={[styles.filterItem, !selectedEmployeeId && styles.filterItemSelected]}
                   onPress={() => { setSelectedEmployeeId(null); setShowFilters(false); }}>
@@ -524,11 +549,13 @@ export default function LeafletMapScreen() {
               </ScrollView>
             )}
 
-            {activeFilter === 'zone' && (
+            {(!isAdmin || activeFilter === 'zone') && (
               <ScrollView style={styles.filterList} nestedScrollEnabled>
                 <TouchableOpacity style={[styles.filterItem, !selectedZoneId && styles.filterItemSelected]}
                   onPress={() => { setSelectedZoneId(null); setShowFilters(false); }}>
-                  <Text style={[styles.filterItemText, !selectedZoneId && { color: '#166534', fontWeight: '700' }]}>Todas las zonas</Text>
+                  <Text style={[styles.filterItemText, !selectedZoneId && { color: '#166534', fontWeight: '700' }]}>
+                    {isAdmin ? 'Todas las zonas' : 'Sin ruta (No ver puntos)'}
+                  </Text>
                 </TouchableOpacity>
                 {zones.map(z => (
                   <TouchableOpacity key={z.id} style={[styles.filterItem, selectedZoneId === z.id && styles.filterItemSelected]}
