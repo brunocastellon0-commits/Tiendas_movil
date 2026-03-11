@@ -48,7 +48,7 @@ export default function NuevoPedido() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Estados UI
+  // Estados UIorder 
   const [loadingData, setLoadingData] = useState(true);
   const [saving, setSaving] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
@@ -169,26 +169,25 @@ export default function NuevoPedido() {
       if (status !== 'granted') throw new Error('Se requiere ubicación para confirmar.');
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
 
-      const orderPayload = {
-        numero_documento: nroDocumento,
-        fecha_pedido: new Date().toISOString(),
-        tipo_documento_pedido: tipoDocumento,
-        tipo_pago: tipoPago,
-        almacen: 'Central',
-        sucursal: 'Principal',
-        dias_plazo: tipoPago === 'Crédito' ? 30 : 0,
-        total_venta: calculateTotal(),
-        descuento_porcentaje: getDescuentoPorcentaje(),
-        descuento_monto: getDescuentoMonto(),
-        interes: getInteresMonto(),
-        observacion: observation,
-        estado: tipoPago === 'Contado' ? 'Pagado' : 'Pendiente',
-        ubicacion_venta: `SRID=4326;POINT(${loc.coords.longitude} ${loc.coords.latitude})`,
-        clients_id: clientId,
-        empleado_id: session?.user.id,
-        // visit_id vincula el pedido con la visita activa para aperecer en el mapa
-        ...(visitId ? { visit_id: visitId } : {})
-      };
+const orderPayload = {
+  numero_documento: nroDocumento,
+  fecha_pedido: new Date().toISOString(),
+  tipo_documento: tipoDocumento,        
+  tipo_pago: tipoPago,
+  almacen: 'Central',
+  sucursal: 'Principal',
+  dias_plazo: tipoPago === 'Crédito' ? 30 : 0,
+  total_venta: calculateTotal(),
+  descuento_porcentaje: getDescuentoPorcentaje(),
+  descuento_monto: getDescuentoMonto(),
+  interes: getInteresMonto(),
+  observacion: observation,
+  estado: tipoPago === 'Contado' ? 'Pagado' : 'Pendiente',
+  ubicacion_venta: `SRID=4326;POINT(${loc.coords.longitude} ${loc.coords.latitude})`,
+  clients_id: clientId,
+  empleado_id: session?.user.id,
+  ...(visitId ? { visit_id: visitId } : {})
+};
 
       const { data: orderData, error: orderError } = await supabase
         .from('pedidos')
