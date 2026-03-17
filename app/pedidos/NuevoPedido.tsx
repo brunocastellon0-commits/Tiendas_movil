@@ -47,6 +47,7 @@ export default function NuevoPedido() {
   const [products, setProducts] = useState<Product[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [empleadoId, setEmpleadoId] = useState<string | null>(null);
 
   // Estados UIorder 
   const [loadingData, setLoadingData] = useState(true);
@@ -89,7 +90,18 @@ export default function NuevoPedido() {
       if (clientError) throw clientError;
       setClient(clientData);
 
-      setNroDocumento(Math.floor(100000 + Math.random() * 900000).toString());
+      if (session?.user?.email) {
+        const { data: empData } = await supabase
+          .from('employees')
+          .select('id')
+          .eq('email', session.user.email)
+          .single();
+        if (empData?.id) {
+          setEmpleadoId(empData.id);
+        }
+      }
+
+      setNroDocumento('------');
 
       const { data: prodData, error: prodError } = await supabase
         .from('productos')
@@ -107,20 +119,17 @@ export default function NuevoPedido() {
     }
   };
 
-  // 2. Lógica Carrito (MODIFICADO: cantidad inicial = 0)
   const addToCart = (product: Product) => {
     const existing = cart.find(p => p.id === product.id);
     if (existing) {
-      // Si ya existe, no hacemos nada o podríamos enfocarnos en el campo
       Alert.alert('Producto ya agregado', 'Este producto ya está en el detalle del pedido.');
     } else {
-      // Agregar con cantidad 0
       setCart([...cart, { ...product, qty: 0 }]);
     }
   };
 
   const updateQty = (id: string, newQty: number) => {
-    if (newQty < 0) return; // No permitir negativos
+    if (newQty < 0) return;
     setCart(cart.map(p => p.id === id ? { ...p, qty: newQty } : p));
   };
 
@@ -155,9 +164,7 @@ export default function NuevoPedido() {
     return subtotal - descuento + interes;
   };
 
-  // 4. Guardar Pedido
   const saveOrder = async () => {
-    // Validar que haya productos con cantidad > 0
     const validItems = cart.filter(item => item.qty > 0);
     if (validItems.length === 0) {
       return Alert.alert('Atención', 'Debe agregar cantidades a los productos.');
@@ -169,25 +176,25 @@ export default function NuevoPedido() {
       if (status !== 'granted') throw new Error('Se requiere ubicación para confirmar.');
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
 
-const orderPayload = {
-  numero_documento: nroDocumento,
-  fecha_pedido: new Date().toISOString(),
-  tipo_documento: tipoDocumento,        
-  tipo_pago: tipoPago,
-  almacen: 'Central',
-  sucursal: 'Principal',
-  dias_plazo: tipoPago === 'Crédito' ? 30 : 0,
-  total_venta: calculateTotal(),
-  descuento_porcentaje: getDescuentoPorcentaje(),
-  descuento_monto: getDescuentoMonto(),
-  interes: getInteresMonto(),
-  observacion: observation,
-  estado: tipoPago === 'Contado' ? 'Pagado' : 'Pendiente',
-  ubicacion_venta: `SRID=4326;POINT(${loc.coords.longitude} ${loc.coords.latitude})`,
-  clients_id: clientId,
-  empleado_id: session?.user.id,
-  ...(visitId ? { visit_id: visitId } : {})
-};
+      const orderPayload = {
+        numero_documento: nroDocumento,
+        fecha_pedido: new Date().toISOString().split('T')[0],
+        tipo_documento: tipoDocumento === 'Factura' ? 'VFL' : 'VD',
+        tipo_pago: tipoPago,
+        almacen: 'Central',
+        sucursal: 'Principal',
+        dias_plazo: tipoPago === 'Crédito' ? 30 : 0,
+        total_venta: calculateTotal(),
+        descuento_porcentaje: getDescuentoPorcentaje(),
+        descuento_monto: getDescuentoMonto(),
+        interes: getInteresMonto(),
+        observacion: observation,
+        estado: 'Pendiente',
+        ubicacion_venta: `SRID=4326;POINT(${loc.coords.longitude} ${loc.coords.latitude})`,
+        clients_id: clientId,
+        empleado_id: empleadoId ?? session?.user.id,
+        ...(visitId ? { visit_id: visitId } : {})
+      };
 
       const { data: orderData, error: orderError } = await supabase
         .from('pedidos')
@@ -214,19 +221,11 @@ const orderPayload = {
         throw detailsError;
       }
 
-      // D. DESCONTAR STOCK DE PRODUCTOS
-      for (const item of cart) {
-        const { error: stockError } = await supabase
+      for (const item of validItems) {
+        await supabase
           .from('productos')
-          .update({ 
-            stock_actual: item.stock_actual - item.qty 
-          })
+          .update({ stock_actual: item.stock_actual - item.qty })
           .eq('id', item.id);
-
-        if (stockError) {
-
-          // Continuar con los demás productos aunque uno falle
-        }
       }
 
       Alert.alert('¡Éxito!', 'Pedido registrado correctamente', [{ text: 'OK', onPress: () => router.back() }]);
@@ -521,11 +520,14 @@ const orderPayload = {
 
               {filteredProducts.slice(0, 50).map((p, index) => {
                 const isInCart = cart.some(item => item.id === p.id);
+                const rowBg = isDark
+                  ? (index % 2 === 0 ? colors.cardBg : '#1a2d42')
+                  : (index % 2 === 0 ? '#FFFFFF' : '#F9FAFB');
                 return (
-                  <View key={p.id} style={[styles.tableRow, index % 2 !== 0 && [styles.tableRowAlt, { backgroundColor: isDark ? colors.cardBorder : '#F9FAFB' }], { backgroundColor: isDark && index % 2 === 0 ? colors.cardBg : '#FFF', borderBottomColor: isDark ? '#444' : '#F3F4F6' }]}>
+                  <View key={p.id} style={[styles.tableRow, { backgroundColor: rowBg, borderBottomColor: isDark ? '#2d3f55' : '#F3F4F6' }]}>
                     <View style={{ flex: 2 }}>
                       <Text style={[styles.cellName, { color: colors.textMain }]} numberOfLines={2}>{p.nombre_producto}</Text>
-                      <Text style={styles.cellCode}>{p.codigo_producto}</Text>
+                      <Text style={[styles.cellCode, { color: colors.textSub }]}>{p.codigo_producto}</Text>
                     </View>
                     <View style={{ flex: 1, alignItems: 'center' }}>
                       <Text style={[styles.cellStock, { color: colors.textMain }]}>{p.stock_actual}</Text>
