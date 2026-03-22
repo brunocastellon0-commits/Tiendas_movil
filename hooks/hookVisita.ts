@@ -1,9 +1,24 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert } from 'react-native';
 import * as Location from 'expo-location';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { showVisitToast } from '../components/VisitToast';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// HOOK: useVisitTracker
+//
+// Maneja el ciclo de vida de una visita de ventas.
+//
+// Notificaciones (modal visual que desaparece solo en 5 segundos):
+//   Iniciar              → "Visita iniciada"
+//   Finalizar con venta  → "Venta realizada"
+//   Finalizar sin venta  → "Visita finalizada"
+//   Finalizar cerrado    → "Visita finalizada"
+//
+// Para que los toasts funcionen, monta <VisitToast /> en app/clients/[id].tsx
+// El cronómetro (startTime) está disponible para que el admin lo use en [id].tsx
+// ─────────────────────────────────────────────────────────────────────────────
 export const useVisitTracker = () => {
   const { session } = useAuth();
   const [isVisiting, setIsVisiting] = useState(false);
@@ -11,16 +26,13 @@ export const useVisitTracker = () => {
   const [startTime, setStartTime] = useState<Date | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Verificar si hay una visita activa al cargar
   useEffect(() => {
     checkActiveVisit();
   }, [session?.user?.id]);
 
   const checkActiveVisit = async () => {
     if (!session?.user) return;
-
     try {
-      // Buscar visitas activas (pendientes) del usuario
       const { data, error } = await supabase
         .from('visits')
         .select('id, start_time')
@@ -31,86 +43,79 @@ export const useVisitTracker = () => {
         .single();
 
       if (data && !error) {
-        // Hay una visita activa
         setVisitId(data.id);
         setStartTime(new Date(data.start_time));
         setIsVisiting(true);
       }
-    } catch (error) {
-      // No hay visita activa, esto es normal
-      console.log('No hay visitas activas');
+    } catch {
+      // Sin visita activa — es el caso normal
     }
   };
 
   const startVisit = async (clientId: string) => {
     if (!session?.user) {
-      Alert.alert('Error', 'No se pudo identificar al usuario');
+      Alert.alert('Error', 'No se pudo identificar al usuario.');
       return;
     }
 
-    // Verificar si ya hay una visita activa
     if (isVisiting && visitId) {
       Alert.alert(
-        'Visita Activa',
-        'Ya tienes una visita en curso. Debes finalizarla antes de iniciar otra.'
+        'Visita en curso',
+        'Ya tienes una visita activa. Debes finalizarla antes de iniciar otra.'
       );
       return;
     }
-    
+
     setLoading(true);
     try {
       const start = new Date();
-      
-      // Creamos la fila "abierta" en la BD
+
       const { data, error } = await supabase
         .from('visits')
         .insert({
           seller_id: session.user.id,
           client_id: clientId,
           start_time: start.toISOString(),
-          outcome: 'pending' // Estado inicial
+          outcome: 'pending',
         })
         .select()
         .single();
 
       if (error) throw error;
 
-      // Guardamos el ID en memoria para usarlo en los pedidos
       setVisitId(data.id);
       setStartTime(start);
       setIsVisiting(true);
-      
-      Alert.alert('✅ Visita Iniciada', 'El cronómetro ha comenzado.');
-      
+
+      // Modal visual — desaparece solo en 5 segundos, sin botón OK
+      showVisitToast({
+        title: 'Visita iniciada',
+        subtitle: 'La visita ha sido registrada correctamente.',
+        type: 'success',
+      });
+
     } catch (error: any) {
-      console.error(error);
       Alert.alert('Error', 'No se pudo iniciar la visita. Revisa tu conexión.');
     } finally {
       setLoading(false);
     }
   };
 
-  const endVisit = async (
-    outcome: 'sale' | 'no_sale' | 'closed',
-    notes: string
-  ) => {
+  const endVisit = async (outcome: 'sale' | 'no_sale' | 'closed', notes: string) => {
     if (!visitId || !startTime) {
-      Alert.alert('Error', 'No hay una visita activa');
+      Alert.alert('Error', 'No hay una visita activa.');
       return;
     }
 
     setLoading(true);
-
     try {
-      // A. Pedir Permisos GPS
-      let { status } = await Location.requestForegroundPermissionsAsync();
+      const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert('Permiso denegado', 'Se requiere ubicación para cerrar la visita.');
         setLoading(false);
         return;
       }
 
-      // B. Capturar GPS de Alta Precisión (Auditoría)
       const location = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.High,
       });
@@ -118,53 +123,44 @@ export const useVisitTracker = () => {
       const endTime = new Date();
       const duration = Math.round((endTime.getTime() - startTime.getTime()) / 1000);
 
-      // Preparar los datos de actualización
-      const updateData = {
-        end_time: endTime.toISOString(),
-        duration_seconds: duration,
-        outcome: outcome,
-        notes: notes,
-        gps_accuracy_meters: location.coords.accuracy,
-        check_out_location: `POINT(${location.coords.longitude} ${location.coords.latitude})`
-      };
-
-      console.log('🔄 Actualizando visita ID:', visitId);
-      console.log('📊 Datos a actualizar:', updateData);
-
-      // C. ACTUALIZAR (UPDATE) la visita que abrimos al principio
       const { data, error } = await supabase
         .from('visits')
-        .update(updateData)
+        .update({
+          end_time: endTime.toISOString(),
+          duration_seconds: duration,
+          outcome,
+          notes,
+          gps_accuracy_meters: location.coords.accuracy,
+          check_out_location: `POINT(${location.coords.longitude} ${location.coords.latitude})`,
+        })
         .eq('id', visitId)
-        .select(); // Pedir que devuelva los datos actualizados
+        .select();
 
-      if (error) {
-        console.error('❌ Error al actualizar visita:', error);
-        throw new Error(`Error de base de datos: ${error.message}\nCódigo: ${error.code}`);
-      }
-
+      if (error) throw new Error(`Error de base de datos: ${error.message}`);
       if (!data || data.length === 0) {
-        console.error('⚠️ La actualización no afectó ninguna fila');
         throw new Error('No se pudo actualizar la visita. Verifica las políticas de RLS en Supabase.');
       }
 
-      console.log('✅ Visita actualizada exitosamente:', data);
-
-      const outcomeText = outcome === 'sale' ? 'Venta realizada' : 
-                          outcome === 'no_sale' ? 'Sin venta' : 'Tienda cerrada';
-
-      Alert.alert(
-        '✅ Visita Finalizada', 
-        `${outcomeText}\nDuración: ${Math.floor(duration/60)}min ${duration % 60}seg`
+      // Venta → verde, cualquier otro resultado → azul
+      showVisitToast(
+        outcome === 'sale'
+          ? {
+            title: 'Venta realizada',
+            subtitle: 'El pedido quedó registrado correctamente.',
+            type: 'success',
+          }
+          : {
+            title: 'Visita finalizada',
+            subtitle: 'La visita ha sido cerrada.',
+            type: 'info',
+          }
       );
 
-      // Resetear estado
       setIsVisiting(false);
       setVisitId(null);
       setStartTime(null);
 
     } catch (error: any) {
-      console.error(error);
       Alert.alert('Error', 'No se pudo cerrar la visita: ' + error.message);
     } finally {
       setLoading(false);
@@ -173,11 +169,11 @@ export const useVisitTracker = () => {
 
   return {
     isVisiting,
-    visitId,  
+    visitId,
     startVisit,
     endVisit,
     loading,
     startTime,
-    checkActiveVisit
+    checkActiveVisit,
   };
 };

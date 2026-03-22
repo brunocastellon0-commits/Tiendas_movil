@@ -1,34 +1,123 @@
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
-    ActivityIndicator, Alert,
-    Modal,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Alert,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
+import { useAuth } from '../../contexts/AuthContext';
+import { useTheme } from '../../contexts/ThemeContext';
 import { useVisitTracker } from '../../hooks/hookVisita';
+import { VisitToast } from '../../components/VisitToast';
 import { clientService } from '../../services/ClienteService';
 import { Client } from '../../types/Cliente.interface';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// COMPONENTE AUXILIAR: InfoRow
+//
+// Muestra una fila etiqueta → valor dentro de las secciones de detalle.
+// isMoney: pone el valor en negrita.
+// highlight: colorea el valor con el verde de la marca.
+// ─────────────────────────────────────────────────────────────────────────────
+interface InfoRowProps {
+  label: string;
+  value: string;
+  isMoney?: boolean;
+  highlight?: boolean;
+  colors: any;
+}
+
+const InfoRow = ({ label, value, isMoney, highlight, colors }: InfoRowProps) => (
+  <View style={styles.infoRow}>
+    <Text style={[styles.infoLabel, { color: colors.textSub }]}>{label}</Text>
+    <Text style={[
+      styles.infoValue,
+      { color: highlight ? colors.brandGreen : colors.textMain },
+      isMoney && { fontWeight: '700' },
+    ]}>
+      {value}
+    </Text>
+  </View>
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// COMPONENTE AUXILIAR: SectionCard
+//
+// Tarjeta contenedora para cada bloque de información.
+// Recibe un título y sus hijos (filas InfoRow).
+// ─────────────────────────────────────────────────────────────────────────────
+interface SectionCardProps {
+  title: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  children: React.ReactNode;
+  colors: any;
+  isDark: boolean;
+}
+
+const SectionCard = ({ title, icon, children, colors, isDark }: SectionCardProps) => (
+  <View style={[styles.sectionCard, {
+    backgroundColor: colors.cardBg,
+    borderColor: isDark ? colors.cardBorder : 'transparent',
+    borderWidth: isDark ? 1 : 0,
+  }]}>
+    <View style={styles.sectionHeader}>
+      <View style={[styles.sectionIconBg, { backgroundColor: `${colors.brandGreen}18` }]}>
+        <Ionicons name={icon} size={16} color={colors.brandGreen} />
+      </View>
+      <Text style={[styles.sectionTitle, { color: colors.textMain }]}>{title}</Text>
+    </View>
+    {children}
+  </View>
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PANTALLA PRINCIPAL: Detalle de Cliente
+//
+// Flujo de visita:
+//   1. El vendedor llega a esta pantalla (desde la lista o desde el botón Pedido)
+//   2. Pulsa "Iniciar Visita" → se registra la visita en la base de datos
+//   3. Aparecen los botones "Crear Pedido" y "Finalizar"
+//   4. Al finalizar, elige el resultado (Venta / Sin Venta / Cerrado) y opcionalmente notas
+//
+// Si viene con autoStartVisit=true (desde el botón Pedido de la lista),
+// la visita arranca automáticamente sin que el vendedor tenga que pulsar nada.
+//
+// El cronómetro NO se muestra a vendedores/prevendedores.
+// Solo los admins ven el tiempo transcurrido de la visita.
+// ─────────────────────────────────────────────────────────────────────────────
 export default function ClientDetailScreen() {
   const { id, autoStartVisit } = useLocalSearchParams();
   const router = useRouter();
+  const { colors, isDark } = useTheme();
+  const { isAdmin } = useAuth();
+
   const [client, setClient] = useState<Client | null>(null);
   const [loading, setLoading] = useState(true);
-  
-  // Hook de visitas
-  const { isVisiting, visitId, startVisit, endVisit, loading: visitLoading, startTime } = useVisitTracker();
-  
-  // Modal para finalizar visita
+
+  // Hook que maneja el ciclo de vida de la visita (iniciar, finalizar, estado)
+  const {
+    isVisiting,
+    visitId,
+    startVisit,
+    endVisit,
+    loading: visitLoading,
+    startTime,
+  } = useVisitTracker();
+
+  // Estado del modal para finalizar visita
   const [showEndVisitModal, setShowEndVisitModal] = useState(false);
   const [visitOutcome, setVisitOutcome] = useState<'sale' | 'no_sale' | 'closed'>('sale');
   const [visitNotes, setVisitNotes] = useState('');
 
+  // ── Carga del cliente ──────────────────────────────────────────────────────
   useEffect(() => {
     if (id) fetchClientDetails();
   }, [id]);
@@ -38,22 +127,27 @@ export default function ClientDetailScreen() {
     if (data) {
       setClient(data);
     } else {
-      Alert.alert("Error", "No se encontró el cliente");
+      Alert.alert('Error', 'No se encontró el cliente');
       router.back();
     }
     setLoading(false);
   };
 
-  // Auto-iniciar visita si viene del mapa
+  // ── Auto-iniciar visita ────────────────────────────────────────────────────
+  // Se activa cuando el usuario llegó desde el botón "Pedido" de la lista.
+  // El parámetro autoStartVisit=true viene en la URL.
   useEffect(() => {
     if (autoStartVisit === 'true' && client && !isVisiting) {
       handleStartVisit();
     }
   }, [client, autoStartVisit]);
 
+  // ── Acciones de visita ─────────────────────────────────────────────────────
   const handleStartVisit = async () => {
     if (!client) return;
     await startVisit(client.id);
+    // Nota: el hook startVisit ya guarda la visita en Supabase internamente.
+    // No mostramos cronómetro al vendedor, solo un indicador simple de "en visita".
   };
 
   const handleEndVisit = async () => {
@@ -65,181 +159,234 @@ export default function ClientDetailScreen() {
 
   const handleCreateOrder = () => {
     if (!client) return;
-    
+
     if (!isVisiting) {
+      // Si no hay visita activa, preguntamos si quiere iniciarla primero
       Alert.alert(
-        'Iniciar Visita',
-        'Primero debes iniciar una visita antes de crear un pedido.',
+        'Sin visita activa',
+        'Debes iniciar una visita antes de crear un pedido.',
         [
           { text: 'Cancelar', style: 'cancel' },
-          { 
-            text: 'Iniciar Visita', 
+          {
+            text: 'Iniciar visita',
             onPress: async () => {
               await handleStartVisit();
-              // Pequeño delay para asegurar que visitId esté disponible
+              // Esperamos un momento para que visitId esté disponible en el hook
               setTimeout(() => {
-                router.push(`/pedidos/NuevoPedido?clientId=${client.id}&visitId=${visitId}`);
+                router.push(`/pedidos/NuevoPedido?clientId=${client.id}&visitId=${visitId}` as any);
               }, 500);
-            }
-          }
+            },
+          },
         ]
       );
     } else {
-      router.push(`/pedidos/NuevoPedido?clientId=${client.id}&visitId=${visitId}`);
+      router.push(`/pedidos/NuevoPedido?clientId=${client.id}&visitId=${visitId}` as any);
     }
   };
 
-  const openMaps = () => {
-    if (client?.location) {
-      Alert.alert("Mapa", "Aquí abriremos el mapa con las coordenadas: " + client.location);
-    } else {
-      Alert.alert("Sin ubicación", "Este cliente no tiene coordenadas GPS registradas.");
-    }
-  };
-
-  const getVisitDuration = () => {
+  // ── Duración de visita (solo para admin) ───────────────────────────────────
+  // Los vendedores NO ven el cronómetro. Solo el admin ve cuánto tiempo lleva
+  // la visita, porque es información de supervisión, no operativa.
+  const getVisitDuration = (): string => {
     if (!startTime) return '';
-    const now = new Date();
-    const diff = Math.floor((now.getTime() - startTime.getTime()) / 1000);
-    const minutes = Math.floor(diff / 60);
-    const seconds = diff % 60;
+    const diffSeconds = Math.floor((Date.now() - startTime.getTime()) / 1000);
+    const minutes = Math.floor(diffSeconds / 60);
+    const seconds = diffSeconds % 60;
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
 
+  // ── Estados de carga ───────────────────────────────────────────────────────
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#2a8c4a" />
+      <View style={[styles.loadingContainer, { backgroundColor: colors.bgStart }]}>
+        <ActivityIndicator size="large" color={colors.brandGreen} />
       </View>
     );
   }
 
   if (!client) return null;
 
+  const isVigente = client.status === 'Vigente';
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // RENDER
+  // ─────────────────────────────────────────────────────────────────────────
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.bgStart }]}>
       <Stack.Screen options={{ headerShown: false }} />
 
-      {/* Header Rojo */}
-      <View style={styles.header}>
+      {/* Toast de visita — aparece 5 segundos y desaparece solo */}
+      <VisitToast />
+
+      {/* ── HEADER ── */}
+      <LinearGradient colors={[colors.brandGreen, '#166534']} style={styles.header}>
+        {/* Barra superior: volver + editar */}
         <View style={styles.headerTop}>
-          <TouchableOpacity onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={24} color="white" />
+          <TouchableOpacity onPress={() => router.back()} style={styles.headerIconBtn}>
+            <Ionicons name="arrow-back" size={22} color="#fff" />
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.push(`/clients/edit/${client.id}`)}>
-            <Ionicons name="pencil" size={24} color="white" />
+          <TouchableOpacity
+            onPress={() => router.push(`/clients/edit/${client.id}` as any)}
+            style={styles.headerIconBtn}
+          >
+            <Ionicons name="pencil" size={20} color="#fff" />
           </TouchableOpacity>
-        </View>
-        
-        <Text style={styles.headerTitle}>{client.name}</Text>
-        <View style={styles.badge}>
-          <Text style={styles.badgeText}>{client.status}</Text>
         </View>
 
-        {/* Indicador de visita activa */}
-        {isVisiting && (
-          <View style={styles.visitBadge}>
-            <Ionicons name="time" size={16} color="#fff" />
-            <Text style={styles.visitBadgeText}>
-              Visita activa • {getVisitDuration()}
-            </Text>
-          </View>
+        {/* Nombre y código */}
+        <Text style={styles.headerTitle} numberOfLines={2}>{client.name}</Text>
+        {client.code && (
+          <Text style={styles.headerCode}>#{client.code}</Text>
         )}
-      </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        
-        {/* 🗺️ Sección Mapa (Preview) */}
-        <View style={styles.mapCard}>
-           <View style={styles.mapPlaceholder}>
-              <Ionicons name="map" size={40} color="#ccc" />
-              <Text style={styles.mapText}>Vista previa del mapa</Text>
-           </View>
-           <TouchableOpacity style={styles.mapActionCenter} onPress={openMaps}>
-             <Ionicons name="navigate-circle-outline" size={20} color="#2a8c4a" />
-             <Text style={styles.mapBtnText}>Ver en mapa</Text>
-           </TouchableOpacity>
+        {/* Fila: estado + indicador de visita */}
+        <View style={styles.headerBadgesRow}>
+          <View style={[
+            styles.statusBadge,
+            { backgroundColor: isVigente ? 'rgba(255,255,255,0.25)' : 'rgba(239,68,68,0.3)' }
+          ]}>
+            <Text style={styles.statusBadgeText}>{client.status}</Text>
+          </View>
+
+          {/* Indicador de visita activa:
+              - Admin: muestra "Visita activa · 3:42" (con cronómetro)
+              - Vendedor: muestra "Visita activa" (sin cronómetro) */}
+          {isVisiting && (
+            <View style={styles.visitBadge}>
+              <Ionicons name="radio-button-on" size={10} color="#4ade80" />
+              <Text style={styles.visitBadgeText}>
+                {isAdmin
+                  ? `Visita activa · ${getVisitDuration()}`
+                  : 'Visita activa'}
+              </Text>
+            </View>
+          )}
         </View>
+      </LinearGradient>
 
-        {/* Información Financiera */}
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>💲 Información Financiera</Text>
-          
-          <InfoRow label="Límite de Crédito" value={`Bs. ${client.credit_limit?.toFixed(2) || '0.00'}`} isMoney />
-          <InfoRow label="Días de Plazo" value={`${client.credit_days || 0} días`} />
-          <InfoRow label="Saldo Actual" value={`Bs. ${client.current_balance?.toFixed(2) || '0.00'}`} isMoney highlight />
-          <InfoRow label="Saldo Inicial" value={`Bs. ${client.initial_balance?.toFixed(2) || '0.00'}`} isMoney />
-          {client.accounting_account && <InfoRow label="Cuenta Contable" value={client.accounting_account} />}
-        </View>
+      {/* ── CONTENIDO ── */}
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
 
-        {/* 👤 Información de Contacto */}
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>👤 Información de Contacto</Text>
-          <InfoRow label="Código" value={client.code || 'S/C'} />
-          <InfoRow label="Nombre del Negocio" value={client.business_name || client.name} />
-          <InfoRow label="Dirección" value={client.address || 'No registrada'} />
-          {client.address_ref_1 && <InfoRow label="Referencia 1" value={client.address_ref_1} />}
-          {client.address_ref_2 && <InfoRow label="Referencia 2" value={client.address_ref_2} />}
-          {client.address_ref_3 && <InfoRow label="Referencia 3" value={client.address_ref_3} />}
-          <InfoRow label="Teléfono" value={client.phones || 'S/N'} />
-          <InfoRow label="Fax" value={client.fax || 'S/N'} />
-        </View>
+        {/* Sección: Información financiera */}
+        <SectionCard
+          title="Información financiera"
+          icon="wallet-outline"
+          colors={colors}
+          isDark={isDark}
+        >
+          <InfoRow
+            label="Límite de crédito"
+            value={`Bs. ${client.credit_limit?.toFixed(2) ?? '0.00'}`}
+            isMoney
+            colors={colors}
+          />
+          <InfoRow
+            label="Días de plazo"
+            value={`${client.credit_days ?? 0} días`}
+            colors={colors}
+          />
+          <InfoRow
+            label="Saldo actual"
+            value={`Bs. ${client.current_balance?.toFixed(2) ?? '0.00'}`}
+            isMoney
+            highlight={client.current_balance > 0}
+            colors={colors}
+          />
+          <InfoRow
+            label="Saldo inicial"
+            value={`Bs. ${client.initial_balance?.toFixed(2) ?? '0.00'}`}
+            isMoney
+            colors={colors}
+          />
+          {client.accounting_account && (
+            <InfoRow label="Cuenta contable" value={client.accounting_account} colors={colors} />
+          )}
+        </SectionCard>
 
-        {/* 📋 Información Fiscal y Legal */}
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>📋 Información Fiscal</Text>
-          <InfoRow label="NIT/CI" value={client.tax_id || 'S/N'} />
-          {client.tax_id_complement && <InfoRow label="Complemento" value={client.tax_id_complement} />}
-          {client.representative && <InfoRow label="Representante Legal" value={client.representative} />}
-          {client.representative_ci && <InfoRow label="CI Representante" value={client.representative_ci} />}
-        </View>
+        {/* Sección: Contacto */}
+        <SectionCard
+          title="Contacto y dirección"
+          icon="call-outline"
+          colors={colors}
+          isDark={isDark}
+        >
+          <InfoRow label="Razón social" value={client.business_name || client.name} colors={colors} />
+          <InfoRow label="Dirección" value={client.address || 'No registrada'} colors={colors} />
+          {client.address_ref_1 && <InfoRow label="Referencia 1" value={client.address_ref_1} colors={colors} />}
+          {client.address_ref_2 && <InfoRow label="Referencia 2" value={client.address_ref_2} colors={colors} />}
+          <InfoRow label="Teléfono" value={client.phones || 'S/N'} colors={colors} />
+          {client.fax && <InfoRow label="Fax" value={client.fax} colors={colors} />}
+        </SectionCard>
 
-        {/* 🏢 Información del Negocio */}
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>🏢 Datos del Negocio</Text>
-          {client.zone_name && <InfoRow label="Zona" value={client.zone_name} />}
-          {client.branch_name && <InfoRow label="Sucursal" value={client.branch_name} />}
-          {client.category && <InfoRow label="Categoría" value={client.category} />}
-          {client.city && <InfoRow label="Ciudad" value={client.city} />}
-          {client.client_type && <InfoRow label="Tipo de Cliente" value={client.client_type} />}
-          {client.document_type && <InfoRow label="Tipo de Documento" value={client.document_type} />}
-          {client.payment_method && <InfoRow label="Método de Pago" value={client.payment_method} />}
-        </View>
+        {/* Sección: Fiscal */}
+        <SectionCard
+          title="Información fiscal"
+          icon="document-text-outline"
+          colors={colors}
+          isDark={isDark}
+        >
+          <InfoRow label="NIT / CI" value={client.tax_id || 'S/N'} colors={colors} />
+          {client.tax_id_complement && (
+            <InfoRow label="Complemento" value={client.tax_id_complement} colors={colors} />
+          )}
+        </SectionCard>
 
+        {/* Sección: Negocio */}
+        <SectionCard
+          title="Datos del negocio"
+          icon="business-outline"
+          colors={colors}
+          isDark={isDark}
+        >
+          {client.zone_name && <InfoRow label="Zona" value={client.zone_name} colors={colors} />}
+          {client.branch_name && <InfoRow label="Sucursal" value={client.branch_name} colors={colors} />}
+          {client.category && <InfoRow label="Categoría" value={client.category} colors={colors} />}
+          {client.city && <InfoRow label="Ciudad" value={client.city} colors={colors} />}
+          {client.client_type && <InfoRow label="Tipo de cliente" value={client.client_type} colors={colors} />}
+          {client.payment_method && <InfoRow label="Método de pago" value={client.payment_method} colors={colors} />}
+        </SectionCard>
+
+        {/* Espacio para que el footer no tape el último card */}
+        <View style={{ height: 100 }} />
       </ScrollView>
 
-      {/* Botones de Acción Fijos Abajo */}
-      <View style={styles.footer}>
+      {/* ── FOOTER: botones de acción ── */}
+      <View style={[styles.footer, {
+        backgroundColor: colors.cardBg,
+        borderTopColor: isDark ? colors.cardBorder : '#E5E7EB',
+      }]}>
         {!isVisiting ? (
-          // MODO: Sin visita activa
-          <>
-            <TouchableOpacity 
-              style={[styles.actionBtn, styles.btnBlue]} 
-              onPress={handleStartVisit}
-              disabled={visitLoading}
-            >
-              {visitLoading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <>
-                  <Ionicons name="play-circle" size={20} color="#fff" />
-                  <Text style={styles.btnText}>Iniciar Visita</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          </>
+          // Estado: sin visita activa → solo mostrar "Iniciar visita"
+          <TouchableOpacity
+            style={[styles.footerBtn, { backgroundColor: colors.brandGreen }]}
+            onPress={handleStartVisit}
+            disabled={visitLoading}
+          >
+            {visitLoading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <>
+                <Ionicons name="play-circle-outline" size={20} color="#fff" />
+                <Text style={styles.footerBtnText}>Iniciar visita</Text>
+              </>
+            )}
+          </TouchableOpacity>
         ) : (
-          // MODO: Visita activa
+          // Estado: visita activa → "Crear pedido" y "Finalizar"
           <>
-            <TouchableOpacity 
-              style={[styles.actionBtn, styles.btnRed]} 
+            <TouchableOpacity
+              style={[styles.footerBtn, { backgroundColor: '#166534' }]}
               onPress={handleCreateOrder}
             >
-              <Ionicons name="cart" size={20} color="#fff" />
-              <Text style={styles.btnText}>Crear Pedido</Text>
+              <Ionicons name="cart-outline" size={20} color="#fff" />
+              <Text style={styles.footerBtnText}>Crear pedido</Text>
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.actionBtn, styles.btnGreen]}
+
+            <TouchableOpacity
+              style={[styles.footerBtn, { backgroundColor: colors.brandGreen }]}
               onPress={() => setShowEndVisitModal(true)}
               disabled={visitLoading}
             >
@@ -247,8 +394,8 @@ export default function ClientDetailScreen() {
                 <ActivityIndicator color="#fff" />
               ) : (
                 <>
-                  <Ionicons name="checkmark-circle" size={20} color="#fff" />
-                  <Text style={styles.btnText}>Finalizar</Text>
+                  <Ionicons name="checkmark-circle-outline" size={20} color="#fff" />
+                  <Text style={styles.footerBtnText}>Finalizar</Text>
                 </>
               )}
             </TouchableOpacity>
@@ -256,7 +403,7 @@ export default function ClientDetailScreen() {
         )}
       </View>
 
-      {/* Modal para finalizar visita */}
+      {/* ── MODAL: Finalizar visita ── */}
       <Modal
         visible={showEndVisitModal}
         transparent
@@ -264,83 +411,85 @@ export default function ClientDetailScreen() {
         onRequestClose={() => setShowEndVisitModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Finalizar Visita</Text>
-            
-            <Text style={styles.modalLabel}>Resultado de la visita:</Text>
-            <View style={styles.outcomeButtons}>
-              <TouchableOpacity
-                style={[styles.outcomeBtn, visitOutcome === 'sale' && styles.outcomeBtnActive]}
-                onPress={() => setVisitOutcome('sale')}
-              >
-                <Ionicons 
-                  name="checkmark-circle" 
-                  size={24} 
-                  color={visitOutcome === 'sale' ? '#fff' : '#388E3C'} 
-                />
-                <Text style={[
-                  styles.outcomeBtnText,
-                  visitOutcome === 'sale' && styles.outcomeBtnTextActive
-                ]}>Venta</Text>
-              </TouchableOpacity>
+          <View style={[styles.modalContent, { backgroundColor: colors.cardBg }]}>
+            <Text style={[styles.modalTitle, { color: colors.textMain }]}>
+              Finalizar visita
+            </Text>
 
-              <TouchableOpacity
-                style={[styles.outcomeBtn, visitOutcome === 'no_sale' && styles.outcomeBtnActive]}
-                onPress={() => setVisitOutcome('no_sale')}
-              >
-                <Ionicons 
-                  name="close-circle" 
-                  size={24} 
-                  color={visitOutcome === 'no_sale' ? '#fff' : '#F59E0B'} 
-                />
-                <Text style={[
-                  styles.outcomeBtnText,
-                  visitOutcome === 'no_sale' && styles.outcomeBtnTextActive
-                ]}>Sin Venta</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.outcomeBtn, visitOutcome === 'closed' && styles.outcomeBtnActive]}
-                onPress={() => setVisitOutcome('closed')}
-              >
-                <Ionicons 
-                  name="lock-closed" 
-                  size={24} 
-                  color={visitOutcome === 'closed' ? '#fff' : '#2a8c4a'} 
-                />
-                <Text style={[
-                  styles.outcomeBtnText,
-                  visitOutcome === 'closed' && styles.outcomeBtnTextActive
-                ]}>Cerrado</Text>
-              </TouchableOpacity>
+            {/* Resultado de la visita */}
+            <Text style={[styles.modalLabel, { color: colors.textSub }]}>
+              Resultado
+            </Text>
+            <View style={styles.outcomeRow}>
+              {(
+                [
+                  { key: 'sale', label: 'Venta', icon: 'checkmark-circle' },
+                  { key: 'no_sale', label: 'Sin venta', icon: 'close-circle' },
+                  { key: 'closed', label: 'Cerrado', icon: 'lock-closed' },
+                ] as const
+              ).map(opt => (
+                <TouchableOpacity
+                  key={opt.key}
+                  style={[
+                    styles.outcomeBtn,
+                    { borderColor: colors.cardBorder },
+                    visitOutcome === opt.key && {
+                      backgroundColor: colors.brandGreen,
+                      borderColor: colors.brandGreen,
+                    },
+                  ]}
+                  onPress={() => setVisitOutcome(opt.key)}
+                >
+                  <Ionicons
+                    name={opt.icon}
+                    size={22}
+                    color={visitOutcome === opt.key ? '#fff' : colors.textSub}
+                  />
+                  <Text style={[
+                    styles.outcomeBtnText,
+                    { color: visitOutcome === opt.key ? '#fff' : colors.textSub },
+                  ]}>
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
             </View>
 
-            <Text style={styles.modalLabel}>Notas (opcional):</Text>
+            {/* Notas opcionales */}
+            <Text style={[styles.modalLabel, { color: colors.textSub }]}>
+              Notas (opcional)
+            </Text>
             <TextInput
-              style={styles.notesInput}
+              style={[styles.notesInput, {
+                color: colors.textMain,
+                borderColor: colors.cardBorder,
+                backgroundColor: isDark ? colors.inputBg : '#F9FAFB',
+              }]}
               placeholder="Ej: El dueño no estaba, pidió fiado..."
+              placeholderTextColor={colors.textSub}
               value={visitNotes}
               onChangeText={setVisitNotes}
               multiline
               numberOfLines={3}
             />
 
-            <View style={styles.modalButtons}>
+            {/* Botones confirmar / cancelar */}
+            <View style={styles.modalBtnsRow}>
               <TouchableOpacity
-                style={[styles.modalBtn, styles.modalBtnCancel]}
+                style={[styles.modalBtn, { backgroundColor: isDark ? colors.inputBg : '#F3F4F6' }]}
                 onPress={() => setShowEndVisitModal(false)}
               >
-                <Text style={styles.modalBtnTextCancel}>Cancelar</Text>
+                <Text style={[styles.modalBtnText, { color: colors.textSub }]}>Cancelar</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalBtn, styles.modalBtnConfirm]}
+                style={[styles.modalBtn, { backgroundColor: colors.brandGreen }]}
                 onPress={handleEndVisit}
                 disabled={visitLoading}
               >
                 {visitLoading ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <Text style={styles.modalBtnText}>Confirmar</Text>
+                  <Text style={[styles.modalBtnText, { color: '#fff' }]}>Confirmar</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -351,192 +500,215 @@ export default function ClientDetailScreen() {
   );
 }
 
-// Componente auxiliar para filas de info
-const InfoRow = ({ label, value, isMoney, highlight }: any) => (
-  <View style={styles.row}>
-    <Text style={styles.label}>{label}:</Text>
-    <Text style={[
-      styles.value, 
-      isMoney && { fontWeight: 'bold' },
-      highlight && { color: '#2a8c4a' }
-    ]}>{value}</Text>
-  </View>
-);
-
+// ─────────────────────────────────────────────────────────────────────────────
+// ESTILOS
+// Regla: medidas aquí, colores siempre inline con colors.xxx
+// ─────────────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F5F5' },
+  container: { flex: 1 },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  
+
+  // HEADER
   header: {
-    backgroundColor: '#2a8c4a',
-    paddingTop: 50,
-    paddingBottom: 20,
+    paddingTop: 52,
+    paddingBottom: 22,
     paddingHorizontal: 20,
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
   },
-  headerTop: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15 },
-  headerTitle: { color: 'white', fontSize: 22, fontWeight: 'bold', marginBottom: 8 },
-  badge: { backgroundColor: '#E8F5E9', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12, alignSelf: 'flex-start' },
-  badgeText: { color: '#2E7D32', fontWeight: 'bold', fontSize: 12 },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  headerIconBtn: {
+    padding: 6,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+  },
+  headerTitle: {
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  headerCode: {
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  headerBadgesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flexWrap: 'wrap',
+  },
+  statusBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 20,
+  },
+  statusBadgeText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
   visitBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-    marginTop: 10,
-    alignSelf: 'flex-start',
     gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
   },
   visitBadgeText: {
     color: '#fff',
     fontSize: 12,
-    fontWeight: 'bold',
+    fontWeight: '600',
   },
 
-  scrollContent: { padding: 16, paddingBottom: 100 },
-
-  // Map Card
-  mapCard: {
-    backgroundColor: 'white', borderRadius: 12, overflow: 'hidden', marginBottom: 16,
-    shadowColor: '#000', shadowOpacity: 0.1, elevation: 3
+  // SCROLL
+  scrollContent: {
+    padding: 16,
   },
-  mapPlaceholder: { height: 120, backgroundColor: '#EEE', alignItems: 'center', justifyContent: 'center' },
-  mapText: { color: '#888', marginTop: 8 },
-  mapActionCenter: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    justifyContent: 'center', 
-    gap: 8, 
-    padding: 14,
-    backgroundColor: '#F0FDF4',
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB'
-  },
-  mapBtnText: { color: '#2a8c4a', fontWeight: '600', fontSize: 15 },
 
-  // Info Card
+  // SECTION CARD
   sectionCard: {
-    backgroundColor: 'white', borderRadius: 12, padding: 16, marginBottom: 16,
-    shadowColor: '#000', shadowOpacity: 0.05, elevation: 2
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  sectionTitle: { fontSize: 16, fontWeight: 'bold', color: '#333', marginBottom: 16 },
-  row: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
-  label: { color: '#666', fontSize: 14 },
-  value: { color: '#333', fontSize: 14, textAlign: 'right', flex: 1, marginLeft: 10 },
-
-  // Footer Buttons
-  footer: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    flexDirection: 'row', padding: 16, backgroundColor: 'white',
-    borderTopWidth: 1, borderTopColor: '#EEE'
-  },
-  actionBtn: { 
-    flex: 1, 
-    padding: 16, 
-    borderRadius: 12, 
-    alignItems: 'center', 
-    marginHorizontal: 6,
+  sectionHeader: {
     flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 14,
+    gap: 10,
+  },
+  sectionIconBg: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+
+  // INFO ROW
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 10,
+  },
+  infoLabel: {
+    fontSize: 13,
+    flex: 1,
+  },
+  infoValue: {
+    fontSize: 13,
+    textAlign: 'right',
+    flex: 1.2,
+    marginLeft: 12,
+  },
+
+  // FOOTER
+  footer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    gap: 10,
+    padding: 16,
+    borderTopWidth: 1,
+  },
+  footerBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
+    paddingVertical: 14,
+    borderRadius: 14,
   },
-  btnRed: { backgroundColor: '#2a8c4a' },
-  btnGreen: { backgroundColor: '#388E3C' },
-  btnBlue: { backgroundColor: '#64c27b' },
-  btnText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
+  footerBtnText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700',
+  },
 
-  // Modal
+  // MODAL
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     padding: 24,
-    width: '90%',
-    maxWidth: 400,
+    paddingBottom: 36,
   },
   modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1F2937',
-    marginBottom: 20,
+    fontSize: 18,
+    fontWeight: '700',
     textAlign: 'center',
+    marginBottom: 20,
   },
   modalLabel: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
-    color: '#6B7280',
     marginBottom: 10,
-    marginTop: 10,
+    marginTop: 4,
   },
-  outcomeButtons: {
+  outcomeRow: {
     flexDirection: 'row',
-    gap: 10,
-    marginBottom: 10,
+    gap: 8,
+    marginBottom: 16,
   },
   outcomeBtn: {
     flex: 1,
-    padding: 12,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: '#E5E7EB',
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1.5,
     alignItems: 'center',
     gap: 4,
   },
-  outcomeBtnActive: {
-    backgroundColor: '#2a8c4a',
-    borderColor: '#2a8c4a',
-  },
   outcomeBtnText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
-    color: '#6B7280',
-  },
-  outcomeBtnTextActive: {
-    color: '#fff',
   },
   notesInput: {
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 10,
+    borderRadius: 12,
     padding: 12,
     fontSize: 14,
-    color: '#1F2937',
     minHeight: 80,
     textAlignVertical: 'top',
+    marginBottom: 16,
   },
-  modalButtons: {
+  modalBtnsRow: {
     flexDirection: 'row',
     gap: 10,
-    marginTop: 20,
   },
   modalBtn: {
     flex: 1,
-    padding: 14,
-    borderRadius: 10,
+    paddingVertical: 14,
+    borderRadius: 12,
     alignItems: 'center',
   },
-  modalBtnCancel: {
-    backgroundColor: '#F3F4F6',
-  },
-  modalBtnConfirm: {
-    backgroundColor: '#2a8c4a',
-  },
-  modalBtnTextCancel: {
-    color: '#6B7280',
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
   modalBtnText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 16,
+    fontSize: 15,
+    fontWeight: '700',
   },
 });
