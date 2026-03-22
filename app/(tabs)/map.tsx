@@ -168,7 +168,6 @@ export default function LeafletMapScreen() {
   const [suggestions, setSuggestions] = useState<any[]>([]);
 
   const [isTrackingEnabled, setIsTrackingEnabled] = useState(false);
-  const [isLoadingTracking, setIsLoadingTracking] = useState(true);
 
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
   const [selectedZoneId,     setSelectedZoneId]     = useState<string | null>(null);
@@ -299,10 +298,14 @@ export default function LeafletMapScreen() {
 
   useEffect(() => {
     (async () => {
-      const enabled = await LocationService.isTrackingEnabled();
-      setIsTrackingEnabled(enabled);
-      setIsLoadingTracking(false);
-      if (enabled) await LocationService.initialize();
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          await LocationService.enableTracking();
+          await LocationService.initialize();
+          setIsTrackingEnabled(true);
+        }
+      } catch (_) {}
     })();
     return () => { LocationService.stopTrackingInterval(); };
   }, []);
@@ -485,21 +488,6 @@ export default function LeafletMapScreen() {
       />
 
       <View style={styles.topBar}>
-
-        <View style={styles.trackingRow}>
-          <Ionicons name={isTrackingEnabled ? 'location' : 'location-outline'} size={20} color={isTrackingEnabled ? '#10B981' : '#9CA3AF'} />
-          <Text style={[styles.trackingLabel, isTrackingEnabled && { color: '#10B981' }]}>
-            {isTrackingEnabled ? 'Ubicación activa' : 'Ubicación pausada'}
-          </Text>
-          {isLoadingTracking
-            ? <ActivityIndicator size="small" color="#2a8c4a" />
-            : <Switch value={isTrackingEnabled} onValueChange={handleTrackingToggle}
-                trackColor={{ false: '#D1D5DB', true: '#86efac' }}
-                thumbColor={isTrackingEnabled ? '#10B981' : '#f3f4f6'}
-                ios_backgroundColor="#D1D5DB"
-                style={{ transform: [{ scaleX: 0.85 }, { scaleY: 0.85 }] }} />
-          }
-        </View>
 
         <View style={styles.searchWrapper}>
           <Ionicons name="search" size={18} color="#666" style={{ marginRight: 8 }} />

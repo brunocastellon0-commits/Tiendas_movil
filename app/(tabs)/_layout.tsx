@@ -74,22 +74,10 @@ export default function TabLayout() {
         }}
       />
 
-      {/* PESTAÑA 3: RUTAS (Botón de Acción Rápida) */}
-      {/* No abre una pestaña, sino que redirige a /map (o donde quieras) */}
+      {/* PESTAÑA OCULTA: Rutas (deshabilitada) */}
       <Tabs.Screen
         name="rutas"
-        listeners={{
-          tabPress: (e) => {
-            e.preventDefault(); // Cancelamos la navegación normal
-            router.push('/map'); // Redirigimos manualmente
-          },
-        }}
-        options={{
-          title: 'Rutas',
-          tabBarIcon: ({ color, focused }) => (
-            <MaterialCommunityIcons name={focused ? "routes" : "map-marker-path"} size={28} color={color} />
-          ),
-        }}
+        options={{ href: null }}
       />
 
       {/* PESTAÑA 4: INVENTARIO (Botón de Acción Rápida) */}

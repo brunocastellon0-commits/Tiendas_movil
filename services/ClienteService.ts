@@ -50,7 +50,8 @@ export const clientService = {
       let query = supabase
         .from('clients')
         .select('*')
-        .order('name', { ascending: true }); // Orden alfabético
+        .order('name', { ascending: true })
+        .limit(5000); // Evitar el límite por defecto de 1000 de Supabase
 
       if (search) {
         // Busca si el texto coincide con el Nombre O el Código

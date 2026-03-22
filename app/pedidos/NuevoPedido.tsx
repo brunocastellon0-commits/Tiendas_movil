@@ -60,12 +60,11 @@ export default function NuevoPedido() {
   // Campos del Formulario
   const [nroDocumento, setNroDocumento] = useState('00000');
   const [fecha, setFecha] = useState(new Date().toLocaleDateString());
-  const [tipoDocumento, setTipoDocumento] = useState<'Factura' | 'Documento'>('Documento');
-  const [tipoPago, setTipoPago] = useState<'Contado' | 'Crédito'>('Contado');
   const [observation, setObservation] = useState('');
 
-  // NUEVOS: Descuento e Interés
+  // Descuento e Interés (en el carrito de detalle)
   const [descuentoMonto, setDescuentoMonto] = useState('0');
+  const [tipoPago, setTipoPago] = useState<'Contado' | 'Crédito'>('Contado');
   const [interesPorcentaje, setInteresPorcentaje] = useState('0');
 
   // 1. Carga Inicial
@@ -137,18 +136,14 @@ export default function NuevoPedido() {
     setCart(cart.filter(p => p.id !== id));
   };
 
-  // 3. Cálculos financieros
   const calculateSubtotal = () => cart.reduce((acc, item) => acc + (item.qty * item.precio_base_venta), 0);
 
-  const getDescuentoMonto = () => {
-    return parseFloat(descuentoMonto) || 0;
-  };
+  const getDescuentoMonto = () => parseFloat(descuentoMonto) || 0;
 
   const getDescuentoPorcentaje = () => {
     const subtotal = calculateSubtotal();
     if (subtotal === 0) return 0;
-    const monto = getDescuentoMonto();
-    return (monto / subtotal) * 100;
+    return (getDescuentoMonto() / subtotal) * 100;
   };
 
   const getInteresMonto = () => {
@@ -157,12 +152,8 @@ export default function NuevoPedido() {
     return (subtotal * porcentaje) / 100;
   };
 
-  const calculateTotal = () => {
-    const subtotal = calculateSubtotal();
-    const descuento = getDescuentoMonto();
-    const interes = getInteresMonto();
-    return subtotal - descuento + interes;
-  };
+  const calculateTotal = () => calculateSubtotal() - getDescuentoMonto() + getInteresMonto();
+
 
   const saveOrder = async () => {
     const validItems = cart.filter(item => item.qty > 0);
@@ -179,15 +170,15 @@ export default function NuevoPedido() {
       const orderPayload = {
         numero_documento: nroDocumento,
         fecha_pedido: new Date().toISOString().split('T')[0],
-        tipo_documento: tipoDocumento === 'Factura' ? 'VFL' : 'VD',
-        tipo_pago: tipoPago,
+        tipo_documento: 'VD',
+        tipo_pago: 'Contado',
         almacen: 'Central',
         sucursal: 'Principal',
-        dias_plazo: tipoPago === 'Crédito' ? 30 : 0,
+        dias_plazo: 0,
         total_venta: calculateTotal(),
-        descuento_porcentaje: getDescuentoPorcentaje(),
-        descuento_monto: getDescuentoMonto(),
-        interes: getInteresMonto(),
+        descuento_porcentaje: 0,
+        descuento_monto: 0,
+        interes: 0,
         observacion: observation,
         estado: 'Pendiente',
         ubicacion_venta: `SRID=4326;POINT(${loc.coords.longitude} ${loc.coords.latitude})`,
@@ -281,13 +272,9 @@ export default function NuevoPedido() {
           <View style={[styles.formSheet, { backgroundColor: colors.cardBg, borderColor: isDark ? colors.cardBorder : 'transparent' }]}>
             <Text style={[styles.sectionHeader, { color: colors.brandGreen }]}>DATOS DE LA VENTA</Text>
 
-            {/* Fila 1: Doc y Fecha */}
+            {/* Fecha */}
             <View style={styles.rowBetween}>
               <View style={styles.dataBox}>
-                <Text style={styles.labelSmall}>NRO. DOC</Text>
-                <Text style={[styles.valueText, { color: colors.textMain }]}>{nroDocumento}</Text>
-              </View>
-              <View style={[styles.dataBox, { alignItems: 'flex-end' }]}>
                 <Text style={styles.labelSmall}>FECHA</Text>
                 <Text style={[styles.valueText, { color: colors.textMain }]}>{fecha}</Text>
               </View>
@@ -295,70 +282,19 @@ export default function NuevoPedido() {
 
             <View style={[styles.divider, { backgroundColor: isDark ? '#444' : '#E5E7EB' }]} />
 
-            {/* Fila 2: Cliente */}
-            <View style={{ marginBottom: 12 }}>
+            {/* Cliente */}
+            <View style={{ marginBottom: 4 }}>
               <Text style={styles.labelSmall}>CLIENTE</Text>
               <Text style={[styles.clientName, { color: colors.textMain }]}>{client?.code} - {client?.name}</Text>
               {client?.business_name && <Text style={[styles.clientSub, { color: colors.textSub }]}>{client.business_name}</Text>}
             </View>
 
-            {/* Fila 3: NIT y Dirección */}
-            <View style={[styles.rowBetween, { gap: 10 }]}>
-              <View style={[styles.dataBox, { flex: 0.4 }]}>
-                <Text style={styles.labelSmall}>NIT / CI</Text>
-                <Text style={[styles.infoText, { color: colors.textMain }]}>{client?.tax_id || 'S/N'}</Text>
-              </View>
-              <View style={[styles.dataBox, { flex: 0.6 }]}>
-                <Text style={styles.labelSmall}>DIRECCIÓN</Text>
-                <Text style={[styles.infoText, { color: colors.textMain }]} numberOfLines={1}>{client?.address || 'Sin dirección'}</Text>
-              </View>
-            </View>
+            <View style={[styles.divider, { backgroundColor: isDark ? '#444' : '#E5E7EB' }]} />
 
-            <View style={styles.divider} />
-
-            {/* Fila 4: Selectores */}
-            <View style={styles.rowBetween}>
-
-              {/* Selector Tipo Doc */}
-              <View style={{ flex: 1, marginRight: 8 }}>
-                <Text style={styles.labelSmall}>TIPO DOCUMENTO</Text>
-                <View style={[styles.toggleContainer, { backgroundColor: isDark ? colors.cardBorder : '#F3F4F6' }]}>
-                  <TouchableOpacity
-                    style={[styles.toggleBtn, tipoDocumento === 'Factura' && [styles.toggleBtnActive, { backgroundColor: colors.brandGreen, shadowColor: colors.brandGreen }]]}
-                    onPress={() => setTipoDocumento('Factura')}
-                  >
-                    <Text style={[styles.toggleText, { color: isDark && tipoDocumento !== 'Factura' ? colors.textSub : '#6B7280' }, tipoDocumento === 'Factura' && styles.toggleTextActive]}>Factura</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.toggleBtn, tipoDocumento === 'Documento' && [styles.toggleBtnActive, { backgroundColor: colors.brandGreen, shadowColor: colors.brandGreen }]]}
-                    onPress={() => setTipoDocumento('Documento')}
-                  >
-                    <Text style={[styles.toggleText, { color: isDark && tipoDocumento !== 'Documento' ? colors.textSub : '#6B7280' }, tipoDocumento === 'Documento' && styles.toggleTextActive]}>Nota</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {/* Selector Tipo Pago */}
-              <View style={{ flex: 1, marginLeft: 8 }}>
-                <Text style={styles.labelSmall}>FORMA DE PAGO</Text>
-                <View style={[styles.toggleContainer, { backgroundColor: isDark ? colors.cardBorder : '#F3F4F6' }]}>
-                  <TouchableOpacity
-                    style={[styles.toggleBtn, tipoPago === 'Contado' && [styles.toggleBtnActive, { backgroundColor: colors.brandGreen, shadowColor: colors.brandGreen }]]}
-                    onPress={() => setTipoPago('Contado')}
-                  >
-                    <Ionicons name="cash" size={16} color={tipoPago === 'Contado' ? '#FFF' : '#6B7280'} style={{ marginRight: 4 }} />
-                    <Text style={[styles.toggleText, { color: isDark && tipoPago !== 'Contado' ? colors.textSub : '#6B7280' }, tipoPago === 'Contado' && styles.toggleTextActive]}>Cont.</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.toggleBtn, tipoPago === 'Crédito' && [styles.toggleBtnActive, { backgroundColor: colors.brandGreen, shadowColor: colors.brandGreen }]]}
-                    onPress={() => setTipoPago('Crédito')}
-                  >
-                    <Ionicons name="calendar" size={16} color={tipoPago === 'Crédito' ? '#FFF' : '#6B7280'} style={{ marginRight: 4 }} />
-                    <Text style={[styles.toggleText, { color: isDark && tipoPago !== 'Crédito' ? colors.textSub : '#6B7280' }, tipoPago === 'Crédito' && styles.toggleTextActive]}>Créd.</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
+            {/* Dirección */}
+            <View>
+              <Text style={styles.labelSmall}>DIRECCIÓN</Text>
+              <Text style={[styles.infoText, { color: colors.textMain }]}>{client?.address || 'Sin dirección'}</Text>
             </View>
           </View>
 
@@ -520,11 +456,8 @@ export default function NuevoPedido() {
 
               {filteredProducts.slice(0, 50).map((p, index) => {
                 const isInCart = cart.some(item => item.id === p.id);
-                const rowBg = isDark
-                  ? (index % 2 === 0 ? colors.cardBg : '#1a2d42')
-                  : (index % 2 === 0 ? '#FFFFFF' : '#F9FAFB');
                 return (
-                  <View key={p.id} style={[styles.tableRow, { backgroundColor: rowBg, borderBottomColor: isDark ? '#2d3f55' : '#F3F4F6' }]}>
+                  <View key={p.id} style={[styles.tableRow, { backgroundColor: colors.cardBg, borderBottomColor: isDark ? '#2d3f55' : '#F3F4F6' }]}>
                     <View style={{ flex: 2 }}>
                       <Text style={[styles.cellName, { color: colors.textMain }]} numberOfLines={2}>{p.nombre_producto}</Text>
                       <Text style={[styles.cellCode, { color: colors.textSub }]}>{p.codigo_producto}</Text>

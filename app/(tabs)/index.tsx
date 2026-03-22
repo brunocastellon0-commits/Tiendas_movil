@@ -72,14 +72,7 @@ export default function HomeScreen() {
       color: colors.brandGreen,
       route: '/clients/clients'
     },
-    {
-      id: 'routes',
-      title: 'Rutas',
-      iconLib: 'MaterialCommunityIcons',
-      icon: 'map-marker-path',
-      color: isDark ? colors.iconGray : '#334155',
-      route: '/map'
-    },
+
     {
       id: 'cobranza',
       title: 'Hoja de Cobranza', // Nombre actualizado
@@ -124,9 +117,17 @@ export default function HomeScreen() {
       id: 'categories',
       title: 'Categorías',
       iconLib: 'Ionicons',
-      icon: 'grid-outline', // Icono de Grilla/Categoría
+      icon: 'grid-outline',
       color: '#16A34A',
       route: '/admin/categorias/categoria'
+    },
+    {
+      id: 'pedidos',
+      title: 'Pedidos',
+      iconLib: 'MaterialCommunityIcons',
+      icon: 'clipboard-text-outline',
+      color: '#7C3AED',
+      route: '/pedidos/MisPedidos'
     },
   ];
 
@@ -198,9 +199,9 @@ export default function HomeScreen() {
 
   // --- 3. FILTRO DE VISTAS SEGÚN ROL ---
   const visibleMenuOptions = allMenuOptions.filter(option => {
-    // Si el rol es "Preventista", solo mostramos estos 3 módulos
+    // Si el rol es "Preventista", solo mostramos estos módulos
     if (userRole === 'Preventista') {
-      return ['clients', 'routes', 'cobranza'].includes(option.id);
+      return ['clients', 'cobranza', 'inventory', 'categories', 'pedidos'].includes(option.id);
     }
     // Si es Administrador (u otro), mostramos todo
     return true;
@@ -296,43 +297,7 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* C. LISTA DE ÚLTIMOS MOVIMIENTOS */}
-        <View style={[styles.floatingCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder, borderWidth: isDark ? 1 : 0 }]}>
-          <View style={styles.cardHeaderRow}>
-            <Text style={[styles.cardTitle, { color: colors.textMain }]}>Últimos Movimientos</Text>
-          </View>
 
-          <View style={styles.ordersListContainer}>
-            {orders.map((order, index) => {
-              const isLast = index === orders.length - 1;
-              const isDelivered = order.status === 'Pagado' || order.status === 'delivered';
-              const statusColor = isDelivered ? colors.brandGreen : '#F59E0B';
-              const iconName = isDelivered ? "check-circle" : "clock-time-four";
-              const iconBg = isDelivered ? (isDark ? 'rgba(42, 140, 74, 0.2)' : '#E8F5E9') : (isDark ? 'rgba(245, 158, 11, 0.15)' : '#FFF3E0');
-
-              return (
-                <View key={order.id} style={[styles.orderRowItem, !isLast && { borderBottomWidth: 1, borderBottomColor: isDark ? colors.cardBorder : '#F1F5F9' }]}>
-                  <View style={[styles.orderIconCircle, { backgroundColor: iconBg }]}>
-                    <MaterialCommunityIcons name={iconName} size={20} color={statusColor} />
-                  </View>
-                  <View style={styles.orderInfo}>
-                    <Text style={[styles.orderClient, { color: colors.textMain }]} numberOfLines={1}>{order.clients?.name}</Text>
-                    <Text style={[styles.orderDate, { color: colors.textSub }]}>
-                      {new Date(order.created_at).toLocaleDateString()}
-                    </Text>
-                  </View>
-                  <View style={styles.orderRight}>
-                    <Text style={[styles.orderPrice, { color: isDelivered ? colors.textMain : '#F59E0B' }]}>Bs {order.total_amount}</Text>
-                    <Text style={[styles.orderStatusText, { color: statusColor }]}>{isDelivered ? 'Pagado' : 'Pendiente'}</Text>
-                  </View>
-                </View>
-              );
-            })}
-            {orders.length === 0 && (
-              <Text style={{ textAlign: 'center', color: colors.textSub, padding: 20 }}>No hay actividad reciente</Text>
-            )}
-          </View>
-        </View>
 
       </ScrollView>
     </View>
