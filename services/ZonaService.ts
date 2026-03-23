@@ -5,7 +5,7 @@ export const zonaService = {
     //Listamos zonas 
     getZonas: async (busqueda: string = '') => {
         let query = supabase
-            .from('zonas')
+            .from('zones')
             .select(`*, employees:vendedor_id(id, full_name)`)
             .order('codigo_zona', { ascending: true });
 
@@ -29,7 +29,7 @@ export const zonaService = {
     //obtener zonas
     getZonaById: async (id: string) => {
         const { data, error } = await supabase
-            .from('zonas')
+            .from('zones')
             .select('*')
             .eq('id', id)
             .single();
@@ -39,7 +39,7 @@ export const zonaService = {
 
     createZona: async (zona: NuevaZona) => {
         const { data, error } = await supabase
-            .from('zonas')
+            .from('zones')
             .insert(zona)
             .select()
             .single();
@@ -50,7 +50,7 @@ export const zonaService = {
     //editar zona
     updateZona: async (id: string, updates: Partial<NuevaZona>) => {
         const { data, error } = await supabase
-            .from('zonas')
+            .from('zones')
             .update(updates)
             .eq('id', id)
             .select()
@@ -61,7 +61,7 @@ export const zonaService = {
     //eliminar zona
     deleteZona: async (id: string) => {
         const { error } = await supabase
-            .from('zonas')
+            .from('zones')
             .delete()
             .eq('id', id);
         if (error) throw error;

@@ -4,24 +4,16 @@ import * as Location from 'expo-location';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+  ActivityIndicator, Alert, KeyboardAvoidingView, Modal,
+  Platform, ScrollView, StatusBar, StyleSheet, Text,
+  TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { supabase } from '../../lib/supabase';
+import { showVisitToast, VisitToast } from '../../components/VisitToast';
 
-// --- Interfaces ---
 interface Product {
   id: string;
   nombre_producto: string;
@@ -31,86 +23,72 @@ interface Product {
   stock_actual: number;
   activo: boolean;
 }
+interface CartItem extends Product { qty: number; }
 
-interface CartItem extends Product {
-  qty: number;
-}
+// ─────────────────────────────────────────────────────────────────────────────
+// MAPEO TEXTO → NÚMERO para la BD
+//   tipo_documento: Nota=0, Factura=1
+//   tipo_pago:      Contado=0, Credito=1
+// En la UI mostramos texto; al guardar convertimos con estos objetos.
+// ─────────────────────────────────────────────────────────────────────────────
+const TIPO_DOCUMENTO = { Nota: 0, Factura: 1 } as const;
+const TIPO_PAGO = { Contado: 0, Credito: 1 } as const;
+type TipoDocumentoLabel = keyof typeof TIPO_DOCUMENTO;
+type TipoPagoLabel = keyof typeof TIPO_PAGO;
 
 export default function NuevoPedido() {
   const router = useRouter();
   const { session } = useAuth();
   const { colors, isDark } = useTheme();
-  const { clientId, visitId } = useLocalSearchParams();
+  const { clientId } = useLocalSearchParams();
 
-  // Estados de Datos
-  const [client, setClient] = useState<any | null>(null);
+  const [client, setClient] = useState<any>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [empleadoId, setEmpleadoId] = useState<string | null>(null);
-
-  // Estados UIorder 
   const [loadingData, setLoadingData] = useState(true);
   const [saving, setSaving] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
-
-  // Ref para el ScrollView
   const scrollViewRef = React.useRef<ScrollView>(null);
 
-  // Campos del Formulario
-  const [nroDocumento, setNroDocumento] = useState('00000');
-  const [fecha, setFecha] = useState(new Date().toLocaleDateString());
-  const [observation, setObservation] = useState('');
+  // Modal de stock insuficiente
+  const [stockModal, setStockModal] = useState({
+    visible: false,
+    productName: '',
+    stockDisponible: 0,
+    cantidadPedida: 0,
+  });
 
-  // Descuento e Interés (en el carrito de detalle)
+  const [nroDocumento, setNroDocumento] = useState('00000');
+  const [fecha] = useState(new Date().toLocaleDateString('es-BO'));
+  const [tipoDocumento, setTipoDocumento] = useState<TipoDocumentoLabel>('Nota');
+  const [tipoPago, setTipoPago] = useState<TipoPagoLabel>('Contado');
+  const [observation, setObservation] = useState('');
   const [descuentoMonto, setDescuentoMonto] = useState('0');
-  const [tipoPago, setTipoPago] = useState<'Contado' | 'Crédito'>('Contado');
   const [interesPorcentaje, setInteresPorcentaje] = useState('0');
 
-  // 1. Carga Inicial
+  // ── Carga inicial ──────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!clientId) {
-      Alert.alert('Error', 'Falta el ID del cliente');
-      router.back();
-      return;
-    }
+    if (!clientId) { Alert.alert('Error', 'Falta el ID del cliente'); router.back(); return; }
     loadInitialData();
   }, [clientId]);
 
   const loadInitialData = async () => {
     try {
       setLoadingData(true);
-
       const { data: clientData, error: clientError } = await supabase
-        .from('clients')
-        .select('*')
-        .eq('id', clientId)
-        .single();
+        .from('clients').select('*').eq('id', clientId).single();
       if (clientError) throw clientError;
       setClient(clientData);
-
-      if (session?.user?.email) {
-        const { data: empData } = await supabase
-          .from('employees')
-          .select('id')
-          .eq('email', session.user.email)
-          .single();
-        if (empData?.id) {
-          setEmpleadoId(empData.id);
-        }
-      }
-
-      setNroDocumento('------');
+      setNroDocumento(Math.floor(100000 + Math.random() * 900000).toString());
 
       const { data: prodData, error: prodError } = await supabase
         .from('productos')
         .select('id, nombre_producto, codigo_producto, precio_base_venta, unidad_base_venta, stock_actual, activo')
         .eq('activo', true)
         .order('nombre_producto', { ascending: true });
-
       if (prodError) throw prodError;
       setProducts(prodData || []);
-
     } catch (error: any) {
       Alert.alert('Error', 'No se pudieron cargar los datos');
     } finally {
@@ -118,81 +96,77 @@ export default function NuevoPedido() {
     }
   };
 
+  // ── Carrito ────────────────────────────────────────────────────────────────
   const addToCart = (product: Product) => {
-    const existing = cart.find(p => p.id === product.id);
-    if (existing) {
-      Alert.alert('Producto ya agregado', 'Este producto ya está en el detalle del pedido.');
-    } else {
-      setCart([...cart, { ...product, qty: 0 }]);
+    if (cart.some(p => p.id === product.id)) {
+      Alert.alert('Ya agregado', 'Este producto ya está en el detalle del pedido.');
+      return;
     }
+    setCart(prev => [...prev, { ...product, qty: 0 }]);
   };
 
+  // Si qty > stock: muestra modal y limita al stock disponible.
   const updateQty = (id: string, newQty: number) => {
     if (newQty < 0) return;
-    setCart(cart.map(p => p.id === id ? { ...p, qty: newQty } : p));
-  };
+    const product = cart.find(p => p.id === id);
+    if (!product) return;
 
-  const removeFromCart = (id: string) => {
-    setCart(cart.filter(p => p.id !== id));
-  };
-
-  const calculateSubtotal = () => cart.reduce((acc, item) => acc + (item.qty * item.precio_base_venta), 0);
-
-  const getDescuentoMonto = () => parseFloat(descuentoMonto) || 0;
-
-  const getDescuentoPorcentaje = () => {
-    const subtotal = calculateSubtotal();
-    if (subtotal === 0) return 0;
-    return (getDescuentoMonto() / subtotal) * 100;
-  };
-
-  const getInteresMonto = () => {
-    const subtotal = calculateSubtotal();
-    const porcentaje = parseFloat(interesPorcentaje) || 0;
-    return (subtotal * porcentaje) / 100;
-  };
-
-  const calculateTotal = () => calculateSubtotal() - getDescuentoMonto() + getInteresMonto();
-
-
-  const saveOrder = async () => {
-    const validItems = cart.filter(item => item.qty > 0);
-    if (validItems.length === 0) {
-      return Alert.alert('Atención', 'Debe agregar cantidades a los productos.');
+    if (newQty > product.stock_actual) {
+      setStockModal({
+        visible: true,
+        productName: product.nombre_producto,
+        stockDisponible: product.stock_actual,
+        cantidadPedida: newQty,
+      });
+      // Dejamos en el máximo disponible, no bloqueamos
+      setCart(prev => prev.map(p => p.id === id ? { ...p, qty: product.stock_actual } : p));
+      return;
     }
+    setCart(prev => prev.map(p => p.id === id ? { ...p, qty: newQty } : p));
+  };
 
+  const removeFromCart = (id: string) => setCart(prev => prev.filter(p => p.id !== id));
+
+  // ── Cálculos ───────────────────────────────────────────────────────────────
+  const subtotal = () => cart.reduce((acc, i) => acc + i.qty * i.precio_base_venta, 0);
+  const descuentoValor = () => parseFloat(descuentoMonto) || 0;
+  const descuentoPct = () => { const s = subtotal(); return s === 0 ? 0 : (descuentoValor() / s) * 100; };
+  const interesValor = () => (subtotal() * (parseFloat(interesPorcentaje) || 0)) / 100;
+  const totalFinal = () => subtotal() - descuentoValor() + interesValor();
+
+  // ── Guardar ────────────────────────────────────────────────────────────────
+  const saveOrder = async () => {
+    const validItems = cart.filter(i => i.qty > 0);
+    if (validItems.length === 0) {
+      Alert.alert('Sin productos', 'Debe asignar cantidad a al menos un producto.');
+      return;
+    }
     setSaving(true);
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') throw new Error('Se requiere ubicación para confirmar.');
+      if (status !== 'granted') throw new Error('Se requiere permiso de ubicación para confirmar el pedido.');
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
 
       const orderPayload = {
         numero_documento: nroDocumento,
-        fecha_pedido: new Date().toISOString().split('T')[0],
-        tipo_documento: 'VD',
-        tipo_pago: 'Contado',
+        fecha_pedido: new Date().toISOString(),
+        tipo_documento: TIPO_DOCUMENTO[tipoDocumento], // 0 o 1
+        tipo_pago: TIPO_PAGO[tipoPago],           // 0 o 1
         almacen: 'Central',
         sucursal: 'Principal',
-        dias_plazo: 0,
-        total_venta: calculateTotal(),
-        descuento_porcentaje: 0,
-        descuento_monto: 0,
-        interes: 0,
+        dias_plazo: tipoPago === 'Credito' ? 30 : 0,
+        total_venta: totalFinal(),
+        descuento_monto: descuentoValor(),      // columna en BD
+        descuento_porcentaje: descuentoPct(),        // columna en BD
         observacion: observation,
-        estado: 'Pendiente',
-        ubicacion_venta: `SRID=4326;POINT(${loc.coords.longitude} ${loc.coords.latitude})`,
+        estado: tipoPago === 'Contado' ? 'Pagado' : 'Pendiente',
+        ubicacion_venta: `POINT(${loc.coords.longitude} ${loc.coords.latitude})`,
         clients_id: clientId,
-        empleado_id: empleadoId ?? session?.user.id,
-        ...(visitId ? { visit_id: visitId } : {})
+        empleado_id: session?.user.id,
       };
 
       const { data: orderData, error: orderError } = await supabase
-        .from('pedidos')
-        .insert(orderPayload)
-        .select('id')
-        .single();
-
+        .from('pedidos').insert(orderPayload).select('id').single();
       if (orderError) throw orderError;
 
       const detailsPayload = validItems.map(item => ({
@@ -201,56 +175,62 @@ export default function NuevoPedido() {
         unidad_seleccionada: item.unidad_base_venta || 'UNID',
         precio_unitario: item.precio_base_venta,
         cantidad: item.qty,
-        subtotal: item.qty * item.precio_base_venta
+        subtotal: item.qty * item.precio_base_venta,
       }));
 
-      const { error: detailsError } = await supabase
-        .from('detalle_pedido')
-        .insert(detailsPayload);
+      const { error: detailsError } = await supabase.from('detalle_pedido').insert(detailsPayload);
+      if (detailsError) throw detailsError;
 
-      if (detailsError) {
-        throw detailsError;
-      }
-
-      for (const item of validItems) {
-        await supabase
-          .from('productos')
-          .update({ stock_actual: item.stock_actual - item.qty })
-          .eq('id', item.id);
-      }
-
-      Alert.alert('¡Éxito!', 'Pedido registrado correctamente', [{ text: 'OK', onPress: () => router.back() }]);
-
+      showVisitToast({
+        title: 'Pedido registrado',
+        subtitle: 'El pedido se guardó correctamente.',
+        type: 'success',
+      });
+      setTimeout(() => router.back(), 5200);
     } catch (error: any) {
-
-      Alert.alert('Error', error.message || 'Ocurrió un error al guardar');
+      Alert.alert('Error al guardar', error.message);
     } finally {
       setSaving(false);
     }
   };
 
-  const filteredProducts = products.filter(p =>
-    p.nombre_producto.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    p.codigo_producto?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // ── Filtrado de productos ──────────────────────────────────────────────────
+  // Nombre: includes (cualquier posición)
+  // Código: startsWith (por prefijo, igual que la lista de clientes)
+  const filteredProducts = products.filter(p => {
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return true;
+    return (
+      p.nombre_producto.toLowerCase().includes(q) ||
+      p.codigo_producto?.toLowerCase().startsWith(q)
+    );
+  });
 
+  // ── Loading ────────────────────────────────────────────────────────────────
   if (loadingData) {
     return (
       <View style={[styles.center, { backgroundColor: colors.bgStart }]}>
         <ActivityIndicator size="large" color={colors.brandGreen} />
+        <Text style={[styles.loadingText, { color: colors.textSub }]}>Cargando datos...</Text>
       </View>
     );
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // RENDER
+  // ─────────────────────────────────────────────────────────────────────────
   return (
     <View style={[styles.container, { backgroundColor: colors.bgStart }]}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
-      {/* HEADER HERO */}
+      {/* Toast visual — se cierra solo en 5 segundos */}
+      <VisitToast />
+
+      {/* HEADER */}
       <LinearGradient colors={[colors.brandGreen, '#1e6b38']} style={styles.headerGradient}>
         <SafeAreaView edges={['top']} style={styles.headerContent}>
           <View style={styles.navBar}>
-            <TouchableOpacity onPress={router.back} style={styles.backButton}>
+            <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
               <Ionicons name="arrow-back" size={24} color="#FFF" />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Nueva Venta</Text>
@@ -268,145 +248,239 @@ export default function NuevoPedido() {
           keyboardShouldPersistTaps="handled"
         >
 
-          {/* --- TARJETA DE CABECERA (Datos de la Venta) --- */}
-          <View style={[styles.formSheet, { backgroundColor: colors.cardBg, borderColor: isDark ? colors.cardBorder : 'transparent' }]}>
-            <Text style={[styles.sectionHeader, { color: colors.brandGreen }]}>DATOS DE LA VENTA</Text>
+          {/* ── DATOS DE LA VENTA ── */}
+          <View style={[styles.formSheet, {
+            backgroundColor: colors.cardBg,
+            borderColor: isDark ? colors.cardBorder : 'transparent',
+            borderWidth: isDark ? 1 : 0,
+          }]}>
+            <Text style={[styles.sectionLabel, { color: colors.brandGreen }]}>DATOS DE LA VENTA</Text>
 
-            {/* Fecha */}
             <View style={styles.rowBetween}>
-              <View style={styles.dataBox}>
-                <Text style={styles.labelSmall}>FECHA</Text>
-                <Text style={[styles.valueText, { color: colors.textMain }]}>{fecha}</Text>
+              <View>
+                <Text style={[styles.fieldCaption, { color: colors.textSub }]}>NRO. DOC</Text>
+                <Text style={[styles.fieldValue, { color: colors.textMain }]}>{nroDocumento}</Text>
+              </View>
+              <View style={{ alignItems: 'flex-end' }}>
+                <Text style={[styles.fieldCaption, { color: colors.textSub }]}>FECHA</Text>
+                <Text style={[styles.fieldValue, { color: colors.textMain }]}>{fecha}</Text>
               </View>
             </View>
 
-            <View style={[styles.divider, { backgroundColor: isDark ? '#444' : '#E5E7EB' }]} />
+            <View style={[styles.divider, { backgroundColor: isDark ? colors.cardBorder : '#E5E7EB' }]} />
 
-            {/* Cliente */}
-            <View style={{ marginBottom: 4 }}>
-              <Text style={styles.labelSmall}>CLIENTE</Text>
+            <View style={{ marginBottom: 12 }}>
+              <Text style={[styles.fieldCaption, { color: colors.textSub }]}>CLIENTE</Text>
               <Text style={[styles.clientName, { color: colors.textMain }]}>{client?.code} - {client?.name}</Text>
-              {client?.business_name && <Text style={[styles.clientSub, { color: colors.textSub }]}>{client.business_name}</Text>}
+              {client?.business_name && (
+                <Text style={[styles.clientSub, { color: colors.textSub }]}>{client.business_name}</Text>
+              )}
             </View>
 
-            <View style={[styles.divider, { backgroundColor: isDark ? '#444' : '#E5E7EB' }]} />
+            <View style={[styles.rowBetween, { gap: 10, marginBottom: 12 }]}>
+              <View style={{ flex: 0.4 }}>
+                <Text style={[styles.fieldCaption, { color: colors.textSub }]}>NIT / CI</Text>
+                <Text style={[styles.fieldValue, { color: colors.textMain }]}>{client?.tax_id || 'S/N'}</Text>
+              </View>
+              <View style={{ flex: 0.6 }}>
+                <Text style={[styles.fieldCaption, { color: colors.textSub }]}>DIRECCIÓN</Text>
+                <Text style={[styles.fieldValue, { color: colors.textMain }]} numberOfLines={1}>
+                  {client?.address || 'Sin dirección'}
+                </Text>
+              </View>
+            </View>
 
-            {/* Dirección */}
-            <View>
-              <Text style={styles.labelSmall}>DIRECCIÓN</Text>
-              <Text style={[styles.infoText, { color: colors.textMain }]}>{client?.address || 'Sin dirección'}</Text>
+            <View style={[styles.divider, { backgroundColor: isDark ? colors.cardBorder : '#E5E7EB' }]} />
+
+            {/* Selectores: tipo documento y forma de pago */}
+            <View style={styles.rowBetween}>
+
+              {/* Nota (0) / Factura (1) */}
+              <View style={{ flex: 1, marginRight: 8 }}>
+                <Text style={[styles.fieldCaption, { color: colors.textSub }]}>TIPO DOCUMENTO</Text>
+                <View style={[styles.toggleTrack, { backgroundColor: isDark ? colors.cardBorder : '#F3F4F6' }]}>
+                  {(['Nota', 'Factura'] as TipoDocumentoLabel[]).map(opt => (
+                    <TouchableOpacity
+                      key={opt}
+                      style={[styles.toggleOption, tipoDocumento === opt && { backgroundColor: colors.brandGreen }]}
+                      onPress={() => setTipoDocumento(opt)}
+                    >
+                      <Text style={[
+                        styles.toggleText,
+                        { color: tipoDocumento === opt ? '#FFF' : colors.textSub },
+                        tipoDocumento === opt && { fontWeight: '800' },
+                      ]}>{opt}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              {/* Contado (0) / Crédito (1) */}
+              <View style={{ flex: 1, marginLeft: 8 }}>
+                <Text style={[styles.fieldCaption, { color: colors.textSub }]}>FORMA DE PAGO</Text>
+                <View style={[styles.toggleTrack, { backgroundColor: isDark ? colors.cardBorder : '#F3F4F6' }]}>
+                  {(['Contado', 'Credito'] as TipoPagoLabel[]).map(opt => (
+                    <TouchableOpacity
+                      key={opt}
+                      style={[styles.toggleOption, tipoPago === opt && { backgroundColor: colors.brandGreen }]}
+                      onPress={() => setTipoPago(opt)}
+                    >
+                      <Ionicons
+                        name={opt === 'Contado' ? 'cash-outline' : 'calendar-outline'}
+                        size={13}
+                        color={tipoPago === opt ? '#FFF' : colors.textSub}
+                        style={{ marginRight: 3 }}
+                      />
+                      <Text style={[
+                        styles.toggleText,
+                        { color: tipoPago === opt ? '#FFF' : colors.textSub },
+                        tipoPago === opt && { fontWeight: '800' },
+                      ]}>{opt === 'Credito' ? 'Créd.' : 'Cont.'}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
             </View>
           </View>
 
-          {/* --- DETALLE DEL PEDIDO (MEJORADO) --- */}
+          {/* ── DETALLE DEL PEDIDO ── */}
           {cart.length > 0 && (
             <View style={{ paddingHorizontal: 20, marginBottom: 20 }}>
-              <Text style={[styles.sectionHeader, { color: colors.brandGreen }]}>DETALLE DEL PEDIDO ({cart.length})</Text>
+              <Text style={[styles.sectionLabel, { color: colors.brandGreen }]}>
+                DETALLE DEL PEDIDO ({cart.length})
+              </Text>
 
-              <View style={[styles.cartCard, { backgroundColor: colors.cardBg, borderColor: isDark ? colors.cardBorder : '#E5E7EB' }]}>
+              <View style={[styles.cartCard, {
+                backgroundColor: colors.cardBg,
+                borderColor: isDark ? colors.cardBorder : '#E5E7EB',
+              }]}>
                 {cart.map((item, index) => (
-                  <View key={item.id} style={[styles.cartItemRow, index !== cart.length - 1 && [styles.cartItemBorder, { borderBottomColor: isDark ? '#444' : '#F3F4F6' }]]}>
-
-                    {/* Columna Info Producto */}
+                  <View
+                    key={item.id}
+                    style={[
+                      styles.cartRow,
+                      index !== cart.length - 1 && { borderBottomWidth: 1, borderBottomColor: isDark ? colors.cardBorder : '#F3F4F6' },
+                    ]}
+                  >
+                    {/* Info producto */}
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.cartItemName, { color: colors.textMain }]}>{item.nombre_producto}</Text>
-                      <Text style={styles.cartItemCode}>{item.codigo_producto}</Text>
-                      <Text style={[styles.cartItemUnitPrice, { color: colors.textSub }]}>Bs {item.precio_base_venta.toFixed(2)} c/u</Text>
+                      <Text style={[styles.cartItemName, { color: colors.textMain }]}>
+                        {item.nombre_producto}
+                      </Text>
+                      <Text style={[styles.cartItemCode, { color: colors.textSub }]}>
+                        {item.codigo_producto}
+                      </Text>
+                      <Text style={[styles.cartItemPrice, { color: colors.textSub }]}>
+                        Bs {item.precio_base_venta.toFixed(2)} c/u
+                      </Text>
                     </View>
 
-                    {/* Columna Cantidad (EDITABLE) */}
-                    <View style={styles.qtyInputWrapper}>
-                      <Text style={styles.qtyLabel}>CANT.</Text>
+                    {/* Input cantidad */}
+                    <View style={styles.qtyWrapper}>
+                      <Text style={[styles.qtyLabel, { color: colors.textSub }]}>CANT.</Text>
                       <TextInput
-                        style={[styles.qtyInput, { color: colors.textMain, backgroundColor: isDark ? colors.cardBg : '#F9FAFB', borderColor: colors.brandGreen }]}
+                        style={[styles.qtyInput, {
+                          color: colors.textMain,
+                          backgroundColor: isDark ? colors.inputBg : '#F9FAFB',
+                          borderColor: colors.brandGreen,
+                        }]}
                         value={item.qty === 0 ? '' : item.qty.toString()}
-                        onChangeText={(text) => {
-                          const num = parseInt(text) || 0;
-                          updateQty(item.id, num);
-                        }}
+                        onChangeText={text => updateQty(item.id, parseInt(text) || 0)}
                         keyboardType="numeric"
                         placeholder="0"
-                        placeholderTextColor="#9CA3AF"
+                        placeholderTextColor={colors.textSub}
                       />
                     </View>
 
-                    {/* Columna Subtotal */}
+                    {/* Subtotal */}
                     <View style={styles.subtotalCol}>
-                      <Text style={styles.subtotalLabel}>SUBTOTAL</Text>
-                      <Text style={[styles.cartItemTotal, { color: colors.textMain }]}>
+                      <Text style={[styles.subtotalLabel, { color: colors.textSub }]}>SUBTOTAL</Text>
+                      <Text style={[styles.subtotalValue, { color: colors.textMain }]}>
                         {(item.qty * item.precio_base_venta).toFixed(2)}
                       </Text>
                     </View>
 
-                    {/* Botón Eliminar */}
+                    {/* Eliminar */}
                     <TouchableOpacity onPress={() => removeFromCart(item.id)} style={styles.deleteBtn}>
-                      <Ionicons name="trash-outline" size={20} color="#EF4444" />
+                      <Ionicons name="trash-outline" size={18} color="#EF4444" />
                     </TouchableOpacity>
                   </View>
                 ))}
 
-                {/* TOTALIZADOR */}
-                <View style={[styles.totalsSection, { borderTopColor: isDark ? '#444' : '#E5E7EB' }]}>
+                {/* Totalizador */}
+                <View style={[styles.totalsSection, { borderTopColor: isDark ? colors.cardBorder : '#E5E7EB' }]}>
+
                   <View style={styles.totalRow}>
                     <Text style={[styles.totalLabel, { color: colors.textSub }]}>SUBTOTAL</Text>
-                    <Text style={[styles.totalValue, { color: colors.textMain }]}>{calculateSubtotal().toFixed(2)}</Text>
+                    <Text style={[styles.totalValue, { color: colors.textMain }]}>
+                      Bs {subtotal().toFixed(2)}
+                    </Text>
                   </View>
 
-                  {/* DESCUENTO */}
+                  {/* Descuento */}
                   <View style={styles.totalRow}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                       <Text style={[styles.totalLabel, { color: colors.textSub }]}>DESCUENTO</Text>
-                      <View style={styles.percentDisplay}>
-                        <Text style={styles.percentDisplayText}>
-                          {getDescuentoPorcentaje().toFixed(2)} %
+                      <View style={[styles.pctBadge, { backgroundColor: isDark ? '#3a2800' : '#FEF3C7' }]}>
+                        <Text style={[styles.pctBadgeText, { color: isDark ? '#FCD34D' : '#92400E' }]}>
+                          {descuentoPct().toFixed(1)}%
                         </Text>
                       </View>
                     </View>
-                    <View style={styles.montoInputWrapper}>
-                      <TextInput
-                        style={[styles.montoInput, { color: '#DC2626' }]}
-                        value={descuentoMonto === '0' ? '' : descuentoMonto}
-                        onChangeText={setDescuentoMonto}
-                        keyboardType="decimal-pad"
-                        placeholder="0.00"
-                        placeholderTextColor="#9CA3AF"
-                      />
-                    </View>
+                    <TextInput
+                      style={[styles.montoInput, {
+                        color: '#DC2626',
+                        backgroundColor: isDark ? '#2a0a0a' : '#FEF2F2',
+                        borderColor: '#EF4444',
+                      }]}
+                      value={descuentoMonto === '0' ? '' : descuentoMonto}
+                      onChangeText={setDescuentoMonto}
+                      keyboardType="decimal-pad"
+                      placeholder="0.00"
+                      placeholderTextColor={colors.textSub}
+                    />
                   </View>
 
-                  {/* INTERÉS (solo si es a crédito) */}
-                  {tipoPago === 'Crédito' && (
+                  {/* Interés (solo crédito) */}
+                  {tipoPago === 'Credito' && (
                     <View style={styles.totalRow}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                        <Text style={styles.totalLabel}>INTERÉS</Text>
-                        <View style={styles.percentInputWrapper}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Text style={[styles.totalLabel, { color: colors.textSub }]}>INTERÉS</Text>
+                        <View style={[styles.pctInputRow, { backgroundColor: isDark ? colors.inputBg : '#F3F4F6' }]}>
                           <TextInput
-                            style={styles.percentInput}
+                            style={[styles.pctInput, { color: colors.textMain }]}
                             value={interesPorcentaje}
                             onChangeText={setInteresPorcentaje}
                             keyboardType="numeric"
                             placeholder="0"
+                            placeholderTextColor={colors.textSub}
                           />
-                          <Text style={styles.percentSymbol}>%</Text>
+                          <Text style={[styles.pctSymbol, { color: colors.textSub }]}>%</Text>
                         </View>
                       </View>
                       <Text style={[styles.totalValue, { color: '#F59E0B' }]}>
-                        +{getInteresMonto().toFixed(2)}
+                        +Bs {interesValor().toFixed(2)}
                       </Text>
                     </View>
                   )}
 
-                  <View style={[styles.divider, { backgroundColor: isDark ? '#444' : '#E5E7EB' }]} />
+                  <View style={[styles.divider, { backgroundColor: isDark ? colors.cardBorder : '#E5E7EB' }]} />
 
                   <View style={styles.totalRow}>
                     <Text style={[styles.totalLabelFinal, { color: colors.textMain }]}>TOTAL</Text>
-                    <Text style={[styles.totalValueFinal, { color: colors.brandGreen }]}>{calculateTotal().toFixed(2)}</Text>
+                    <Text style={[styles.totalValueFinal, { color: colors.brandGreen }]}>
+                      Bs {totalFinal().toFixed(2)}
+                    </Text>
                   </View>
                 </View>
 
                 {/* Observaciones */}
                 <TextInput
-                  style={[styles.obsInput, { backgroundColor: isDark ? colors.cardBg : '#F9FAFB', color: colors.textMain, borderColor: isDark ? colors.cardBorder : '#E5E7EB' }]}
+                  style={[styles.obsInput, {
+                    color: colors.textMain,
+                    backgroundColor: isDark ? colors.inputBg : '#F9FAFB',
+                    borderColor: isDark ? colors.cardBorder : '#E5E7EB',
+                  }]}
                   placeholder="Observaciones adicionales..."
                   placeholderTextColor={colors.textSub}
                   value={observation}
@@ -417,87 +491,139 @@ export default function NuevoPedido() {
             </View>
           )}
 
-          {/* --- CATÁLOGO DE PRODUCTOS --- */}
+          {/* ── CATÁLOGO DE PRODUCTOS ── */}
           <View style={{ paddingHorizontal: 20 }}>
-            <Text style={[styles.sectionHeader, { color: colors.brandGreen }]}>CATÁLOGO DE PRODUCTOS</Text>
+            <Text style={[styles.sectionLabel, { color: colors.brandGreen }]}>CATÁLOGO DE PRODUCTOS</Text>
 
-            {/* Buscador */}
-            <View style={[styles.searchBox, { backgroundColor: colors.cardBg, borderColor: isDark ? colors.cardBorder : '#E5E7EB' }]}>
-              <Ionicons name="search" size={20} color="#9CA3AF" />
+            {/* Buscador — usa colors del tema, sin hardcoded */}
+            <View style={[styles.searchBox, {
+              backgroundColor: colors.cardBg,
+              borderColor: isDark ? colors.cardBorder : '#E5E7EB',
+            }]}>
+              <Ionicons name="search" size={18} color={colors.textSub} />
               <TextInput
                 style={[styles.searchInput, { color: colors.textMain }]}
-                placeholder="Buscar producto..."
+                placeholder="Nombre o código de producto..."
                 placeholderTextColor={colors.textSub}
                 value={searchQuery}
                 onChangeText={setSearchQuery}
                 onFocus={() => {
                   setSearchFocused(true);
-                  setTimeout(() => {
-                    scrollViewRef.current?.scrollToEnd({ animated: true });
-                  }, 100);
+                  setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
                 }}
                 onBlur={() => setSearchFocused(false)}
+                autoCorrect={false}
+                autoCapitalize="none"
               />
               {searchQuery.length > 0 && (
                 <TouchableOpacity onPress={() => setSearchQuery('')}>
-                  <Ionicons name="close-circle" size={20} color="#9CA3AF" />
+                  <Ionicons name="close-circle" size={18} color={colors.textSub} />
                 </TouchableOpacity>
               )}
             </View>
 
-            {/* TABLA */}
-            <View style={[styles.tableCard, { backgroundColor: colors.cardBg, borderColor: isDark ? colors.cardBorder : '#E5E7EB' }]}>
-              <View style={[styles.tableHeader, { backgroundColor: isDark ? colors.cardBorder : '#F9FAFB', borderBottomColor: isDark ? '#444' : '#E5E7EB' }]}>
-                <Text style={[styles.th, { flex: 2 }]}>PRODUCTO</Text>
-                <Text style={[styles.th, { flex: 1, textAlign: 'center' }]}>STOCK</Text>
-                <Text style={[styles.th, { flex: 1, textAlign: 'right' }]}>PRECIO</Text>
+            {/* Tabla de productos */}
+            <View style={[styles.tableCard, {
+              backgroundColor: colors.cardBg,
+              borderColor: isDark ? colors.cardBorder : '#E5E7EB',
+            }]}>
+              {/* Cabecera tabla */}
+              <View style={[styles.tableHeader, {
+                backgroundColor: isDark ? colors.cardBorder : '#F9FAFB',
+                borderBottomColor: isDark ? '#444' : '#E5E7EB',
+              }]}>
+                <Text style={[styles.th, { flex: 2, color: colors.textSub }]}>PRODUCTO</Text>
+                <Text style={[styles.th, { flex: 1, textAlign: 'center', color: colors.textSub }]}>STOCK</Text>
+                <Text style={[styles.th, { flex: 1, textAlign: 'right', color: colors.textSub }]}>PRECIO</Text>
                 <View style={{ width: 36 }} />
               </View>
 
-              {filteredProducts.slice(0, 50).map((p, index) => {
-                const isInCart = cart.some(item => item.id === p.id);
-                return (
-                  <View key={p.id} style={[styles.tableRow, { backgroundColor: colors.cardBg, borderBottomColor: isDark ? '#2d3f55' : '#F3F4F6' }]}>
-                    <View style={{ flex: 2 }}>
-                      <Text style={[styles.cellName, { color: colors.textMain }]} numberOfLines={2}>{p.nombre_producto}</Text>
-                      <Text style={[styles.cellCode, { color: colors.textSub }]}>{p.codigo_producto}</Text>
-                    </View>
-                    <View style={{ flex: 1, alignItems: 'center' }}>
-                      <Text style={[styles.cellStock, { color: colors.textMain }]}>{p.stock_actual}</Text>
-                    </View>
-                    <View style={{ flex: 1, alignItems: 'flex-end' }}>
-                      <Text style={[styles.cellPrice, { color: colors.brandGreen }]}>{p.precio_base_venta.toFixed(2)}</Text>
-                    </View>
-                    <TouchableOpacity
-                      onPress={() => addToCart(p)}
-                      style={[styles.addBtnSmall, { backgroundColor: isInCart ? '#9CA3AF' : colors.brandGreen }]}
-                      disabled={isInCart}
+              {filteredProducts.length === 0 ? (
+                <View style={styles.emptySearch}>
+                  <Ionicons name="search-outline" size={32} color={colors.textSub} style={{ opacity: 0.4 }} />
+                  <Text style={[styles.emptySearchText, { color: colors.textSub }]}>
+                    {searchQuery ? `Sin resultados para "${searchQuery}"` : 'No hay productos disponibles'}
+                  </Text>
+                </View>
+              ) : (
+                filteredProducts.slice(0, 50).map((p, index) => {
+                  const isInCart = cart.some(item => item.id === p.id);
+                  const sinStock = p.stock_actual <= 0;
+                  const altRow = index % 2 !== 0;
+
+                  return (
+                    <View
+                      key={p.id}
+                      style={[
+                        styles.tableRow,
+                        { borderBottomColor: isDark ? '#333' : '#F3F4F6' },
+                        altRow && { backgroundColor: isDark ? colors.cardBorder : '#F9FAFB' },
+                        !altRow && { backgroundColor: colors.cardBg },
+                      ]}
                     >
-                      <Ionicons
-                        name={isInCart ? "checkmark" : "add"}
-                        size={20}
-                        color="#FFF"
-                      />
-                    </TouchableOpacity>
-                  </View>
-                );
-              })}
+                      {/* Nombre y código */}
+                      <View style={{ flex: 2 }}>
+                        <Text style={[styles.cellName, { color: colors.textMain }]} numberOfLines={2}>
+                          {p.nombre_producto}
+                        </Text>
+                        <Text style={[styles.cellCode, { color: colors.textSub }]}>
+                          {p.codigo_producto}
+                        </Text>
+                      </View>
+
+                      {/* Stock — rojo si es 0 */}
+                      <View style={{ flex: 1, alignItems: 'center' }}>
+                        <Text style={[
+                          styles.cellStock,
+                          { color: sinStock ? '#EF4444' : colors.textMain },
+                          sinStock && { fontWeight: '700' },
+                        ]}>
+                          {p.stock_actual}
+                        </Text>
+                      </View>
+
+                      {/* Precio */}
+                      <View style={{ flex: 1, alignItems: 'flex-end' }}>
+                        <Text style={[styles.cellPrice, { color: colors.brandGreen }]}>
+                          {p.precio_base_venta.toFixed(2)}
+                        </Text>
+                      </View>
+
+                      {/* Botón agregar */}
+                      <TouchableOpacity
+                        onPress={() => addToCart(p)}
+                        style={[
+                          styles.addBtn,
+                          { backgroundColor: isInCart ? colors.textSub : colors.brandGreen },
+                        ]}
+                        disabled={isInCart}
+                      >
+                        <Ionicons name={isInCart ? 'checkmark' : 'add'} size={18} color="#FFF" />
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })
+              )}
             </View>
           </View>
 
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* --- FOOTER FLOTANTE --- */}
+      {/* ── FOOTER FLOTANTE ── */}
       {cart.length > 0 && (
-        <View style={[styles.footer, { backgroundColor: colors.cardBg, borderTopColor: isDark ? colors.cardBorder : '#E5E7EB' }]}>
+        <View style={[styles.footer, {
+          backgroundColor: colors.cardBg,
+          borderTopColor: isDark ? colors.cardBorder : '#E5E7EB',
+        }]}>
           <View style={styles.footerTotal}>
-            <Text style={styles.footerLabel}>TOTAL A PAGAR</Text>
-            <Text style={[styles.footerAmount, { color: colors.textMain }]}>Bs {calculateTotal().toFixed(2)}</Text>
+            <Text style={[styles.footerLabel, { color: colors.textSub }]}>TOTAL A PAGAR</Text>
+            <Text style={[styles.footerAmount, { color: colors.textMain }]}>
+              Bs {totalFinal().toFixed(2)}
+            </Text>
           </View>
-
           <TouchableOpacity
-            style={[styles.confirmBtn, { backgroundColor: colors.brandGreen, shadowColor: colors.brandGreen }, saving && { opacity: 0.7 }]}
+            style={[styles.confirmBtn, { backgroundColor: colors.brandGreen, opacity: saving ? 0.7 : 1 }]}
             onPress={saveOrder}
             disabled={saving}
           >
@@ -506,205 +632,173 @@ export default function NuevoPedido() {
             ) : (
               <>
                 <Text style={styles.confirmBtnText}>CONFIRMAR</Text>
-                <Ionicons name="arrow-forward" size={18} color="#FFF" />
+                <Ionicons name="arrow-forward" size={16} color="#FFF" />
               </>
             )}
           </TouchableOpacity>
         </View>
       )}
+
+      {/* ── MODAL: Stock insuficiente ── */}
+      <Modal
+        visible={stockModal.visible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setStockModal(p => ({ ...p, visible: false }))}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalBox, { backgroundColor: colors.cardBg }]}>
+
+            {/* Ícono de advertencia */}
+            <View style={[styles.modalIconBg, { backgroundColor: isDark ? '#3a1a00' : '#FEF3C7' }]}>
+              <Ionicons name="warning-outline" size={32} color="#F59E0B" />
+            </View>
+
+            <Text style={[styles.modalTitle, { color: colors.textMain }]}>
+              Stock insuficiente
+            </Text>
+
+            <Text style={[styles.modalBody, { color: colors.textSub }]}>
+              {stockModal.productName}
+            </Text>
+
+            {/* Detalle numérico */}
+            <View style={[styles.modalStockRow, { backgroundColor: isDark ? colors.inputBg : '#F9FAFB' }]}>
+              <View style={styles.modalStockCell}>
+                <Text style={[styles.modalStockLabel, { color: colors.textSub }]}>Pediste</Text>
+                <Text style={[styles.modalStockValue, { color: '#EF4444' }]}>
+                  {stockModal.cantidadPedida}
+                </Text>
+              </View>
+              <View style={[styles.modalStockDivider, { backgroundColor: isDark ? colors.cardBorder : '#E5E7EB' }]} />
+              <View style={styles.modalStockCell}>
+                <Text style={[styles.modalStockLabel, { color: colors.textSub }]}>Saldo disponible</Text>
+                <Text style={[styles.modalStockValue, { color: colors.brandGreen }]}>
+                  {stockModal.stockDisponible}
+                </Text>
+              </View>
+            </View>
+
+            <Text style={[styles.modalNote, { color: colors.textSub }]}>
+              Se ajustó la cantidad al máximo disponible.
+            </Text>
+
+            <TouchableOpacity
+              style={[styles.modalBtn, { backgroundColor: colors.brandGreen }]}
+              onPress={() => setStockModal(p => ({ ...p, visible: false }))}
+            >
+              <Text style={styles.modalBtnText}>Entendido</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
     </View>
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ESTILOS — solo medidas, sin colores fijos
+// ─────────────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  container: { flex: 1, backgroundColor: '#F3F4F6' },
+  loadingText: { marginTop: 12, fontSize: 14 },
+  container: { flex: 1 },
 
   // HEADER
-  headerGradient: {
-    height: 120,
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-    paddingHorizontal: 20,
-    position: 'absolute', top: 0, width: '100%', zIndex: 0
-  },
+  headerGradient: { height: 110, borderBottomLeftRadius: 28, borderBottomRightRadius: 28, paddingHorizontal: 20, position: 'absolute', top: 0, width: '100%', zIndex: 0 },
   headerContent: { flex: 1 },
   navBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 },
   backButton: { padding: 8, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.2)' },
-  headerTitle: { color: '#FFF', fontSize: 18, fontWeight: 'bold' },
+  headerTitle: { color: '#FFF', fontSize: 18, fontWeight: '700' },
 
-  // SCROLL Y FORM SHEET
+  // SCROLL
   scrollView: { flex: 1, marginTop: 80 },
-  formSheet: {
-    backgroundColor: '#FFF',
-    marginHorizontal: 20,
-    borderRadius: 24,
-    padding: 20,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4,
-    marginBottom: 20
-  },
-  sectionHeader: { fontSize: 12, fontWeight: '800', color: '#2a8c4a', letterSpacing: 1, marginBottom: 12 },
 
-  // INFO CARD
+  // FORM CARD
+  formSheet: { marginHorizontal: 20, borderRadius: 20, padding: 20, marginBottom: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.07, shadowRadius: 10, elevation: 4 },
+  sectionLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 1, marginBottom: 14 },
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  dataBox: { justifyContent: 'center' },
-  labelSmall: { fontSize: 10, color: '#9CA3AF', fontWeight: '700', marginBottom: 2, textTransform: 'uppercase' },
-  valueText: { fontSize: 15, fontWeight: '700', color: '#1F2937' },
-  clientName: { fontSize: 16, fontWeight: 'bold', color: '#111827' },
-  clientSub: { fontSize: 13, color: '#6B7280' },
-  infoText: { fontSize: 14, color: '#374151', fontWeight: '500' },
-  divider: { height: 1, backgroundColor: '#E5E7EB', marginVertical: 12 },
+  fieldCaption: { fontSize: 10, fontWeight: '700', marginBottom: 3, textTransform: 'uppercase' },
+  fieldValue: { fontSize: 14, fontWeight: '700' },
+  clientName: { fontSize: 15, fontWeight: '700', marginBottom: 2 },
+  clientSub: { fontSize: 12 },
+  divider: { height: 1, marginVertical: 12 },
 
   // TOGGLES
-  toggleContainer: { flexDirection: 'row', backgroundColor: '#F3F4F6', borderRadius: 8, padding: 3 },
-  toggleBtn: { flex: 1, flexDirection: 'row', justifyContent: 'center', paddingVertical: 8, alignItems: 'center', borderRadius: 6 },
-  toggleBtnActive: { backgroundColor: '#2a8c4a', shadowColor: '#2a8c4a', shadowOpacity: 0.3, shadowRadius: 3, elevation: 2 },
-  toggleText: { fontSize: 12, color: '#6B7280', fontWeight: '600' },
-  toggleTextActive: { color: '#FFF', fontWeight: '800' },
+  toggleTrack: { flexDirection: 'row', borderRadius: 8, padding: 3 },
+  toggleOption: { flex: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 8, borderRadius: 6 },
+  toggleText: { fontSize: 12, fontWeight: '600' },
 
-  // SEARCH
-  searchBox: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF',
-    borderRadius: 12, paddingHorizontal: 12, height: 48, marginBottom: 15,
-    borderWidth: 1, borderColor: '#E5E7EB'
-  },
-  searchInput: { flex: 1, marginLeft: 10, fontSize: 15 },
+  // BUSCADOR
+  searchBox: { flexDirection: 'row', alignItems: 'center', borderRadius: 12, paddingHorizontal: 12, height: 46, marginBottom: 12, borderWidth: 1 },
+  searchInput: { flex: 1, marginLeft: 8, fontSize: 14 },
 
-  // TABLE
-  tableCard: { backgroundColor: '#FFF', borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: '#E5E7EB', elevation: 2 },
-  tableHeader: { flexDirection: 'row', backgroundColor: '#F9FAFB', paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
-  th: { fontSize: 11, fontWeight: '800', color: '#6B7280' },
-  tableRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 12, backgroundColor: '#FFF', borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  tableRowAlt: { backgroundColor: '#F9FAFB' },
-  cellName: { fontSize: 13, fontWeight: '600', color: '#1F2937' },
-  cellCode: { fontSize: 11, color: '#9CA3AF' },
-  cellStock: { fontSize: 13, fontWeight: 'bold', color: '#4B5563' },
-  cellPrice: { fontSize: 13, fontWeight: 'bold', color: '#2a8c4a' },
-  addBtnSmall: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#2a8c4a', justifyContent: 'center', alignItems: 'center', marginLeft: 8 },
-  addBtnDisabled: { backgroundColor: '#9CA3AF' },
+  // TABLA
+  tableCard: { borderRadius: 14, overflow: 'hidden', borderWidth: 1, elevation: 1 },
+  tableHeader: { flexDirection: 'row', paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: 1 },
+  th: { fontSize: 10, fontWeight: '800' },
+  tableRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 12, borderBottomWidth: 1 },
+  cellName: { fontSize: 13, fontWeight: '600' },
+  cellCode: { fontSize: 10, marginTop: 1 },
+  cellStock: { fontSize: 13, fontWeight: '600' },
+  cellPrice: { fontSize: 13, fontWeight: '700' },
+  addBtn: { width: 30, height: 30, borderRadius: 15, justifyContent: 'center', alignItems: 'center', marginLeft: 6 },
+  emptySearch: { padding: 40, alignItems: 'center', gap: 8 },
+  emptySearchText: { fontSize: 13, textAlign: 'center' },
 
-  // CART MEJORADO
-  cartCard: { backgroundColor: '#FFF', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: '#E5E7EB', elevation: 2 },
-  cartItemRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14 },
-  cartItemBorder: { borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  cartItemName: { fontSize: 14, fontWeight: '700', color: '#111827', marginBottom: 2 },
-  cartItemCode: { fontSize: 11, color: '#9CA3AF', marginBottom: 3 },
-  cartItemUnitPrice: { fontSize: 11, color: '#6B7280', fontWeight: '600' },
+  // CARRITO
+  cartCard: { borderRadius: 14, padding: 14, borderWidth: 1, elevation: 1 },
+  cartRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12 },
+  cartItemName: { fontSize: 13, fontWeight: '700', marginBottom: 2 },
+  cartItemCode: { fontSize: 10, marginBottom: 2 },
+  cartItemPrice: { fontSize: 11, fontWeight: '600' },
 
-  // Input de Cantidad
-  qtyInputWrapper: { marginHorizontal: 8 },
-  qtyLabel: { fontSize: 9, color: '#9CA3AF', fontWeight: '700', marginBottom: 3, textAlign: 'center' },
-  qtyInput: {
-    width: 60,
-    height: 40,
-    borderWidth: 2,
-    borderColor: '#2a8c4a',
-    borderRadius: 8,
-    textAlign: 'center',
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1F2937',
-    backgroundColor: '#F9FAFB'
-  },
+  qtyWrapper: { marginHorizontal: 8 },
+  qtyLabel: { fontSize: 9, fontWeight: '700', marginBottom: 3, textAlign: 'center' },
+  qtyInput: { width: 58, height: 38, borderWidth: 2, borderRadius: 8, textAlign: 'center', fontSize: 16, fontWeight: '700' },
 
-  // Columna Subtotal
-  subtotalCol: { marginLeft: 10 },
-  subtotalLabel: { fontSize: 9, color: '#9CA3AF', fontWeight: '700', marginBottom: 3, textAlign: 'right' },
-  cartItemTotal: { fontSize: 15, fontWeight: 'bold', color: '#1F2937', textAlign: 'right' },
-
-  // Botón eliminar
-  deleteBtn: { marginLeft: 10, padding: 6 },
+  subtotalCol: { marginLeft: 6 },
+  subtotalLabel: { fontSize: 9, fontWeight: '700', marginBottom: 2, textAlign: 'right' },
+  subtotalValue: { fontSize: 14, fontWeight: '700', textAlign: 'right' },
+  deleteBtn: { marginLeft: 8, padding: 5 },
 
   // TOTALIZADOR
-  totalsSection: { marginTop: 16, paddingTop: 16, borderTopWidth: 2, borderTopColor: '#E5E7EB' },
+  totalsSection: { marginTop: 14, paddingTop: 14, borderTopWidth: 1.5 },
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  totalLabel: { fontSize: 12, fontWeight: '700', color: '#6B7280' },
-  totalValue: { fontSize: 14, fontWeight: 'bold', color: '#374151' },
+  totalLabel: { fontSize: 12, fontWeight: '700' },
+  totalValue: { fontSize: 14, fontWeight: '700' },
+  totalLabelFinal: { fontSize: 14, fontWeight: '900' },
+  totalValueFinal: { fontSize: 20, fontWeight: '800' },
 
-  // Input de porcentaje
-  percentInputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginLeft: 8,
-    backgroundColor: '#F3F4F6',
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 4
-  },
-  percentInput: {
-    width: 40,
-    textAlign: 'center',
-    fontSize: 13,
-    fontWeight: 'bold',
-    color: '#1F2937'
-  },
-  percentSymbol: { fontSize: 12, color: '#6B7280', fontWeight: '600', marginLeft: 2 },
-
-  // Display de porcentaje (solo lectura)
-  percentDisplay: {
-    marginLeft: 8,
-    backgroundColor: '#FEF3C7',
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderWidth: 1,
-    borderColor: '#FCD34D'
-  },
-  percentDisplayText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#92400E'
-  },
-
-  // Input de monto de descuento
-  montoInputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center'
-  },
-  montoInput: {
-    width: 80,
-    height: 36,
-    borderWidth: 2,
-    borderColor: '#EF4444',
-    borderRadius: 8,
-    textAlign: 'right',
-    paddingHorizontal: 8,
-    fontSize: 15,
-    fontWeight: 'bold',
-    color: '#DC2626',
-    backgroundColor: '#FEF2F2'
-  },
-
-  totalLabelFinal: { fontSize: 14, fontWeight: '900', color: '#111827', letterSpacing: 0.5 },
-  totalValueFinal: { fontSize: 20, fontWeight: 'bold', color: '#2a8c4a' },
-
-  // Observaciones
-  obsInput: {
-    backgroundColor: '#F9FAFB',
-    marginTop: 16,
-    borderRadius: 10,
-    padding: 12,
-    fontSize: 13,
-    height: 70,
-    textAlignVertical: 'top',
-    borderWidth: 1,
-    borderColor: '#E5E7EB'
-  },
+  pctBadge: { paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6 },
+  pctBadgeText: { fontSize: 11, fontWeight: '700' },
+  pctInputRow: { flexDirection: 'row', alignItems: 'center', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 },
+  pctInput: { width: 36, textAlign: 'center', fontSize: 13, fontWeight: '700' },
+  pctSymbol: { fontSize: 12, fontWeight: '600', marginLeft: 2 },
+  montoInput: { width: 80, height: 34, borderWidth: 1.5, borderRadius: 8, textAlign: 'right', paddingHorizontal: 8, fontSize: 14, fontWeight: '700' },
+  obsInput: { borderRadius: 10, padding: 12, fontSize: 13, height: 70, textAlignVertical: 'top', borderWidth: 1, marginTop: 12 },
 
   // FOOTER
-  footer: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    backgroundColor: '#FFF', paddingHorizontal: 20, paddingVertical: 15, paddingBottom: 25,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    borderTopWidth: 1, borderTopColor: '#E5E7EB', shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.05, elevation: 20,
-    borderTopLeftRadius: 20, borderTopRightRadius: 20
-  },
+  footer: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: 20, paddingVertical: 14, paddingBottom: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: 1, borderTopLeftRadius: 20, borderTopRightRadius: 20, elevation: 16 },
   footerTotal: { flex: 1 },
-  footerLabel: { fontSize: 10, color: '#6B7280', fontWeight: '700' },
-  footerAmount: { fontSize: 22, fontWeight: 'bold', color: '#1F2937' },
-  confirmBtn: {
-    backgroundColor: '#2a8c4a', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12,
-    flexDirection: 'row', alignItems: 'center', gap: 8, shadowColor: '#2a8c4a', shadowOpacity: 0.3, shadowRadius: 5, elevation: 4
-  },
-  confirmBtnText: { color: '#FFF', fontSize: 14, fontWeight: 'bold', letterSpacing: 0.5 },
+  footerLabel: { fontSize: 10, fontWeight: '700' },
+  footerAmount: { fontSize: 22, fontWeight: '800' },
+  confirmBtn: { paddingHorizontal: 22, paddingVertical: 12, borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  confirmBtnText: { color: '#FFF', fontSize: 14, fontWeight: '700' },
+
+  // MODAL STOCK INSUFICIENTE
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  modalBox: { width: '100%', maxWidth: 340, borderRadius: 20, padding: 24, alignItems: 'center', elevation: 10 },
+  modalIconBg: { width: 64, height: 64, borderRadius: 32, justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
+  modalTitle: { fontSize: 18, fontWeight: '700', marginBottom: 6, textAlign: 'center' },
+  modalBody: { fontSize: 14, textAlign: 'center', marginBottom: 16 },
+  modalStockRow: { flexDirection: 'row', borderRadius: 12, overflow: 'hidden', marginBottom: 14, width: '100%' },
+  modalStockCell: { flex: 1, alignItems: 'center', paddingVertical: 14 },
+  modalStockDivider: { width: 1 },
+  modalStockLabel: { fontSize: 11, fontWeight: '600', marginBottom: 4 },
+  modalStockValue: { fontSize: 28, fontWeight: '800' },
+  modalNote: { fontSize: 12, textAlign: 'center', marginBottom: 20 },
+  modalBtn: { width: '100%', paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
+  modalBtnText: { color: '#FFF', fontSize: 15, fontWeight: '700' },
 });

@@ -1,11 +1,24 @@
-import * as Location from 'expo-location';
 import { useEffect, useState } from 'react';
 import { Alert } from 'react-native';
-import { useAuth } from '../contexts/AuthContext';
+import * as Location from 'expo-location';
 import { supabase } from '../lib/supabase';
-import { GPSSecurityService } from '../services/GPSSecurityService';
-import { NotificationService } from '../services/NotificationService';
+import { useAuth } from '../contexts/AuthContext';
+import { showVisitToast } from '../components/VisitToast';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// HOOK: useVisitTracker
+//
+// Maneja el ciclo de vida de una visita de ventas.
+//
+// Notificaciones (modal visual que desaparece solo en 5 segundos):
+//   Iniciar              → "Visita iniciada"
+//   Finalizar con venta  → "Venta realizada"
+//   Finalizar sin venta  → "Visita finalizada"
+//   Finalizar cerrado    → "Visita finalizada"
+//
+// Para que los toasts funcionen, monta <VisitToast /> en app/clients/[id].tsx
+// El cronómetro (startTime) está disponible para que el admin lo use en [id].tsx
+// ─────────────────────────────────────────────────────────────────────────────
 export const useVisitTracker = () => {
   const { session } = useAuth();
   const [isVisiting, setIsVisiting] = useState(false);
@@ -13,16 +26,13 @@ export const useVisitTracker = () => {
   const [startTime, setStartTime] = useState<Date | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Verificar si hay una visita activa al cargar
   useEffect(() => {
     checkActiveVisit();
   }, [session?.user?.id]);
 
   const checkActiveVisit = async () => {
     if (!session?.user) return;
-
     try {
-      // Buscar visitas activas (pendientes) del usuario
       const { data, error } = await supabase
         .from('visits')
         .select('id, start_time')
@@ -33,84 +43,40 @@ export const useVisitTracker = () => {
         .single();
 
       if (data && !error) {
-        // Hay una visita activa
         setVisitId(data.id);
         setStartTime(new Date(data.start_time));
         setIsVisiting(true);
       }
-    } catch (error) {
-      // No hay visita activa
+    } catch {
+      // Sin visita activa — es el caso normal
     }
   };
 
   const startVisit = async (clientId: string) => {
     if (!session?.user) {
-      Alert.alert('Error', 'No se pudo identificar al usuario');
+      Alert.alert('Error', 'No se pudo identificar al usuario.');
       return;
     }
 
-    // Verificar si ya hay una visita activa
     if (isVisiting && visitId) {
       Alert.alert(
-        'Visita Activa',
-        'Ya tienes una visita en curso. Debes finalizarla antes de iniciar otra.'
+        'Visita en curso',
+        'Ya tienes una visita activa. Debes finalizarla antes de iniciar otra.'
       );
       return;
     }
-    
+
     setLoading(true);
     try {
-      // Verificar si el empleado está bloqueado
-      const blockStatus = await GPSSecurityService.isEmployeeBlocked();
-      if (blockStatus.isBlocked) {
-        Alert.alert(
-          '🚨 Cuenta Bloqueada',
-          blockStatus.message || 'Tu cuenta ha sido bloqueada por actividad sospechosa de GPS.',
-          [{ text: 'Entendido' }]
-        );
-        setLoading(false);
-        return;
-      }
-
-      // Validar ubicación GPS
-      const validation = await GPSSecurityService.validateAndSaveLocation();
-      
-      if (!validation.success) {
-        const message = validation.message.includes('No se pudo obtener ubicación')
-          ? 'Por favor activa la ubicación GPS de tu dispositivo para iniciar visitas.'
-          : validation.message;
-        
-        Alert.alert(
-          '⚠️ GPS Requerido',
-          message,
-          [{ text: 'Entendido' }]
-        );
-        setLoading(false);
-        return;
-      }
-
-      // ✅ Capturar GPS exacto en el momento de CHECK-IN
-      let checkInLocation: string | null = null;
-      try {
-        const loc = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.High,
-        });
-        checkInLocation = `SRID=4326;POINT(${loc.coords.longitude} ${loc.coords.latitude})`;
-      } catch (_) {
-        // Si falla el GPS, la visita igualmente se crea (ya validamos arriba)
-      }
-
       const start = new Date();
-      
-      // Creamos la fila "abierta" en la BD con ubicación de inicio
+
       const { data, error } = await supabase
         .from('visits')
         .insert({
-          seller_id:         session.user.id,
-          client_id:         clientId,
-          start_time:        start.toISOString(),
-          outcome:           'pending',
-          check_in_location: checkInLocation,   // ✅ Ubicación exacta al llegar
+          seller_id: session.user.id,
+          client_id: clientId,
+          start_time: start.toISOString(),
+          outcome: 'pending',
         })
         .select()
         .single();
@@ -121,13 +87,13 @@ export const useVisitTracker = () => {
       setStartTime(start);
       setIsVisiting(true);
 
-      // ✅ Notificación local al iniciar visita
-      await NotificationService.sendLocalNotification(
-        '📍 Visita Iniciada',
-        'La visita ha sido registrada. GPS guardado correctamente.',
-        { type: 'visit_started', visitId: data.id }
-      );
-      
+      // Modal visual — desaparece solo en 5 segundos, sin botón OK
+      showVisitToast({
+        title: 'Visita iniciada',
+        subtitle: 'La visita ha sido registrada correctamente.',
+        type: 'success',
+      });
+
     } catch (error: any) {
       Alert.alert('Error', 'No se pudo iniciar la visita. Revisa tu conexión.');
     } finally {
@@ -135,58 +101,21 @@ export const useVisitTracker = () => {
     }
   };
 
-  const endVisit = async (
-    outcome: 'sale' | 'no_sale' | 'closed',
-    notes: string
-  ) => {
+  const endVisit = async (outcome: 'sale' | 'no_sale' | 'closed', notes: string) => {
     if (!visitId || !startTime) {
-      Alert.alert('Error', 'No hay una visita activa');
+      Alert.alert('Error', 'No hay una visita activa.');
       return;
     }
 
     setLoading(true);
-
     try {
-      // Validar ubicación GPS antes de cerrar
-      const validation = await GPSSecurityService.validateAndSaveLocation();
-      
-      if (!validation.success) {
-        // Mensaje específico si no tiene ubicación activada
-        const message = validation.message.includes('No se pudo obtener ubicación')
-          ? 'Por favor activa la ubicación GPS de tu dispositivo para finalizar visitas.'
-          : validation.message;
-        
-        Alert.alert(
-          '⚠️ GPS Requerido',
-          message,
-          [
-            { text: 'Cancelar', style: 'cancel' },
-            { 
-              text: 'Forzar Cierre', 
-              style: 'destructive',
-              onPress: async () => {
-                await GPSSecurityService.updateTrustScore(
-                  20, 
-                  'Forzó cierre de visita con GPS inválido'
-                );
-                await finalizarVisitaSinValidacion(outcome, notes);
-              }
-            }
-          ]
-        );
-        setLoading(false);
-        return;
-      }
-
-      // A. Pedir Permisos GPS
-      let { status } = await Location.requestForegroundPermissionsAsync();
+      const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert('Permiso denegado', 'Se requiere ubicación para cerrar la visita.');
         setLoading(false);
         return;
       }
 
-      // B. Capturar GPS de Alta Precisión (Auditoría)
       const location = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.High,
       });
@@ -194,95 +123,57 @@ export const useVisitTracker = () => {
       const endTime = new Date();
       const duration = Math.round((endTime.getTime() - startTime.getTime()) / 1000);
 
-      const updateData = {
-        end_time: endTime.toISOString(),
-        duration_seconds: duration,
-        outcome: outcome,
-        notes: notes,
-        gps_accuracy_meters: location.coords.accuracy,
-        check_out_location: `SRID=4326;POINT(${location.coords.longitude} ${location.coords.latitude})`
-      };
-
       const { data, error } = await supabase
         .from('visits')
-        .update(updateData)
+        .update({
+          end_time: endTime.toISOString(),
+          duration_seconds: duration,
+          outcome,
+          notes,
+          gps_accuracy_meters: location.coords.accuracy,
+          check_out_location: `POINT(${location.coords.longitude} ${location.coords.latitude})`,
+        })
         .eq('id', visitId)
         .select();
 
-      if (error) {
-        throw new Error(`Error de base de datos: ${error.message}`);
-      }
-
+      if (error) throw new Error(`Error de base de datos: ${error.message}`);
       if (!data || data.length === 0) {
-        throw new Error('No se pudo actualizar la visita.');
+        throw new Error('No se pudo actualizar la visita. Verifica las políticas de RLS en Supabase.');
       }
 
-      // ✅ Notificación local con resultado de visita (colores por outcome)
-      const outcomeEmoji = outcome === 'sale' ? '🟢' : outcome === 'no_sale' ? '🟡' : '🔴';
-      const outcomeLabel = outcome === 'sale' ? 'Venta realizada' : outcome === 'no_sale' ? 'Sin venta' : 'Tienda cerrada';
-      await NotificationService.sendLocalNotification(
-        `${outcomeEmoji} Visita Finalizada`,
-        `${outcomeLabel}. Duración: ${Math.round(duration / 60)} min.`,
-        { type: 'visit_ended', visitId, outcome }
+      // Venta → verde, cualquier otro resultado → azul
+      showVisitToast(
+        outcome === 'sale'
+          ? {
+            title: 'Venta realizada',
+            subtitle: 'El pedido quedó registrado correctamente.',
+            type: 'success',
+          }
+          : {
+            title: 'Visita finalizada',
+            subtitle: 'La visita ha sido cerrada.',
+            type: 'info',
+          }
       );
 
-      Alert.alert(
-        '✅ Visita Finalizada', 
-        'La visita se ha guardado correctamente.'
-      );
-
-      // Resetear estado
       setIsVisiting(false);
       setVisitId(null);
       setStartTime(null);
 
     } catch (error: any) {
-      Alert.alert('Error', 'No se pudo cerrar la visita.');
+      Alert.alert('Error', 'No se pudo cerrar la visita: ' + error.message);
     } finally {
       setLoading(false);
     }
   };
 
-  // Función auxiliar para forzar cierre sin validación (penaliza al usuario)
-  const finalizarVisitaSinValidacion = async (
-    outcome: 'sale' | 'no_sale' | 'closed',
-    notes: string
-  ) => {
-    try {
-      const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-
-      const endTime = new Date();
-      const duration = startTime ? Math.round((endTime.getTime() - startTime.getTime()) / 1000) : 0;
-
-      await supabase
-        .from('visits')
-        .update({
-          end_time: endTime.toISOString(),
-          duration_seconds: duration,
-          outcome: outcome,
-          notes: notes + ' [FORZADO - GPS INVÁLIDO]',
-          gps_accuracy_meters: location.coords.accuracy,
-          check_out_location: `SRID=4326;POINT(${location.coords.longitude} ${location.coords.latitude})`
-        })
-        .eq('id', visitId);
-
-      setIsVisiting(false);
-      setVisitId(null);
-      setStartTime(null);
-    } catch (error: any) {
-      Alert.alert('Error', 'No se pudo cerrar la visita.');
-    }
-  };
-
   return {
     isVisiting,
-    visitId,  
+    visitId,
     startVisit,
     endVisit,
     loading,
     startTime,
-    checkActiveVisit
+    checkActiveVisit,
   };
 };
