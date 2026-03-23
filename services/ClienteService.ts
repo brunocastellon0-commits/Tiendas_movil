@@ -47,24 +47,42 @@ export const clientService = {
   
   async getClients(search: string = ''): Promise<Client[]> {
     try {
-      let query = supabase
-        .from('clients')
-        .select('*')
-        .order('name', { ascending: true })
-        .limit(5000); // Evitar el límite por defecto de 1000 de Supabase
+      let allData: any[] = [];
+      let from = 0;
+      const step = 1000;
+      let hasMore = true;
 
-      if (search) {
-        // Busca si el texto coincide con el Nombre O el Código
-        query = query.or(`name.ilike.%${search}%,code.ilike.%${search}%`);
+      while (hasMore) {
+        let query = supabase
+          .from('clients')
+          .select('*')
+          .order('name', { ascending: true })
+          .range(from, from + step - 1);
+
+        if (search) {
+          // Busca si el texto coincide con el Nombre O el Código
+          query = query.or(`name.ilike.%${search}%,code.ilike.%${search}%`);
+        }
+
+        const { data, error } = await query;
+
+        if (error) {
+          throw error;
+        }
+
+        if (data && data.length > 0) {
+          allData = [...allData, ...data];
+          if (data.length < step) {
+            hasMore = false;
+          } else {
+            from += step;
+          }
+        } else {
+          hasMore = false;
+        }
       }
 
-      const { data, error } = await query;
-
-      if (error) {
-        throw error;
-      }
-
-      return data as Client[];
+      return allData as Client[];
     } catch (error: any) {
 
       throw new Error('Error al cargar clientes');
