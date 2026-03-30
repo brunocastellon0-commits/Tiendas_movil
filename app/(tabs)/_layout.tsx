@@ -1,110 +1,152 @@
+import { Ionicons } from '@expo/vector-icons';
 import { Tabs, useRouter } from 'expo-router';
-import React from 'react';
-import { Platform, View } from 'react-native';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import React, { useEffect } from 'react';
+import { Platform, StyleSheet, Text, View } from 'react-native';
 
 import { HapticTab } from '@/components/haptic-tab';
-import { useTheme } from '../../contexts/ThemeContext'; // Importamos el contexto para los colores
+import { useAuth } from '../../contexts/AuthContext';
+import { useTheme } from '../../contexts/ThemeContext';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TabLayout
+//
+// Solo se muestra "Inicio" en el tab bar, centrado.
+// El resto se navega desde los módulos del home.
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default function TabLayout() {
   const { colors, isDark } = useTheme();
-  const router = useRouter(); // Router para hacer las redirecciones manuales
+  const { session, loading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!loading && !session) {
+      router.replace('/(auth)/login');
+    }
+  }, [session, loading]);
+
+  if (loading || !session) return null;
 
   return (
     <Tabs
       screenOptions={{
-        // Colores de los iconos (Activo vs Inactivo)
         tabBarActiveTintColor: colors.brandGreen,
         tabBarInactiveTintColor: colors.iconGray,
         headerShown: false,
-        tabBarButton: HapticTab, // Efecto háptico al pulsar
-
-        // Estilo de la barra flotante
+        tabBarButton: HapticTab,
         tabBarStyle: {
-          // Fondo dinámico: Blanco (Light) o Gris Azulado de Tarjeta (Dark)
           backgroundColor: isDark ? colors.cardBg : '#FFFFFF',
           borderTopWidth: 0,
-
-          // Configuración de sombra
           elevation: 10,
           shadowColor: '#000',
-          shadowOffset: { width: 0, height: 5 },
-          shadowOpacity: isDark ? 0.3 : 0.15,
-          shadowRadius: 10,
-
-          // Altura y espaciado
-          height: Platform.OS === 'ios' ? 85 : 70,
-          paddingBottom: Platform.OS === 'ios' ? 25 : 12,
-          paddingTop: 10,
-
-          // Bordes redondeados y posición absoluta para que "flote"
-          borderTopLeftRadius: 30,
-          borderTopRightRadius: 30,
+          shadowOffset: { width: 0, height: -3 },
+          shadowOpacity: isDark ? 0.3 : 0.1,
+          shadowRadius: 12,
+          height: Platform.OS === 'ios' ? 80 : 65,
+          paddingBottom: Platform.OS === 'ios' ? 22 : 10,
+          paddingTop: 8,
+          borderTopLeftRadius: 24,
+          borderTopRightRadius: 24,
           position: 'absolute',
           bottom: 0,
           left: 0,
           right: 0,
         },
         tabBarLabelStyle: {
-          fontSize: 10,
-          fontWeight: '600',
-          marginTop: 2,
-        }
-      }}>
-
-      {/* PESTAÑA 1: INICIO (Pantalla Real) */}
+          fontSize: 11,
+          fontWeight: '700',
+          marginTop: 3,
+          letterSpacing: 0.3,
+        },
+        // Centra el único ítem en el tab bar
+        tabBarItemStyle: {
+          flex: 1,
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
+      }}
+    >
+      {/* Única pestaña visible — centrada */}
       <Tabs.Screen
         name="index"
         options={{
           title: 'Inicio',
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? "home" : "home-outline"} size={26} color={color} />
+            <View style={styles.iconWrapper}>
+              <View style={[
+                styles.iconBubble,
+                focused && { backgroundColor: isDark ? 'rgba(42,140,74,0.18)' : 'rgba(42,140,74,0.1)' },
+              ]}>
+                <Ionicons
+                  name={focused ? 'home' : 'home-outline'}
+                  size={24}
+                  color={color}
+                />
+              </View>
+            </View>
+          ),
+          tabBarLabel: ({ color, focused }) => (
+            <Text style={[
+              styles.tabLabel,
+              { color },
+              focused && styles.tabLabelActive,
+            ]}>
+              Inicio
+            </Text>
           ),
         }}
       />
 
-      {/* PESTAÑA 2: UBICACIÓN (Pantalla Real - Tu Mapa) */}
+      {/* Mapa visible en el tab bar */}
       <Tabs.Screen
         name="map"
         options={{
-          title: 'Ubicación',
+          title: 'Mapa',
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? "location" : "location-outline"} size={28} color={color} />
+            <View style={styles.iconWrapper}>
+              <View style={[
+                styles.iconBubble,
+                focused && { backgroundColor: isDark ? 'rgba(42,140,74,0.18)' : 'rgba(42,140,74,0.1)' },
+              ]}>
+                <Ionicons name={focused ? 'map' : 'map-outline'} size={24} color={color} />
+              </View>
+            </View>
+          ),
+          tabBarLabel: ({ color, focused }) => (
+            <Text style={[styles.tabLabel, { color }, focused && styles.tabLabelActive]}>
+              Mapa
+            </Text>
           ),
         }}
       />
 
-      {/* PESTAÑA OCULTA: Rutas (deshabilitada) */}
-      <Tabs.Screen
-        name="rutas"
-        options={{ href: null }}
-      />
-
-      {/* PESTAÑA 4: INVENTARIO (Botón de Acción Rápida) */}
-      <Tabs.Screen
-        name="inventario"
-        listeners={{
-          tabPress: (e) => {
-            e.preventDefault();
-            router.push('/admin/productos/Productos');
-          },
-        }}
-        options={{
-          title: 'Inventario',
-          tabBarIcon: ({ color, focused }) => (
-            <MaterialCommunityIcons name={focused ? "package-variant" : "package-variant-closed"} size={28} color={color} />
-          ),
-        }}
-      />
-
-      {/* PESTAÑA OCULTA: Explore (Existe pero no se muestra en el menú) */}
-      <Tabs.Screen
-        name="explore"
-        options={{
-          href: null,
-        }}
-      />
-
+      {/* Ocultos del tab bar — se navega desde el home */}
+      <Tabs.Screen name="rutas" options={{ href: null }} />
+      <Tabs.Screen name="inventario" options={{ href: null }} />
+      <Tabs.Screen name="explore" options={{ href: null }} />
+      <Tabs.Screen name="profile" options={{ href: null }} />
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  iconWrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconBubble: {
+    width: 48,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.3,
+  },
+  tabLabelActive: {
+    fontWeight: '700',
+  },
+});

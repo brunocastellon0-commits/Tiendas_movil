@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator, Alert, KeyboardAvoidingView, Modal,
   Platform, ScrollView, StatusBar, StyleSheet, Text,
@@ -12,8 +12,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { supabase } from '../../lib/supabase';
-import { showVisitToast, VisitToast } from '../../components/VisitToast';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Interfaces
+// ─────────────────────────────────────────────────────────────────────────────
 interface Product {
   id: string;
   nombre_producto: string;
@@ -27,47 +29,78 @@ interface CartItem extends Product { qty: number; }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MAPEO TEXTO → NÚMERO para la BD
-//   tipo_documento: Nota=0, Factura=1
-//   tipo_pago:      Contado=0, Credito=1
-// En la UI mostramos texto; al guardar convertimos con estos objetos.
+//   tipo_documento: Nota=0 (fijo, Factura eliminada del flujo)
+//   tipo_pago:      Contado=0 (fijo, crédito eliminado del flujo)
 // ─────────────────────────────────────────────────────────────────────────────
-const TIPO_DOCUMENTO = { Nota: 0, Factura: 1 } as const;
-const TIPO_PAGO = { Contado: 0, Credito: 1 } as const;
-type TipoDocumentoLabel = keyof typeof TIPO_DOCUMENTO;
-type TipoPagoLabel = keyof typeof TIPO_PAGO;
+const TIPO_DOCUMENTO_NOTA = 0;
+const TIPO_PAGO_CONTADO = 0;
 
+// ─────────────────────────────────────────────────────────────────────────────
+// NuevoPedido
+//
+// Flujo simplificado para el vendedor:
+//   1. Ver datos del cliente (Nota / Contado fijos — no configurables)
+//   2. Buscar productos por nombre y agregarlos al carrito
+//   3. Confirmar → toast 5 s → vuelve al detalle del cliente
+// ─────────────────────────────────────────────────────────────────────────────
 export default function NuevoPedido() {
   const router = useRouter();
   const { session } = useAuth();
   const { colors, isDark } = useTheme();
   const { clientId } = useLocalSearchParams();
 
+  // ── Estado ──────────────────────────────────────────────────────────────────
   const [client, setClient] = useState<any>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
   const [loadingData, setLoadingData] = useState(true);
   const [saving, setSaving] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
-  const scrollViewRef = React.useRef<ScrollView>(null);
+  const scrollViewRef = useRef<ScrollView>(null);
 
-  // Modal de stock insuficiente
-  const [stockModal, setStockModal] = useState({
-    visible: false,
-    productName: '',
-    stockDisponible: 0,
-    cantidadPedida: 0,
-  });
-
+  const [searchNombre, setSearchNombre] = useState('');
   const [nroDocumento, setNroDocumento] = useState('00000');
   const [fecha] = useState(new Date().toLocaleDateString('es-BO'));
-  const [tipoDocumento, setTipoDocumento] = useState<TipoDocumentoLabel>('Nota');
-  const [tipoPago, setTipoPago] = useState<TipoPagoLabel>('Contado');
   const [observation, setObservation] = useState('');
   const [descuentoMonto, setDescuentoMonto] = useState('0');
-  const [interesPorcentaje, setInteresPorcentaje] = useState('0');
 
-  // ── Carga inicial ──────────────────────────────────────────────────────────
+  // ── Modal de éxito con countdown ────────────────────────────────────────────
+  const [successModal, setSuccessModal] = useState(false);
+  const [countdown, setCountdown] = useState(5);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const navTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showSuccessModal = () => {
+    setSuccessModal(true);
+    setCountdown(5);
+
+    countdownRef.current = setInterval(() => {
+      setCountdown(prev => {
+        if (prev <= 1) {
+          if (countdownRef.current) clearInterval(countdownRef.current);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    navTimerRef.current = setTimeout(() => {
+      setSuccessModal(false);
+      router.back();
+    }, 5000);
+  };
+
+  useEffect(() => () => {
+    if (countdownRef.current) clearInterval(countdownRef.current);
+    if (navTimerRef.current) clearTimeout(navTimerRef.current);
+  }, []);
+
+  // ── Modal stock insuficiente ─────────────────────────────────────────────────
+  const [stockModal, setStockModal] = useState({
+    visible: false, productName: '', stockDisponible: 0, cantidadPedida: 0,
+  });
+
+  // ── Carga inicial ───────────────────────────────────────────────────────────
   useEffect(() => {
     if (!clientId) { Alert.alert('Error', 'Falta el ID del cliente'); router.back(); return; }
     loadInitialData();
@@ -76,6 +109,7 @@ export default function NuevoPedido() {
   const loadInitialData = async () => {
     try {
       setLoadingData(true);
+
       const { data: clientData, error: clientError } = await supabase
         .from('clients').select('*').eq('id', clientId).single();
       if (clientError) throw clientError;
@@ -89,23 +123,23 @@ export default function NuevoPedido() {
         .order('nombre_producto', { ascending: true });
       if (prodError) throw prodError;
       setProducts(prodData || []);
-    } catch (error: any) {
+
+    } catch {
       Alert.alert('Error', 'No se pudieron cargar los datos');
     } finally {
       setLoadingData(false);
     }
   };
 
-  // ── Carrito ────────────────────────────────────────────────────────────────
+  // ── Carrito ─────────────────────────────────────────────────────────────────
   const addToCart = (product: Product) => {
     if (cart.some(p => p.id === product.id)) {
-      Alert.alert('Ya agregado', 'Este producto ya está en el detalle del pedido.');
+      Alert.alert('Ya agregado', 'Este producto ya esta en el detalle del pedido.');
       return;
     }
     setCart(prev => [...prev, { ...product, qty: 0 }]);
   };
 
-  // Si qty > stock: muestra modal y limita al stock disponible.
   const updateQty = (id: string, newQty: number) => {
     if (newQty < 0) return;
     const product = cart.find(p => p.id === id);
@@ -118,7 +152,6 @@ export default function NuevoPedido() {
         stockDisponible: product.stock_actual,
         cantidadPedida: newQty,
       });
-      // Dejamos en el máximo disponible, no bloqueamos
       setCart(prev => prev.map(p => p.id === id ? { ...p, qty: product.stock_actual } : p));
       return;
     }
@@ -127,39 +160,38 @@ export default function NuevoPedido() {
 
   const removeFromCart = (id: string) => setCart(prev => prev.filter(p => p.id !== id));
 
-  // ── Cálculos ───────────────────────────────────────────────────────────────
+  // ── Cálculos ────────────────────────────────────────────────────────────────
   const subtotal = () => cart.reduce((acc, i) => acc + i.qty * i.precio_base_venta, 0);
   const descuentoValor = () => parseFloat(descuentoMonto) || 0;
   const descuentoPct = () => { const s = subtotal(); return s === 0 ? 0 : (descuentoValor() / s) * 100; };
-  const interesValor = () => (subtotal() * (parseFloat(interesPorcentaje) || 0)) / 100;
-  const totalFinal = () => subtotal() - descuentoValor() + interesValor();
+  const totalFinal = () => subtotal() - descuentoValor();
 
-  // ── Guardar ────────────────────────────────────────────────────────────────
+  // ── Guardar pedido ──────────────────────────────────────────────────────────
   const saveOrder = async () => {
     const validItems = cart.filter(i => i.qty > 0);
     if (validItems.length === 0) {
-      Alert.alert('Sin productos', 'Debe asignar cantidad a al menos un producto.');
+      Alert.alert('Sin productos', 'Asigna cantidad a al menos un producto.');
       return;
     }
     setSaving(true);
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') throw new Error('Se requiere permiso de ubicación para confirmar el pedido.');
+      if (status !== 'granted') throw new Error('Se requiere permiso de ubicacion para confirmar el pedido.');
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
 
       const orderPayload = {
         numero_documento: nroDocumento,
         fecha_pedido: new Date().toISOString(),
-        tipo_documento: TIPO_DOCUMENTO[tipoDocumento], // 0 o 1
-        tipo_pago: TIPO_PAGO[tipoPago],           // 0 o 1
+        tipo_documento: TIPO_DOCUMENTO_NOTA,
+        tipo_pago: TIPO_PAGO_CONTADO,
         almacen: 'Central',
         sucursal: 'Principal',
-        dias_plazo: tipoPago === 'Credito' ? 30 : 0,
+        dias_plazo: 0,
         total_venta: totalFinal(),
-        descuento_monto: descuentoValor(),      // columna en BD
-        descuento_porcentaje: descuentoPct(),        // columna en BD
+        descuento_monto: descuentoValor(),
+        descuento_porcentaje: descuentoPct(),
         observacion: observation,
-        estado: tipoPago === 'Contado' ? 'Pagado' : 'Pendiente',
+        estado: 'Pagado',
         ubicacion_venta: `POINT(${loc.coords.longitude} ${loc.coords.latitude})`,
         clients_id: clientId,
         empleado_id: session?.user.id,
@@ -181,12 +213,9 @@ export default function NuevoPedido() {
       const { error: detailsError } = await supabase.from('detalle_pedido').insert(detailsPayload);
       if (detailsError) throw detailsError;
 
-      showVisitToast({
-        title: 'Pedido registrado',
-        subtitle: 'El pedido se guardó correctamente.',
-        type: 'success',
-      });
-      setTimeout(() => router.back(), 5200);
+      // Mostrar modal de éxito con countdown de 5 segundos
+      showSuccessModal();
+
     } catch (error: any) {
       Alert.alert('Error al guardar', error.message);
     } finally {
@@ -194,19 +223,14 @@ export default function NuevoPedido() {
     }
   };
 
-  // ── Filtrado de productos ──────────────────────────────────────────────────
-  // Nombre: includes (cualquier posición)
-  // Código: startsWith (por prefijo, igual que la lista de clientes)
+  // ── Filtrado por nombre ─────────────────────────────────────────────────────
   const filteredProducts = products.filter(p => {
-    const q = searchQuery.toLowerCase().trim();
+    const q = searchNombre.toLowerCase().trim();
     if (!q) return true;
-    return (
-      p.nombre_producto.toLowerCase().includes(q) ||
-      p.codigo_producto?.toLowerCase().startsWith(q)
-    );
+    return p.nombre_producto.toLowerCase().includes(q);
   });
 
-  // ── Loading ────────────────────────────────────────────────────────────────
+  // ── Loading ─────────────────────────────────────────────────────────────────
   if (loadingData) {
     return (
       <View style={[styles.center, { backgroundColor: colors.bgStart }]}>
@@ -223,10 +247,7 @@ export default function NuevoPedido() {
     <View style={[styles.container, { backgroundColor: colors.bgStart }]}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
-      {/* Toast visual — se cierra solo en 5 segundos */}
-      <VisitToast />
-
-      {/* HEADER */}
+      {/* Header */}
       <LinearGradient colors={[colors.brandGreen, '#1e6b38']} style={styles.headerGradient}>
         <SafeAreaView edges={['top']} style={styles.headerContent}>
           <View style={styles.navBar}>
@@ -271,7 +292,9 @@ export default function NuevoPedido() {
 
             <View style={{ marginBottom: 12 }}>
               <Text style={[styles.fieldCaption, { color: colors.textSub }]}>CLIENTE</Text>
-              <Text style={[styles.clientName, { color: colors.textMain }]}>{client?.code} - {client?.name}</Text>
+              <Text style={[styles.clientName, { color: colors.textMain }]}>
+                {client?.code} - {client?.name}
+              </Text>
               {client?.business_name && (
                 <Text style={[styles.clientSub, { color: colors.textSub }]}>{client.business_name}</Text>
               )}
@@ -283,61 +306,31 @@ export default function NuevoPedido() {
                 <Text style={[styles.fieldValue, { color: colors.textMain }]}>{client?.tax_id || 'S/N'}</Text>
               </View>
               <View style={{ flex: 0.6 }}>
-                <Text style={[styles.fieldCaption, { color: colors.textSub }]}>DIRECCIÓN</Text>
+                <Text style={[styles.fieldCaption, { color: colors.textSub }]}>DIRECCION</Text>
                 <Text style={[styles.fieldValue, { color: colors.textMain }]} numberOfLines={1}>
-                  {client?.address || 'Sin dirección'}
+                  {client?.address || 'Sin direccion'}
                 </Text>
               </View>
             </View>
 
             <View style={[styles.divider, { backgroundColor: isDark ? colors.cardBorder : '#E5E7EB' }]} />
 
-            {/* Selectores: tipo documento y forma de pago */}
+            {/* Tipo de documento y pago — fijos, solo informativos */}
             <View style={styles.rowBetween}>
-
-              {/* Nota (0) / Factura (1) */}
-              <View style={{ flex: 1, marginRight: 8 }}>
-                <Text style={[styles.fieldCaption, { color: colors.textSub }]}>TIPO DOCUMENTO</Text>
-                <View style={[styles.toggleTrack, { backgroundColor: isDark ? colors.cardBorder : '#F3F4F6' }]}>
-                  {(['Nota', 'Factura'] as TipoDocumentoLabel[]).map(opt => (
-                    <TouchableOpacity
-                      key={opt}
-                      style={[styles.toggleOption, tipoDocumento === opt && { backgroundColor: colors.brandGreen }]}
-                      onPress={() => setTipoDocumento(opt)}
-                    >
-                      <Text style={[
-                        styles.toggleText,
-                        { color: tipoDocumento === opt ? '#FFF' : colors.textSub },
-                        tipoDocumento === opt && { fontWeight: '800' },
-                      ]}>{opt}</Text>
-                    </TouchableOpacity>
-                  ))}
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.fieldCaption, { color: colors.textSub }]}>TIPO DE DOCUMENTO</Text>
+                <View style={[styles.staticBadge, {
+                  backgroundColor: isDark ? 'rgba(42,140,74,0.15)' : '#F0FDF4',
+                }]}>
+                  <Text style={[styles.staticBadgeText, { color: colors.brandGreen }]}>Nota</Text>
                 </View>
               </View>
-
-              {/* Contado (0) / Crédito (1) */}
-              <View style={{ flex: 1, marginLeft: 8 }}>
-                <Text style={[styles.fieldCaption, { color: colors.textSub }]}>FORMA DE PAGO</Text>
-                <View style={[styles.toggleTrack, { backgroundColor: isDark ? colors.cardBorder : '#F3F4F6' }]}>
-                  {(['Contado', 'Credito'] as TipoPagoLabel[]).map(opt => (
-                    <TouchableOpacity
-                      key={opt}
-                      style={[styles.toggleOption, tipoPago === opt && { backgroundColor: colors.brandGreen }]}
-                      onPress={() => setTipoPago(opt)}
-                    >
-                      <Ionicons
-                        name={opt === 'Contado' ? 'cash-outline' : 'calendar-outline'}
-                        size={13}
-                        color={tipoPago === opt ? '#FFF' : colors.textSub}
-                        style={{ marginRight: 3 }}
-                      />
-                      <Text style={[
-                        styles.toggleText,
-                        { color: tipoPago === opt ? '#FFF' : colors.textSub },
-                        tipoPago === opt && { fontWeight: '800' },
-                      ]}>{opt === 'Credito' ? 'Créd.' : 'Cont.'}</Text>
-                    </TouchableOpacity>
-                  ))}
+              <View style={{ flex: 1, alignItems: 'flex-end' }}>
+                <Text style={[styles.fieldCaption, { color: colors.textSub }]}>TIPO DE PAGO</Text>
+                <View style={[styles.staticBadge, {
+                  backgroundColor: isDark ? 'rgba(42,140,74,0.15)' : '#F0FDF4',
+                }]}>
+                  <Text style={[styles.staticBadgeText, { color: colors.brandGreen }]}>Contado</Text>
                 </View>
               </View>
             </View>
@@ -359,10 +352,12 @@ export default function NuevoPedido() {
                     key={item.id}
                     style={[
                       styles.cartRow,
-                      index !== cart.length - 1 && { borderBottomWidth: 1, borderBottomColor: isDark ? colors.cardBorder : '#F3F4F6' },
+                      index !== cart.length - 1 && {
+                        borderBottomWidth: 1,
+                        borderBottomColor: isDark ? colors.cardBorder : '#F3F4F6',
+                      },
                     ]}
                   >
-                    {/* Info producto */}
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.cartItemName, { color: colors.textMain }]}>
                         {item.nombre_producto}
@@ -375,7 +370,6 @@ export default function NuevoPedido() {
                       </Text>
                     </View>
 
-                    {/* Input cantidad */}
                     <View style={styles.qtyWrapper}>
                       <Text style={[styles.qtyLabel, { color: colors.textSub }]}>CANT.</Text>
                       <TextInput
@@ -392,7 +386,6 @@ export default function NuevoPedido() {
                       />
                     </View>
 
-                    {/* Subtotal */}
                     <View style={styles.subtotalCol}>
                       <Text style={[styles.subtotalLabel, { color: colors.textSub }]}>SUBTOTAL</Text>
                       <Text style={[styles.subtotalValue, { color: colors.textMain }]}>
@@ -400,7 +393,6 @@ export default function NuevoPedido() {
                       </Text>
                     </View>
 
-                    {/* Eliminar */}
                     <TouchableOpacity onPress={() => removeFromCart(item.id)} style={styles.deleteBtn}>
                       <Ionicons name="trash-outline" size={18} color="#EF4444" />
                     </TouchableOpacity>
@@ -409,7 +401,6 @@ export default function NuevoPedido() {
 
                 {/* Totalizador */}
                 <View style={[styles.totalsSection, { borderTopColor: isDark ? colors.cardBorder : '#E5E7EB' }]}>
-
                   <View style={styles.totalRow}>
                     <Text style={[styles.totalLabel, { color: colors.textSub }]}>SUBTOTAL</Text>
                     <Text style={[styles.totalValue, { color: colors.textMain }]}>
@@ -417,7 +408,6 @@ export default function NuevoPedido() {
                     </Text>
                   </View>
 
-                  {/* Descuento */}
                   <View style={styles.totalRow}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                       <Text style={[styles.totalLabel, { color: colors.textSub }]}>DESCUENTO</Text>
@@ -441,29 +431,6 @@ export default function NuevoPedido() {
                     />
                   </View>
 
-                  {/* Interés (solo crédito) */}
-                  {tipoPago === 'Credito' && (
-                    <View style={styles.totalRow}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                        <Text style={[styles.totalLabel, { color: colors.textSub }]}>INTERÉS</Text>
-                        <View style={[styles.pctInputRow, { backgroundColor: isDark ? colors.inputBg : '#F3F4F6' }]}>
-                          <TextInput
-                            style={[styles.pctInput, { color: colors.textMain }]}
-                            value={interesPorcentaje}
-                            onChangeText={setInteresPorcentaje}
-                            keyboardType="numeric"
-                            placeholder="0"
-                            placeholderTextColor={colors.textSub}
-                          />
-                          <Text style={[styles.pctSymbol, { color: colors.textSub }]}>%</Text>
-                        </View>
-                      </View>
-                      <Text style={[styles.totalValue, { color: '#F59E0B' }]}>
-                        +Bs {interesValor().toFixed(2)}
-                      </Text>
-                    </View>
-                  )}
-
                   <View style={[styles.divider, { backgroundColor: isDark ? colors.cardBorder : '#E5E7EB' }]} />
 
                   <View style={styles.totalRow}>
@@ -474,7 +441,6 @@ export default function NuevoPedido() {
                   </View>
                 </View>
 
-                {/* Observaciones */}
                 <TextInput
                   style={[styles.obsInput, {
                     color: colors.textMain,
@@ -491,22 +457,21 @@ export default function NuevoPedido() {
             </View>
           )}
 
-          {/* ── CATÁLOGO DE PRODUCTOS ── */}
+          {/* ── CATALOGO DE PRODUCTOS ── */}
           <View style={{ paddingHorizontal: 20 }}>
-            <Text style={[styles.sectionLabel, { color: colors.brandGreen }]}>CATÁLOGO DE PRODUCTOS</Text>
+            <Text style={[styles.sectionLabel, { color: colors.brandGreen }]}>CATALOGO DE PRODUCTOS</Text>
 
-            {/* Buscador — usa colors del tema, sin hardcoded */}
             <View style={[styles.searchBox, {
               backgroundColor: colors.cardBg,
-              borderColor: isDark ? colors.cardBorder : '#E5E7EB',
+              borderColor: searchNombre ? colors.brandGreen : (isDark ? colors.cardBorder : '#E5E7EB'),
             }]}>
-              <Ionicons name="search" size={18} color={colors.textSub} />
+              <Ionicons name="search" size={18} color={searchNombre ? colors.brandGreen : colors.textSub} />
               <TextInput
                 style={[styles.searchInput, { color: colors.textMain }]}
-                placeholder="Nombre o código de producto..."
+                placeholder="Buscar por nombre del producto..."
                 placeholderTextColor={colors.textSub}
-                value={searchQuery}
-                onChangeText={setSearchQuery}
+                value={searchNombre}
+                onChangeText={setSearchNombre}
                 onFocus={() => {
                   setSearchFocused(true);
                   setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
@@ -515,19 +480,17 @@ export default function NuevoPedido() {
                 autoCorrect={false}
                 autoCapitalize="none"
               />
-              {searchQuery.length > 0 && (
-                <TouchableOpacity onPress={() => setSearchQuery('')}>
+              {searchNombre.length > 0 && (
+                <TouchableOpacity onPress={() => setSearchNombre('')}>
                   <Ionicons name="close-circle" size={18} color={colors.textSub} />
                 </TouchableOpacity>
               )}
             </View>
 
-            {/* Tabla de productos */}
             <View style={[styles.tableCard, {
               backgroundColor: colors.cardBg,
               borderColor: isDark ? colors.cardBorder : '#E5E7EB',
             }]}>
-              {/* Cabecera tabla */}
               <View style={[styles.tableHeader, {
                 backgroundColor: isDark ? colors.cardBorder : '#F9FAFB',
                 borderBottomColor: isDark ? '#444' : '#E5E7EB',
@@ -542,7 +505,7 @@ export default function NuevoPedido() {
                 <View style={styles.emptySearch}>
                   <Ionicons name="search-outline" size={32} color={colors.textSub} style={{ opacity: 0.4 }} />
                   <Text style={[styles.emptySearchText, { color: colors.textSub }]}>
-                    {searchQuery ? `Sin resultados para "${searchQuery}"` : 'No hay productos disponibles'}
+                    {searchNombre ? `Sin resultados para "${searchNombre}"` : 'No hay productos disponibles'}
                   </Text>
                 </View>
               ) : (
@@ -550,18 +513,16 @@ export default function NuevoPedido() {
                   const isInCart = cart.some(item => item.id === p.id);
                   const sinStock = p.stock_actual <= 0;
                   const altRow = index % 2 !== 0;
-
                   return (
                     <View
                       key={p.id}
                       style={[
                         styles.tableRow,
                         { borderBottomColor: isDark ? '#333' : '#F3F4F6' },
-                        altRow && { backgroundColor: isDark ? colors.cardBorder : '#F9FAFB' },
-                        !altRow && { backgroundColor: colors.cardBg },
+                        altRow ? { backgroundColor: isDark ? colors.cardBorder : '#F9FAFB' }
+                          : { backgroundColor: colors.cardBg },
                       ]}
                     >
-                      {/* Nombre y código */}
                       <View style={{ flex: 2 }}>
                         <Text style={[styles.cellName, { color: colors.textMain }]} numberOfLines={2}>
                           {p.nombre_producto}
@@ -570,32 +531,19 @@ export default function NuevoPedido() {
                           {p.codigo_producto}
                         </Text>
                       </View>
-
-                      {/* Stock — rojo si es 0 */}
                       <View style={{ flex: 1, alignItems: 'center' }}>
-                        <Text style={[
-                          styles.cellStock,
-                          { color: sinStock ? '#EF4444' : colors.textMain },
-                          sinStock && { fontWeight: '700' },
-                        ]}>
+                        <Text style={[styles.cellStock, { color: sinStock ? '#EF4444' : colors.textMain }]}>
                           {p.stock_actual}
                         </Text>
                       </View>
-
-                      {/* Precio */}
                       <View style={{ flex: 1, alignItems: 'flex-end' }}>
                         <Text style={[styles.cellPrice, { color: colors.brandGreen }]}>
                           {p.precio_base_venta.toFixed(2)}
                         </Text>
                       </View>
-
-                      {/* Botón agregar */}
                       <TouchableOpacity
                         onPress={() => addToCart(p)}
-                        style={[
-                          styles.addBtn,
-                          { backgroundColor: isInCart ? colors.textSub : colors.brandGreen },
-                        ]}
+                        style={[styles.addBtn, { backgroundColor: isInCart ? colors.textSub : colors.brandGreen }]}
                         disabled={isInCart}
                       >
                         <Ionicons name={isInCart ? 'checkmark' : 'add'} size={18} color="#FFF" />
@@ -606,11 +554,10 @@ export default function NuevoPedido() {
               )}
             </View>
           </View>
-
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* ── FOOTER FLOTANTE ── */}
+      {/* Footer flotante */}
       {cart.length > 0 && (
         <View style={[styles.footer, {
           backgroundColor: colors.cardBg,
@@ -639,7 +586,27 @@ export default function NuevoPedido() {
         </View>
       )}
 
-      {/* ── MODAL: Stock insuficiente ── */}
+      {/* ── Modal de éxito con countdown ── */}
+      <Modal visible={successModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalBox, { backgroundColor: colors.cardBg }]}>
+            <View style={[styles.modalIconBg, { backgroundColor: isDark ? 'rgba(22,163,74,0.2)' : '#DCFCE7' }]}>
+              <Ionicons name="checkmark-circle" size={40} color={colors.brandGreen} />
+            </View>
+            <Text style={[styles.modalTitle, { color: colors.textMain }]}>
+              Pedido enviado exitosamente
+            </Text>
+            <Text style={[styles.modalBody, { color: colors.textSub }]}>
+              Serás redirigido en unos segundos
+            </Text>
+            <View style={[styles.countdownCircle, { borderColor: colors.brandGreen }]}>
+              <Text style={[styles.countdownNum, { color: colors.brandGreen }]}>{countdown}</Text>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal: stock insuficiente */}
       <Modal
         visible={stockModal.visible}
         transparent
@@ -648,41 +615,25 @@ export default function NuevoPedido() {
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.modalBox, { backgroundColor: colors.cardBg }]}>
-
-            {/* Ícono de advertencia */}
             <View style={[styles.modalIconBg, { backgroundColor: isDark ? '#3a1a00' : '#FEF3C7' }]}>
               <Ionicons name="warning-outline" size={32} color="#F59E0B" />
             </View>
-
-            <Text style={[styles.modalTitle, { color: colors.textMain }]}>
-              Stock insuficiente
-            </Text>
-
-            <Text style={[styles.modalBody, { color: colors.textSub }]}>
-              {stockModal.productName}
-            </Text>
-
-            {/* Detalle numérico */}
+            <Text style={[styles.modalTitle, { color: colors.textMain }]}>Stock insuficiente</Text>
+            <Text style={[styles.modalBody, { color: colors.textSub }]}>{stockModal.productName}</Text>
             <View style={[styles.modalStockRow, { backgroundColor: isDark ? colors.inputBg : '#F9FAFB' }]}>
               <View style={styles.modalStockCell}>
                 <Text style={[styles.modalStockLabel, { color: colors.textSub }]}>Pediste</Text>
-                <Text style={[styles.modalStockValue, { color: '#EF4444' }]}>
-                  {stockModal.cantidadPedida}
-                </Text>
+                <Text style={[styles.modalStockValue, { color: '#EF4444' }]}>{stockModal.cantidadPedida}</Text>
               </View>
               <View style={[styles.modalStockDivider, { backgroundColor: isDark ? colors.cardBorder : '#E5E7EB' }]} />
               <View style={styles.modalStockCell}>
-                <Text style={[styles.modalStockLabel, { color: colors.textSub }]}>Saldo disponible</Text>
-                <Text style={[styles.modalStockValue, { color: colors.brandGreen }]}>
-                  {stockModal.stockDisponible}
-                </Text>
+                <Text style={[styles.modalStockLabel, { color: colors.textSub }]}>Disponible</Text>
+                <Text style={[styles.modalStockValue, { color: colors.brandGreen }]}>{stockModal.stockDisponible}</Text>
               </View>
             </View>
-
             <Text style={[styles.modalNote, { color: colors.textSub }]}>
-              Se ajustó la cantidad al máximo disponible.
+              Se ajusto la cantidad al maximo disponible.
             </Text>
-
             <TouchableOpacity
               style={[styles.modalBtn, { backgroundColor: colors.brandGreen }]}
               onPress={() => setStockModal(p => ({ ...p, visible: false }))}
@@ -692,30 +643,26 @@ export default function NuevoPedido() {
           </View>
         </View>
       </Modal>
-
     </View>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ESTILOS — solo medidas, sin colores fijos
+// Estilos
 // ─────────────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   loadingText: { marginTop: 12, fontSize: 14 },
   container: { flex: 1 },
 
-  // HEADER
   headerGradient: { height: 110, borderBottomLeftRadius: 28, borderBottomRightRadius: 28, paddingHorizontal: 20, position: 'absolute', top: 0, width: '100%', zIndex: 0 },
   headerContent: { flex: 1 },
   navBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 },
   backButton: { padding: 8, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.2)' },
   headerTitle: { color: '#FFF', fontSize: 18, fontWeight: '700' },
 
-  // SCROLL
   scrollView: { flex: 1, marginTop: 80 },
 
-  // FORM CARD
   formSheet: { marginHorizontal: 20, borderRadius: 20, padding: 20, marginBottom: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.07, shadowRadius: 10, elevation: 4 },
   sectionLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 1, marginBottom: 14 },
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
@@ -725,17 +672,14 @@ const styles = StyleSheet.create({
   clientSub: { fontSize: 12 },
   divider: { height: 1, marginVertical: 12 },
 
-  // TOGGLES
-  toggleTrack: { flexDirection: 'row', borderRadius: 8, padding: 3 },
-  toggleOption: { flex: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 8, borderRadius: 6 },
-  toggleText: { fontSize: 12, fontWeight: '600' },
+  // Badges estáticos (Nota / Contado)
+  staticBadge: { alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, marginTop: 6 },
+  staticBadgeText: { fontSize: 13, fontWeight: '700' },
 
-  // BUSCADOR
-  searchBox: { flexDirection: 'row', alignItems: 'center', borderRadius: 12, paddingHorizontal: 12, height: 46, marginBottom: 12, borderWidth: 1 },
+  searchBox: { flexDirection: 'row', alignItems: 'center', borderRadius: 12, paddingHorizontal: 12, height: 46, marginBottom: 12, borderWidth: 1.5 },
   searchInput: { flex: 1, marginLeft: 8, fontSize: 14 },
 
-  // TABLA
-  tableCard: { borderRadius: 14, overflow: 'hidden', borderWidth: 1, elevation: 1 },
+  tableCard: { borderRadius: 14, overflow: 'hidden', borderWidth: 1, elevation: 1, marginBottom: 20 },
   tableHeader: { flexDirection: 'row', paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: 1 },
   th: { fontSize: 10, fontWeight: '800' },
   tableRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 12, borderBottomWidth: 1 },
@@ -747,39 +691,30 @@ const styles = StyleSheet.create({
   emptySearch: { padding: 40, alignItems: 'center', gap: 8 },
   emptySearchText: { fontSize: 13, textAlign: 'center' },
 
-  // CARRITO
   cartCard: { borderRadius: 14, padding: 14, borderWidth: 1, elevation: 1 },
   cartRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12 },
   cartItemName: { fontSize: 13, fontWeight: '700', marginBottom: 2 },
   cartItemCode: { fontSize: 10, marginBottom: 2 },
   cartItemPrice: { fontSize: 11, fontWeight: '600' },
-
   qtyWrapper: { marginHorizontal: 8 },
   qtyLabel: { fontSize: 9, fontWeight: '700', marginBottom: 3, textAlign: 'center' },
   qtyInput: { width: 58, height: 38, borderWidth: 2, borderRadius: 8, textAlign: 'center', fontSize: 16, fontWeight: '700' },
-
   subtotalCol: { marginLeft: 6 },
   subtotalLabel: { fontSize: 9, fontWeight: '700', marginBottom: 2, textAlign: 'right' },
   subtotalValue: { fontSize: 14, fontWeight: '700', textAlign: 'right' },
   deleteBtn: { marginLeft: 8, padding: 5 },
 
-  // TOTALIZADOR
   totalsSection: { marginTop: 14, paddingTop: 14, borderTopWidth: 1.5 },
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   totalLabel: { fontSize: 12, fontWeight: '700' },
   totalValue: { fontSize: 14, fontWeight: '700' },
   totalLabelFinal: { fontSize: 14, fontWeight: '900' },
   totalValueFinal: { fontSize: 20, fontWeight: '800' },
-
   pctBadge: { paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6 },
   pctBadgeText: { fontSize: 11, fontWeight: '700' },
-  pctInputRow: { flexDirection: 'row', alignItems: 'center', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 },
-  pctInput: { width: 36, textAlign: 'center', fontSize: 13, fontWeight: '700' },
-  pctSymbol: { fontSize: 12, fontWeight: '600', marginLeft: 2 },
   montoInput: { width: 80, height: 34, borderWidth: 1.5, borderRadius: 8, textAlign: 'right', paddingHorizontal: 8, fontSize: 14, fontWeight: '700' },
   obsInput: { borderRadius: 10, padding: 12, fontSize: 13, height: 70, textAlignVertical: 'top', borderWidth: 1, marginTop: 12 },
 
-  // FOOTER
   footer: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: 20, paddingVertical: 14, paddingBottom: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: 1, borderTopLeftRadius: 20, borderTopRightRadius: 20, elevation: 16 },
   footerTotal: { flex: 1 },
   footerLabel: { fontSize: 10, fontWeight: '700' },
@@ -787,7 +722,10 @@ const styles = StyleSheet.create({
   confirmBtn: { paddingHorizontal: 22, paddingVertical: 12, borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 8 },
   confirmBtnText: { color: '#FFF', fontSize: 14, fontWeight: '700' },
 
-  // MODAL STOCK INSUFICIENTE
+  // Countdown modal
+  countdownCircle: { width: 56, height: 56, borderRadius: 28, borderWidth: 3, justifyContent: 'center', alignItems: 'center', marginTop: 12 },
+  countdownNum: { fontSize: 24, fontWeight: '900' },
+
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', padding: 24 },
   modalBox: { width: '100%', maxWidth: 340, borderRadius: 20, padding: 24, alignItems: 'center', elevation: 10 },
   modalIconBg: { width: 64, height: 64, borderRadius: 32, justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
