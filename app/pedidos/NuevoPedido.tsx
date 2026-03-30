@@ -179,6 +179,10 @@ export default function NuevoPedido() {
       if (status !== 'granted') throw new Error('Se requiere permiso de ubicacion para confirmar el pedido.');
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
 
+      // ── Verificar sesión activa ─────────────────────────────────────────────
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      if (!currentSession) throw new Error('Sesión expirada. Por favor cierra sesión y vuelve a ingresar.');
+
       const orderPayload = {
         numero_documento: nroDocumento,
         fecha_pedido: new Date().toISOString(),
@@ -197,9 +201,14 @@ export default function NuevoPedido() {
         empleado_id: session?.user.id,
       };
 
+      console.log('[NuevoPedido] Creando cabecera del pedido...');
       const { data: orderData, error: orderError } = await supabase
         .from('pedidos').insert(orderPayload).select('id').single();
-      if (orderError) throw orderError;
+      if (orderError) {
+        console.error('[NuevoPedido] Error al crear pedido:', JSON.stringify(orderError));
+        throw orderError;
+      }
+      console.log('[NuevoPedido] Pedido creado con id:', orderData.id);
 
       const detailsPayload = validItems.map(item => ({
         pedido_id: orderData.id,
@@ -210,13 +219,39 @@ export default function NuevoPedido() {
         subtotal: item.qty * item.precio_base_venta,
       }));
 
-      const { error: detailsError } = await supabase.from('detalle_pedido').insert(detailsPayload);
-      if (detailsError) throw detailsError;
+      console.log('[NuevoPedido] Insertando', detailsPayload.length, 'líneas en detalle_pedido...');
+      console.log('[NuevoPedido] Primer detalle:', JSON.stringify(detailsPayload[0]));
+
+      const { data: detailsData, error: detailsError } = await supabase
+        .from('detalle_pedido')
+        .insert(detailsPayload)
+        .select('id');
+
+      if (detailsError) {
+        console.error('[NuevoPedido] Error RLS/DB en detalle_pedido:', JSON.stringify(detailsError));
+        // Eliminar el pedido huérfano si el detalle falló
+        await supabase.from('pedidos').delete().eq('id', orderData.id);
+        throw new Error(`Error al guardar productos: ${detailsError.message} (código: ${detailsError.code})`);
+      }
+
+      // Verificar fallo silencioso de RLS (insert bloqueado sin error)
+      if (!detailsData || detailsData.length === 0) {
+        console.error('[NuevoPedido] INSERT a detalle_pedido bloqueado silenciosamente por RLS (devolvió 0 filas)');
+        await supabase.from('pedidos').delete().eq('id', orderData.id);
+        throw new Error(
+          'Sin permiso para guardar los productos del pedido.\n\n' +
+          'Posible causa: tu cuenta no tiene el rol "Vendedor" asignado.\n' +
+          'Contacta al administrador.'
+        );
+      }
+
+      console.log('[NuevoPedido] Detalles guardados exitosamente:', detailsData.length, 'filas');
 
       // Mostrar modal de éxito con countdown de 5 segundos
       showSuccessModal();
 
     } catch (error: any) {
+      console.error('[NuevoPedido] Error general en saveOrder:', error);
       Alert.alert('Error al guardar', error.message);
     } finally {
       setSaving(false);
