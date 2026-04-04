@@ -5,20 +5,13 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { showVisitToast } from '../components/VisitToast';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// HOOK: useVisitTracker
-//
-// Maneja el ciclo de vida de una visita de ventas.
-//
-// Notificaciones (modal visual que desaparece solo en 5 segundos):
-//   Iniciar              → "Visita iniciada"
-//   Finalizar con venta  → "Venta realizada"
-//   Finalizar sin venta  → "Visita finalizada"
-//   Finalizar cerrado    → "Visita finalizada"
-//
-// Para que los toasts funcionen, monta <VisitToast /> en app/clients/[id].tsx
-// El cronómetro (startTime) está disponible para que el admin lo use en [id].tsx
-// ─────────────────────────────────────────────────────────────────────────────
+// Ajuste para mandar la hora exacta de Bolivia (-04:00) y evitar saltos de día por UTC
+const getBoliviaIsoString = () => {
+  const now = new Date();
+  const pad = (num: number) => num.toString().padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}-04:00`;
+};
+
 export const useVisitTracker = () => {
   const { session } = useAuth();
   const [isVisiting, setIsVisiting] = useState(false);
@@ -27,28 +20,45 @@ export const useVisitTracker = () => {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    checkActiveVisit();
+    // El check inicial no tiene clientId aún; se hace desde useFocusEffect en [id].tsx
   }, [session?.user?.id]);
 
-  const checkActiveVisit = async () => {
+  // clientId es OBLIGATORIO: solo busca visita activa para ESE cliente específico.
+  // Sin él, una visita de otro cliente contaminaría el estado de esta pantalla.
+  const checkActiveVisit = async (clientId?: string) => {
     if (!session?.user) return;
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('visits')
         .select('id, start_time')
         .eq('seller_id', session.user.id)
         .eq('outcome', 'pending')
         .order('start_time', { ascending: false })
-        .limit(1)
-        .single();
+        .limit(1);
+
+      // Filtramos por cliente para que cada perfil tenga su estado propio
+      if (clientId) {
+        query = query.eq('client_id', clientId);
+      }
+
+      const { data, error } = await query.single();
 
       if (data && !error) {
         setVisitId(data.id);
         setStartTime(new Date(data.start_time));
         setIsVisiting(true);
+      } else {
+        // Siempre reseteamos para este cliente — sin esto, un cliente anterior
+        // podía dejar isVisiting=true al navegar a un cliente sin visita.
+        setIsVisiting(false);
+        setVisitId(null);
+        setStartTime(null);
       }
     } catch {
-      // Sin visita activa — es el caso normal
+      // .single() lanza error cuando no hay filas — es el caso normal (sin visita)
+      setIsVisiting(false);
+      setVisitId(null);
+      setStartTime(null);
     }
   };
 
@@ -68,15 +78,34 @@ export const useVisitTracker = () => {
 
     setLoading(true);
     try {
+      // Pedimos GPS al inicio para que el mapa web dibuje el globito (check_in_location)
+      let point = null;
+      let accuracy = null;
+
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+          point = `POINT(${loc.coords.longitude} ${loc.coords.latitude})`;
+          accuracy = loc.coords.accuracy;
+        }
+      } catch (e) {
+        console.log("No se pudo obtener ubicación al iniciar");
+      }
+
       const start = new Date();
+      const localTime = getBoliviaIsoString();
 
       const { data, error } = await supabase
         .from('visits')
         .insert({
           seller_id: session.user.id,
           client_id: clientId,
-          start_time: start.toISOString(),
+          start_time: localTime,
+          created_at: localTime, // Clave para el filtro web
           outcome: 'pending',
+          check_in_location: point,
+          gps_accuracy_meters: accuracy
         })
         .select()
         .single();
@@ -87,7 +116,7 @@ export const useVisitTracker = () => {
       setStartTime(start);
       setIsVisiting(true);
 
-      // Modal visual — desaparece solo en 5 segundos, sin botón OK
+      // Lanzamos el mensaje de éxito al darle al botón
       showVisitToast({
         title: 'Visita iniciada',
         subtitle: 'La visita ha sido registrada correctamente.',
@@ -101,6 +130,8 @@ export const useVisitTracker = () => {
     }
   };
 
+  // Mapeamos los 3 resultados con sus toasts correspondientes:
+  // Venta → 'success' (verde), Sin Venta → 'info' (azul), Cerrado → 'error' (rojo)
   const endVisit = async (outcome: 'sale' | 'no_sale' | 'closed', notes: string) => {
     if (!visitId || !startTime) {
       Alert.alert('Error', 'No hay una visita activa.');
@@ -109,29 +140,36 @@ export const useVisitTracker = () => {
 
     setLoading(true);
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permiso denegado', 'Se requiere ubicación para cerrar la visita.');
-        setLoading(false);
-        return;
+      // GPS al finalizar (check_out_location para el mapa web). No bloqueante.
+      let checkOutPoint = null;
+      let checkOutAccuracy = null;
+
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const location = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.High,
+          });
+          checkOutPoint = `POINT(${location.coords.longitude} ${location.coords.latitude})`;
+          checkOutAccuracy = location.coords.accuracy;
+        }
+      } catch (e) {
+        console.log('No se pudo obtener ubicación al finalizar');
       }
 
-      const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-      });
-
       const endTime = new Date();
+      const localEndTime = getBoliviaIsoString(); // ← hora local Bolivia, no UTC
       const duration = Math.round((endTime.getTime() - startTime.getTime()) / 1000);
 
       const { data, error } = await supabase
         .from('visits')
         .update({
-          end_time: endTime.toISOString(),
+          end_time: localEndTime,
           duration_seconds: duration,
           outcome,
           notes,
-          gps_accuracy_meters: location.coords.accuracy,
-          check_out_location: `POINT(${location.coords.longitude} ${location.coords.latitude})`,
+          ...(checkOutAccuracy !== null && { gps_accuracy_meters: checkOutAccuracy }),
+          ...(checkOutPoint !== null && { check_out_location: checkOutPoint }),
         })
         .eq('id', visitId)
         .select();
@@ -141,20 +179,14 @@ export const useVisitTracker = () => {
         throw new Error('No se pudo actualizar la visita. Verifica las políticas de RLS en Supabase.');
       }
 
-      // Venta → verde, cualquier otro resultado → azul
-      showVisitToast(
-        outcome === 'sale'
-          ? {
-            title: 'Venta realizada',
-            subtitle: 'El pedido quedó registrado correctamente.',
-            type: 'success',
-          }
-          : {
-            title: 'Visita finalizada',
-            subtitle: 'La visita ha sido cerrada.',
-            type: 'info',
-          }
-      );
+      // Mapeo exacto: Venta=success | Sin Venta=info | Cerrado=error
+      const toastMap: Record<typeof outcome, { title: string; subtitle: string; type: 'success' | 'info' | 'error' }> = {
+        sale:     { title: 'Venta realizada',    subtitle: 'El pedido quedó registrado correctamente.', type: 'success' },
+        no_sale:  { title: 'Sin venta',          subtitle: 'La visita fue cerrada sin pedido.',          type: 'info'    },
+        closed:   { title: 'Cliente cerrado',     subtitle: 'El local estaba cerrado al momento de la visita.', type: 'error'  },
+      };
+
+      showVisitToast(toastMap[outcome]);
 
       setIsVisiting(false);
       setVisitId(null);

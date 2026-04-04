@@ -10,8 +10,11 @@ import { useTheme } from '../../contexts/ThemeContext';
 // ─────────────────────────────────────────────────────────────────────────────
 // TabLayout
 //
-// Solo se muestra "Inicio" en el tab bar, centrado.
-// El resto se navega desde los módulos del home.
+// Tab bar visible: Inicio + Mapa (igual para Admin y Vendedor).
+// La diferencia de acceso entre roles se controla en el home mediante adminOnly.
+//
+// Vendedor ve en el home: Clientes, Cobranza, Pedidos, Reporte Inventario, Catálogo.
+// Admin ve en el home: todo lo anterior + Inventario, Proveedores, Zonas, Personal, Categorías.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function TabLayout() {
@@ -58,7 +61,6 @@ export default function TabLayout() {
           marginTop: 3,
           letterSpacing: 0.3,
         },
-        // Centra el único ítem en el tab bar
         tabBarItemStyle: {
           flex: 1,
           alignItems: 'center',
@@ -66,7 +68,7 @@ export default function TabLayout() {
         },
       }}
     >
-      {/* Única pestaña visible — centrada */}
+      {/* ── INICIO ── visible para todos */}
       <Tabs.Screen
         name="index"
         options={{
@@ -97,7 +99,7 @@ export default function TabLayout() {
         }}
       />
 
-      {/* Mapa visible en el tab bar */}
+      {/* ── MAPA ── visible para todos */}
       <Tabs.Screen
         name="map"
         options={{
@@ -120,11 +122,11 @@ export default function TabLayout() {
         }}
       />
 
-      {/* Ocultos del tab bar — se navega desde el home */}
-      <Tabs.Screen name="rutas" options={{ href: null }} />
+      {/* ── Ocultos del tab bar — se navegan desde el home o rutas internas ── */}
+      <Tabs.Screen name="rutas"      options={{ href: null }} />
       <Tabs.Screen name="inventario" options={{ href: null }} />
-      <Tabs.Screen name="explore" options={{ href: null }} />
-      <Tabs.Screen name="profile" options={{ href: null }} />
+      <Tabs.Screen name="explore"    options={{ href: null }} />
+      <Tabs.Screen name="profile"    options={{ href: null }} />
     </Tabs>
   );
 }

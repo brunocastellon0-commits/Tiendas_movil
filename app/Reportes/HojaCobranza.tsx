@@ -9,10 +9,18 @@ import { Ionicons, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-ico
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../../contexts/ThemeContext';
 import { supabase } from '../../lib/supabase';
-import { Deuda } from '../../types/Cobranza.interface'; // Ajusta la ruta a tu interfaz
-import { reporteService } from '../../services/ReporteCobranzas'; // Ajusta la ruta a tu servicio
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+
+// Interfaz de Deuda
+export interface Deuda {
+    id: string;
+    cliente: { nombre: string; zona: string; direccion: string; telefono: string };
+    nro_doc: string;
+    fecha: string;
+    dias_mora: number;
+    saldo: number;
+}
 
 export default function HojaCobranzaScreen() {
     const router = useRouter();
@@ -33,7 +41,7 @@ export default function HojaCobranzaScreen() {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) return;
 
-            // Obtener nombre del vendedor
+            // 1. Obtener nombre del vendedor
             const { data: userData } = await supabase
                 .from('employees')
                 .select('full_name')
@@ -41,16 +49,64 @@ export default function HojaCobranzaScreen() {
                 .single();
             if (userData) setVendorName(userData.full_name);
 
-            // Obtener Deudas
-            const data = await reporteService.getHojaCobranza(user.id);
-            setDeudas(data);
+            // 2. Consultar directamente a Supabase (EVITAMOS LA IP LOCAL)
+            // Traemos todos los pedidos que estén marcados como Crédito
+            const { data, error } = await supabase
+                .from('pedidos')
+                .select(`
+                    id,
+                    numero_documento,
+                    fecha_pedido,
+                    total_venta,
+                    clients:clients_id (
+                        name,
+                        address,
+                        phones
+                    )
+                `)
+                .eq('tipo_pago', 'Crédito')
+                .order('fecha_pedido', { ascending: false });
+
+            if (error) throw error;
+
+            const hoy = new Date();
+
+            // Mapeamos los datos de Supabase a la estructura visual de la App
+            const datosFormateados: Deuda[] = (data || []).map((c: any) => {
+                // Usamos la fecha del pedido, o la actual como respaldo
+                const fechaVenta = new Date(c.fecha_pedido || new Date());
+
+                // Calcular días de mora
+                const diffTime = Math.abs(hoy.getTime() - fechaVenta.getTime());
+                const diasMora = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+                // A veces Supabase devuelve un arreglo en las relaciones, extraemos el primer elemento
+                const clienteData = Array.isArray(c.clients) ? c.clients[0] : c.clients;
+
+                return {
+                    id: c.id.toString(),
+                    cliente: {
+                        nombre: clienteData?.name || 'Sin nombre',
+                        zona: 'No especificada',
+                        direccion: clienteData?.address || 'Revisar en sistema',
+                        telefono: clienteData?.phones || ''
+                    },
+                    nro_doc: c.numero_documento || 'S/N',
+                    fecha: fechaVenta.toLocaleDateString('es-BO'),
+                    dias_mora: diasMora,
+                    saldo: c.total_venta || 0
+                };
+            });
+
+            setDeudas(datosFormateados);
 
             // Calcular Total
-            const sumaTotal = data.reduce((acc, item) => acc + item.saldo, 0);
+            const sumaTotal = datosFormateados.reduce((acc, item) => acc + item.saldo, 0);
             setTotalGeneral(sumaTotal);
 
         } catch (error) {
-            Alert.alert('Error', 'No se pudieron cargar los datos.');
+            console.error("Error cargando deudas desde Supabase:", error);
+            Alert.alert('Error', 'No se pudieron cargar las cuentas por cobrar.');
         } finally {
             setLoading(false);
         }
@@ -144,7 +200,7 @@ export default function HojaCobranzaScreen() {
 
     const handleLlamar = (telefono: string) => {
         if (telefono) Linking.openURL(`tel:${telefono}`);
-        else Alert.alert("Aviso", "No hay teléfono registrado.");
+        else Alert.alert("Aviso", "El cliente no tiene teléfono registrado en el sistema antiguo.");
     };
 
     const renderItem = ({ item }: { item: Deuda }) => (
@@ -160,7 +216,7 @@ export default function HojaCobranzaScreen() {
                     </View>
                 </View>
                 <View style={styles.amountBox}>
-                    <Text style={styles.labelAmount}>SALDO</Text>
+                    <Text style={styles.labelAmount}>SALDO PENDIENTE</Text>
                     <Text style={styles.valueAmount}>Bs {item.saldo.toFixed(2)}</Text>
                 </View>
             </View>
@@ -170,11 +226,11 @@ export default function HojaCobranzaScreen() {
             {/* Detalles */}
             <View style={styles.detailsRow}>
                 <View style={styles.detailBox}>
-                    <Text style={styles.labelDetail}>DOC</Text>
+                    <Text style={styles.labelDetail}>DOCUMENTO</Text>
                     <Text style={[styles.valueDetail, { color: colors.textMain }]}>{item.nro_doc}</Text>
                 </View>
                 <View style={styles.detailBoxCenter}>
-                    <Text style={styles.labelDetail}>FECHA</Text>
+                    <Text style={styles.labelDetail}>FECHA CRÉDITO</Text>
                     <Text style={[styles.valueDetail, { color: colors.textMain }]}>{item.fecha}</Text>
                 </View>
                 <View style={styles.detailBoxRight}>
@@ -196,7 +252,7 @@ export default function HojaCobranzaScreen() {
             {/* Botón */}
             <TouchableOpacity style={styles.callButton} onPress={() => handleLlamar(item.cliente.telefono)}>
                 <Ionicons name="call" size={16} color="#4B5563" />
-                <Text style={styles.callButtonText}>Contactar</Text>
+                <Text style={styles.callButtonText}>Contactar Cliente</Text>
             </TouchableOpacity>
 
         </View>
@@ -213,11 +269,11 @@ export default function HojaCobranzaScreen() {
                         <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
                             <Ionicons name="arrow-back" size={24} color="#fff" />
                         </TouchableOpacity>
-                        <Text style={styles.headerTitle}>Hoja de Cobranza</Text>
+                        <Text style={styles.headerTitle}>Cuentas por Cobrar</Text>
 
                         <View style={{ flexDirection: 'row', gap: 10 }}>
                             <TouchableOpacity onPress={savePdf} style={styles.iconBtn}>
-                                <FontAwesome5 name="file-download" size={20} color="#fff" />
+                                <FontAwesome5 name="file-pdf" size={20} color="#fff" />
                             </TouchableOpacity>
                             <TouchableOpacity onPress={cargarDatos} style={styles.iconBtn}>
                                 <Ionicons name="reload" size={22} color="#fff" />
@@ -252,8 +308,8 @@ export default function HojaCobranzaScreen() {
                         ListEmptyComponent={
                             <View style={styles.emptyContainer}>
                                 <Ionicons name="checkmark-circle-outline" size={80} color="#10B981" />
-                                <Text style={[styles.emptyTitle, { color: colors.textMain }]}>Sin Deudas</Text>
-                                <Text style={{ color: colors.textSub }}>No hay cuentas pendientes.</Text>
+                                <Text style={[styles.emptyTitle, { color: colors.textMain }]}>Cartera Limpia</Text>
+                                <Text style={{ color: colors.textSub, marginTop: 5 }}>No hay cuentas pendientes por cobrar.</Text>
                             </View>
                         }
                     />

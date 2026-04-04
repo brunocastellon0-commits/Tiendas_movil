@@ -17,7 +17,7 @@ import { Animated, Modal, StyleSheet, Text, useColorScheme, View } from 'react-n
 //   'info'    → azul   (visita finalizada)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type VisitToastType = 'success' | 'info';
+export type VisitToastType = 'success' | 'info' | 'error';
 
 interface ToastConfig {
     visible: boolean;
@@ -37,6 +37,10 @@ const COLORS = {
     info: {
         light: { icon: 'flag-outline' as const, iconColor: '#3B82F6', iconBg: '#EFF6FF', titleColor: '#1E40AF' },
         dark: { icon: 'flag-outline' as const, iconColor: '#60a5fa', iconBg: '#0c1a2e', titleColor: '#60a5fa' },
+    },
+    error: {
+        light: { icon: 'lock-closed-outline' as const, iconColor: '#DC2626', iconBg: '#FEF2F2', titleColor: '#991B1B' },
+        dark: { icon: 'lock-closed-outline' as const, iconColor: '#f87171', iconBg: '#2d0a0a', titleColor: '#f87171' },
     },
 };
 

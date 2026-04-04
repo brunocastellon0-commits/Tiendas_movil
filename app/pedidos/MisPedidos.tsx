@@ -23,9 +23,6 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { supabase } from '../../lib/supabase';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Utilidades de fecha
-// ─────────────────────────────────────────────────────────────────────────────
 const DIAS_ES = ['Dom', 'Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab'];
 const MESES_ES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
@@ -45,13 +42,9 @@ const formatFecha = (iso: string) => {
   return `${d.toLocaleDateString('es-BO', { day: '2-digit', month: 'short', year: 'numeric' })} · ${d.toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit' })}`;
 };
 
-/** true si la fecha ISO es del día de hoy */
 const esHoy = (iso: string): boolean =>
   startOfDay(new Date(iso)).getTime() === startOfDay(new Date()).getTime();
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Tipos
-// ─────────────────────────────────────────────────────────────────────────────
 type MainFilter = 'hoy' | 'semana' | 'todo';
 
 interface DetalleItem {
@@ -70,6 +63,7 @@ interface Pedido {
   estado: string;
   crated_at: string;
   clients: { name: string; code: string } | null;
+  empleados?: { full_name: string } | null; // Se agregó campo empleado
 }
 
 interface Producto {
@@ -80,9 +74,6 @@ interface Producto {
   stock_actual: number;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Helper de estado
-// ─────────────────────────────────────────────────────────────────────────────
 const getEstadoConfig = (estado: string, isDark: boolean) => {
   switch (estado?.toLowerCase()) {
     case 'pagado': case 'delivered':
@@ -94,26 +85,21 @@ const getEstadoConfig = (estado: string, isDark: boolean) => {
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Componente principal
-// ─────────────────────────────────────────────────────────────────────────────
 export default function MisPedidos() {
   const router = useRouter();
-  const { session } = useAuth();
+  // ── TRAEMOS isAdmin PARA CONTROLAR EL ACCESO ──
+  const { session, isAdmin } = useAuth();
   const { colors, isDark } = useTheme();
 
-  // ── Filtros ──────────────────────────────────────────────────────────────────
   const [mainFilter, setMainFilter] = useState<MainFilter>('hoy');
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
   const [selectedWeekRef, setSelectedWeekRef] = useState<Date | null>(null);
   const [pickerVisible, setPickerVisible] = useState(false);
 
-  // ── Datos ────────────────────────────────────────────────────────────────────
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [loading, setLoading] = useState(true);
   const [totalVentas, setTotalVentas] = useState(0);
 
-  // ── Modal ────────────────────────────────────────────────────────────────────
   const [modalVisible, setModalVisible] = useState(false);
   const [modalMode, setModalMode] = useState<'view' | 'edit'>('view');
   const [selectedPedido, setSelectedPedido] = useState<Pedido | null>(null);
@@ -124,16 +110,12 @@ export default function MisPedidos() {
   const [modalNote, setModalNote] = useState('');
   const [notes, setNotes] = useState<Record<string, string>>({});
 
-  // ── Agregar / quitar productos ───────────────────────────────────────────────
   const [allProducts, setAllProducts] = useState<Producto[]>([]);
   const [searchProd, setSearchProd] = useState('');
   const [showAddPanel, setShowAddPanel] = useState(false);
   const [toDelete, setToDelete] = useState<Set<string>>(new Set());
   const [newItems, setNewItems] = useState<Record<string, { producto: Producto; qty: string }>>({});
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Rango activo
-  // ─────────────────────────────────────────────────────────────────────────
   const getActiveRange = (): { from: Date; to: Date; label: string } => {
     const now = new Date();
     if (mainFilter === 'hoy') {
@@ -149,36 +131,42 @@ export default function MisPedidos() {
     return { from: startOfMonth(now), to: endOfMonth(now), label: formatMonth(now) };
   };
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Carga de pedidos
-  // ─────────────────────────────────────────────────────────────────────────
   const fetchPedidos = useCallback(async () => {
     try {
       setLoading(true);
       if (!session?.user) return;
       const { from, to } = getActiveRange();
-      const { data, error } = await supabase
+
+      // Consultamos el empleado para poder mostrar el nombre si es admin
+      let query = supabase
         .from('pedidos')
-        .select(`id, clients_id, total_venta, estado, crated_at, clients:clients_id (name, code)`)
-        .eq('empleado_id', session.user.id)
+        .select(`id, clients_id, total_venta, estado, crated_at, clients:clients_id (name, code), empleados:empleado_id (full_name)`)
         .gte('crated_at', from.toISOString())
         .lte('crated_at', to.toISOString())
         .order('crated_at', { ascending: false });
+
+      // ── REGLA DE ADMIN: Si no es admin, filtramos por su propio ID ──
+      if (!isAdmin) {
+        query = query.eq('empleado_id', session.user.id);
+      }
+
+      const { data, error } = await query;
       if (error) { console.error(error); return; }
+
       const mapped = (data || []).map((p: any) => ({
-        ...p, clients: Array.isArray(p.clients) ? p.clients[0] : p.clients,
+        ...p,
+        clients: Array.isArray(p.clients) ? p.clients[0] : p.clients,
+        empleados: Array.isArray(p.empleados) ? p.empleados[0] : p.empleados,
       })) as Pedido[];
+
       setPedidos(mapped);
       setTotalVentas(mapped.reduce((s, p) => s + (p.total_venta || 0), 0));
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
-  }, [session, mainFilter, selectedDay, selectedWeekRef]);
+  }, [session, mainFilter, selectedDay, selectedWeekRef, isAdmin]);
 
   useFocusEffect(useCallback(() => { fetchPedidos(); }, [fetchPedidos]));
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Navegación semana / día
-  // ─────────────────────────────────────────────────────────────────────────
   const shiftWeek = (dir: -1 | 1) => {
     const ref = selectedWeekRef ?? new Date();
     const next = new Date(ref); next.setDate(next.getDate() + dir * 7); setSelectedWeekRef(next);
@@ -188,18 +176,12 @@ export default function MisPedidos() {
     const next = new Date(ref); next.setDate(next.getDate() + dir); setSelectedDay(next);
   };
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Picker nativo
-  // ─────────────────────────────────────────────────────────────────────────
   const onPickerConfirm = (date: Date) => {
     setPickerVisible(false);
     if (mainFilter === 'semana') setSelectedWeekRef(date); else setSelectedDay(date);
   };
   const pickerDate = mainFilter === 'semana' ? (selectedWeekRef ?? new Date()) : (selectedDay ?? new Date());
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Abrir modal
-  // ─────────────────────────────────────────────────────────────────────────
   const openModal = async (pedido: Pedido, mode: 'view' | 'edit') => {
     setSelectedPedido(pedido);
     setModalMode(mode);
@@ -213,7 +195,6 @@ export default function MisPedidos() {
     setShowAddPanel(false);
     setModalNote(notes[pedido.id] || '');
     try {
-      // ✅ CORRECCIÓN APLICADA AQUÍ: PromiseLike<any>[]
       const promises: PromiseLike<any>[] = [
         supabase
           .from('detalle_pedido')
@@ -250,9 +231,6 @@ export default function MisPedidos() {
     setModalNote(''); setToDelete(new Set()); setNewItems({}); setSearchProd(''); setShowAddPanel(false);
   };
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Total del modal
-  // ─────────────────────────────────────────────────────────────────────────
   const calcularTotalModal = () => {
     const existentes = detalles
       .filter(d => !toDelete.has(d.id))
@@ -262,9 +240,6 @@ export default function MisPedidos() {
     return existentes + nuevos;
   };
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Guardar cambios
-  // ─────────────────────────────────────────────────────────────────────────
   const guardarCambios = async () => {
     if (!selectedPedido) return;
     const newEntries = Object.values(newItems);
@@ -301,9 +276,6 @@ export default function MisPedidos() {
     finally { setSaving(false); }
   };
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // PDF profesional
-  // ─────────────────────────────────────────────────────────────────────────
   const generarPDF = async () => {
     if (!selectedPedido) return;
     try {
@@ -429,9 +401,6 @@ tbody tr:not(:last-child) td{border-bottom:1px solid #F3F4F6;}
     } catch { Alert.alert('Error', 'No se pudo generar el PDF'); }
   };
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Colores adaptativos
-  // ─────────────────────────────────────────────────────────────────────────
   const activeRange = getActiveRange();
   const cardBg = isDark ? colors.cardBg : '#FFFFFF';
   const cardBorder = isDark ? colors.cardBorder : '#E2E8F0';
@@ -440,9 +409,6 @@ tbody tr:not(:last-child) td{border-bottom:1px solid #F3F4F6;}
   const chipActiveText = colors.brandGreen;
   const chipIdleText = 'rgba(255,255,255,0.85)';
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // RENDER
-  // ─────────────────────────────────────────────────────────────────────────
   return (
     <View style={[styles.container, { backgroundColor: colors.bgStart }]}>
       <Stack.Screen options={{ headerShown: false }} />
@@ -581,6 +547,13 @@ tbody tr:not(:last-child) td{border-bottom:1px solid #F3F4F6;}
                     <Text style={[styles.clientName, { color: colors.textMain }]} numberOfLines={1}>
                       {pedido.clients?.name || 'Cliente'}
                     </Text>
+
+                    {/* ── SI ES ADMIN, MOSTRAMOS QUÉ EMPLEADO HIZO EL PEDIDO ── */}
+                    {isAdmin && pedido.empleados?.full_name && (
+                      <Text style={{ fontSize: 11, color: colors.brandGreen, marginTop: 2, fontWeight: '600' }}>
+                        👤 Vendedor: {pedido.empleados.full_name}
+                      </Text>
+                    )}
                   </View>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                     {notes[pedido.id] && (
@@ -614,7 +587,6 @@ tbody tr:not(:last-child) td{border-bottom:1px solid #F3F4F6;}
                     <Text style={[styles.cardActionText, { color: colors.textSub }]}>Ver detalle</Text>
                   </TouchableOpacity>
 
-                  {/* Editar solo si el pedido es de HOY */}
                   {puedeEditar && (
                     <TouchableOpacity
                       style={[styles.cardActionBtn, { backgroundColor: isDark ? 'rgba(124,58,237,0.15)' : '#EDE9FE' }]}
@@ -632,7 +604,6 @@ tbody tr:not(:last-child) td{border-bottom:1px solid #F3F4F6;}
         </ScrollView>
       )}
 
-      {/* ── PICKER NATIVO ── */}
       <DateTimePickerModal
         isVisible={pickerVisible}
         mode="date"
@@ -645,12 +616,10 @@ tbody tr:not(:last-child) td{border-bottom:1px solid #F3F4F6;}
         onCancel={() => setPickerVisible(false)}
       />
 
-      {/* ── MODAL DETALLE / EDICIÓN ── */}
       <Modal visible={modalVisible} animationType="slide" transparent onRequestClose={closeModal}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContainer, { backgroundColor: cardBg }]}>
 
-            {/* Header */}
             <View style={[styles.modalHeader, { borderBottomColor: cardBorder }]}>
               <View>
                 <Text style={[styles.modalTitle, { color: colors.textMain }]}>
@@ -663,26 +632,17 @@ tbody tr:not(:last-child) td{border-bottom:1px solid #F3F4F6;}
                 )}
               </View>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <TouchableOpacity
-                  style={[styles.pdfBtn, { backgroundColor: isDark ? 'rgba(239,68,68,0.15)' : '#FEE2E2' }]}
-                  onPress={generarPDF}
-                  disabled={loadingDetalles}
-                >
+                <TouchableOpacity style={[styles.pdfBtn, { backgroundColor: isDark ? 'rgba(239,68,68,0.15)' : '#FEE2E2' }]} onPress={generarPDF} disabled={loadingDetalles}>
                   <Ionicons name="document-text-outline" size={16} color="#EF4444" />
                   <Text style={[styles.pdfBtnText, { color: '#EF4444' }]}>PDF</Text>
                 </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.closeBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(100,116,139,0.1)' }]}
-                  onPress={closeModal}
-                >
+                <TouchableOpacity style={[styles.closeBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(100,116,139,0.1)' }]} onPress={closeModal}>
                   <Ionicons name="close" size={20} color={colors.textSub} />
                 </TouchableOpacity>
               </View>
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
-
-              {/* Info cliente / fecha */}
               {selectedPedido && (
                 <View style={[styles.infoCard, { backgroundColor: subtleBg }]}>
                   <View style={styles.infoRow}>
@@ -706,88 +666,40 @@ tbody tr:not(:last-child) td{border-bottom:1px solid #F3F4F6;}
                 </View>
               )}
 
-              {/* Encabezado sección productos */}
               <View style={styles.prodSecHeader}>
-                <Text style={[styles.secTitle, { color: colors.textSub, marginHorizontal: 0, marginTop: 0, marginBottom: 0 }]}>
-                  PRODUCTOS
-                </Text>
+                <Text style={[styles.secTitle, { color: colors.textSub, marginHorizontal: 0, marginTop: 0, marginBottom: 0 }]}>PRODUCTOS</Text>
                 {modalMode === 'edit' && (
-                  <TouchableOpacity
-                    style={[styles.addProdBtn, {
-                      backgroundColor: showAddPanel
-                        ? (isDark ? 'rgba(42,140,74,0.25)' : '#DCFCE7')
-                        : (isDark ? 'rgba(255,255,255,0.07)' : '#F1F5F9'),
-                    }]}
-                    onPress={() => setShowAddPanel(p => !p)}
-                  >
+                  <TouchableOpacity style={[styles.addProdBtn, { backgroundColor: showAddPanel ? (isDark ? 'rgba(42,140,74,0.25)' : '#DCFCE7') : (isDark ? 'rgba(255,255,255,0.07)' : '#F1F5F9') }]} onPress={() => setShowAddPanel(p => !p)}>
                     <Ionicons name={showAddPanel ? 'close' : 'add'} size={15} color={showAddPanel ? colors.brandGreen : colors.textSub} />
-                    <Text style={[styles.addProdBtnText, { color: showAddPanel ? colors.brandGreen : colors.textSub }]}>
-                      {showAddPanel ? 'Cerrar' : 'Agregar'}
-                    </Text>
+                    <Text style={[styles.addProdBtnText, { color: showAddPanel ? colors.brandGreen : colors.textSub }]}>{showAddPanel ? 'Cerrar' : 'Agregar'}</Text>
                   </TouchableOpacity>
                 )}
               </View>
 
-              {/* Panel búsqueda para agregar */}
               {modalMode === 'edit' && showAddPanel && (
                 <View style={[styles.addPanel, { backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : '#F8FAFC', borderColor: cardBorder }]}>
                   <View style={[styles.searchBox, { backgroundColor: isDark ? colors.inputBg : '#FFF', borderColor: cardBorder }]}>
                     <Ionicons name="search-outline" size={16} color={colors.textSub} />
-                    <TextInput
-                      style={[styles.searchInput, { color: colors.textMain }]}
-                      placeholder="Buscar por nombre o código..."
-                      placeholderTextColor={colors.textSub}
-                      value={searchProd}
-                      onChangeText={setSearchProd}
-                    />
-                    {searchProd.length > 0 && (
-                      <TouchableOpacity onPress={() => setSearchProd('')}>
-                        <Ionicons name="close-circle" size={16} color={colors.textSub} />
-                      </TouchableOpacity>
-                    )}
+                    <TextInput style={[styles.searchInput, { color: colors.textMain }]} placeholder="Buscar por nombre o código..." placeholderTextColor={colors.textSub} value={searchProd} onChangeText={setSearchProd} />
+                    {searchProd.length > 0 && <TouchableOpacity onPress={() => setSearchProd('')}><Ionicons name="close-circle" size={16} color={colors.textSub} /></TouchableOpacity>}
                   </View>
-
-                  {allProducts
-                    .filter(p => {
-                      const q = searchProd.toLowerCase();
-                      const yaDetalle = detalles.some(d => d.producto_id === p.id && !toDelete.has(d.id));
-                      const yaNuevo = !!newItems[p.id];
-                      return !yaDetalle && !yaNuevo && (
-                        q === '' || p.nombre_producto.toLowerCase().includes(q) || p.codigo_producto.toLowerCase().includes(q)
-                      );
-                    })
-                    .slice(0, 8)
-                    .map(prod => (
-                      <TouchableOpacity
-                        key={prod.id}
-                        style={[styles.prodSearchRow, { borderBottomColor: cardBorder }]}
-                        onPress={() => { setNewItems(prev => ({ ...prev, [prod.id]: { producto: prod, qty: '1' } })); setSearchProd(''); }}
-                        activeOpacity={0.7}
-                      >
-                        <View style={{ flex: 1 }}>
-                          <Text style={[styles.prodName, { color: colors.textMain, marginBottom: 0 }]} numberOfLines={1}>
-                            {prod.nombre_producto}
-                          </Text>
-                          <Text style={[styles.prodCode, { color: colors.textSub }]}>
-                            {prod.codigo_producto} · Bs {prod.precio_base_venta.toFixed(2)}
-                          </Text>
-                        </View>
-                        <View style={[styles.addIconCircle, { backgroundColor: isDark ? 'rgba(42,140,74,0.2)' : '#DCFCE7' }]}>
-                          <Ionicons name="add" size={18} color={colors.brandGreen} />
-                        </View>
-                      </TouchableOpacity>
-                    ))
-                  }
-                  {searchProd.length > 0 && allProducts.filter(p => {
+                  {allProducts.filter(p => {
                     const q = searchProd.toLowerCase();
-                    return p.nombre_producto.toLowerCase().includes(q) || p.codigo_producto.toLowerCase().includes(q);
-                  }).length === 0 && (
-                      <Text style={{ color: colors.textSub, textAlign: 'center', paddingVertical: 14, fontSize: 13 }}>Sin resultados</Text>
-                    )}
+                    const yaDetalle = detalles.some(d => d.producto_id === p.id && !toDelete.has(d.id));
+                    const yaNuevo = !!newItems[p.id];
+                    return !yaDetalle && !yaNuevo && (q === '' || p.nombre_producto.toLowerCase().includes(q) || p.codigo_producto.toLowerCase().includes(q));
+                  }).slice(0, 8).map(prod => (
+                    <TouchableOpacity key={prod.id} style={[styles.prodSearchRow, { borderBottomColor: cardBorder }]} onPress={() => { setNewItems(prev => ({ ...prev, [prod.id]: { producto: prod, qty: '1' } })); setSearchProd(''); }} activeOpacity={0.7}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.prodName, { color: colors.textMain, marginBottom: 0 }]} numberOfLines={1}>{prod.nombre_producto}</Text>
+                        <Text style={[styles.prodCode, { color: colors.textSub }]}>{prod.codigo_producto} · Bs {prod.precio_base_venta.toFixed(2)}</Text>
+                      </View>
+                      <View style={[styles.addIconCircle, { backgroundColor: isDark ? 'rgba(42,140,74,0.2)' : '#DCFCE7' }]}><Ionicons name="add" size={18} color={colors.brandGreen} /></View>
+                    </TouchableOpacity>
+                  ))}
                 </View>
               )}
 
-              {/* Tabla de productos */}
               {loadingDetalles ? (
                 <ActivityIndicator color={colors.brandGreen} style={{ marginVertical: 30 }} />
               ) : (detalles.length === 0 && Object.keys(newItems).length === 0) ? (
@@ -801,163 +713,78 @@ tbody tr:not(:last-child) td{border-bottom:1px solid #F3F4F6;}
                     {modalMode === 'edit' && <Text style={[styles.thText, { width: 32 }]}> </Text>}
                   </View>
 
-                  {/* Existentes */}
                   {detalles.map((det, i) => {
                     const deleted = toDelete.has(det.id);
                     const qty = parseFloat(editedQtys[det.id] || '0') || 0;
                     const isLast = i === detalles.length - 1 && Object.keys(newItems).length === 0;
                     return (
-                      <View
-                        key={det.id}
-                        style={[
-                          styles.tableRow,
-                          { borderBottomColor: cardBorder },
-                          isLast && { borderBottomWidth: 0 },
-                          deleted && { opacity: 0.35 },
-                        ]}
-                      >
+                      <View key={det.id} style={[styles.tableRow, { borderBottomColor: cardBorder }, isLast && { borderBottomWidth: 0 }, deleted && { opacity: 0.35 }]}>
                         <View style={{ flex: 3 }}>
-                          <Text style={[styles.prodName, { color: colors.textMain }]} numberOfLines={2}>
-                            {det.productos?.nombre_producto || 'Producto'}
-                          </Text>
+                          <Text style={[styles.prodName, { color: colors.textMain }]} numberOfLines={2}>{det.productos?.nombre_producto || 'Producto'}</Text>
                           <Text style={[styles.prodCode, { color: colors.textSub }]}>{det.productos?.codigo_producto || ''}</Text>
                           <Text style={[styles.prodPrice, { color: colors.textSub }]}>Bs {det.precio_unitario.toFixed(2)} c/u</Text>
                         </View>
                         <View style={{ flex: 1, alignItems: 'center' }}>
-                          <TextInput
-                            style={[styles.qtyInput, {
-                              color: colors.textMain, backgroundColor: subtleBg,
-                              borderColor: deleted ? '#EF4444' : colors.brandGreen,
-                            }]}
-                            value={editedQtys[det.id] ?? det.cantidad.toString()}
-                            onChangeText={v => setEditedQtys(p => ({ ...p, [det.id]: v }))}
-                            keyboardType="numeric"
-                            placeholder="0"
-                            placeholderTextColor={colors.textSub}
-                            editable={modalMode === 'edit' && !deleted}
-                          />
+                          <TextInput style={[styles.qtyInput, { color: colors.textMain, backgroundColor: subtleBg, borderColor: deleted ? '#EF4444' : colors.brandGreen }]} value={editedQtys[det.id] ?? det.cantidad.toString()} onChangeText={v => setEditedQtys(p => ({ ...p, [det.id]: v }))} keyboardType="numeric" placeholder="0" placeholderTextColor={colors.textSub} editable={modalMode === 'edit' && !deleted} />
                         </View>
                         <View style={{ flex: 1.2, alignItems: 'flex-end' }}>
-                          <Text style={[styles.subtotalText, { color: deleted ? colors.textSub : colors.textMain }]}>
-                            {deleted ? '—' : `Bs ${(qty * det.precio_unitario).toFixed(2)}`}
-                          </Text>
+                          <Text style={[styles.subtotalText, { color: deleted ? colors.textSub : colors.textMain }]}>{deleted ? '—' : `Bs ${(qty * det.precio_unitario).toFixed(2)}`}</Text>
                         </View>
                         {modalMode === 'edit' && (
-                          <TouchableOpacity
-                            style={{ width: 32, alignItems: 'center' }}
-                            onPress={() => setToDelete(prev => {
-                              const next = new Set(prev);
-                              if (next.has(det.id)) next.delete(det.id); else next.add(det.id);
-                              return next;
-                            })}
-                          >
-                            <Ionicons
-                              name={deleted ? 'refresh-circle-outline' : 'trash-outline'}
-                              size={19}
-                              color={deleted ? colors.brandGreen : '#EF4444'}
-                            />
+                          <TouchableOpacity style={{ width: 32, alignItems: 'center' }} onPress={() => setToDelete(prev => { const next = new Set(prev); if (next.has(det.id)) next.delete(det.id); else next.add(det.id); return next; })}>
+                            <Ionicons name={deleted ? 'refresh-circle-outline' : 'trash-outline'} size={19} color={deleted ? colors.brandGreen : '#EF4444'} />
                           </TouchableOpacity>
                         )}
                       </View>
                     );
                   })}
 
-                  {/* Nuevos */}
                   {Object.entries(newItems).map(([prodId, { producto, qty }], i) => {
                     const isLast = i === Object.keys(newItems).length - 1;
                     const subtotal = (parseFloat(qty) || 0) * producto.precio_base_venta;
                     return (
-                      <View
-                        key={prodId}
-                        style={[
-                          styles.tableRow,
-                          { borderBottomColor: cardBorder, backgroundColor: isDark ? 'rgba(42,140,74,0.07)' : '#F0FDF4' },
-                          isLast && { borderBottomWidth: 0 },
-                        ]}
-                      >
+                      <View key={prodId} style={[styles.tableRow, { borderBottomColor: cardBorder, backgroundColor: isDark ? 'rgba(42,140,74,0.07)' : '#F0FDF4' }, isLast && { borderBottomWidth: 0 }]}>
                         <View style={{ flex: 3 }}>
                           <View style={{ flexDirection: 'row', gap: 5, marginBottom: 3 }}>
-                            <View style={[styles.newBadge, { backgroundColor: colors.brandGreen }]}>
-                              <Text style={styles.newBadgeText}>NUEVO</Text>
-                            </View>
+                            <View style={[styles.newBadge, { backgroundColor: colors.brandGreen }]}><Text style={styles.newBadgeText}>NUEVO</Text></View>
                           </View>
-                          <Text style={[styles.prodName, { color: colors.textMain }]} numberOfLines={2}>
-                            {producto.nombre_producto}
-                          </Text>
+                          <Text style={[styles.prodName, { color: colors.textMain }]} numberOfLines={2}>{producto.nombre_producto}</Text>
                           <Text style={[styles.prodCode, { color: colors.textSub }]}>{producto.codigo_producto}</Text>
                           <Text style={[styles.prodPrice, { color: colors.textSub }]}>Bs {producto.precio_base_venta.toFixed(2)} c/u</Text>
                         </View>
                         <View style={{ flex: 1, alignItems: 'center' }}>
-                          <TextInput
-                            style={[styles.qtyInput, { color: colors.textMain, backgroundColor: subtleBg, borderColor: colors.brandGreen }]}
-                            value={qty}
-                            onChangeText={v => setNewItems(prev => ({ ...prev, [prodId]: { ...prev[prodId], qty: v } }))}
-                            keyboardType="numeric"
-                            placeholder="0"
-                            placeholderTextColor={colors.textSub}
-                          />
+                          <TextInput style={[styles.qtyInput, { color: colors.textMain, backgroundColor: subtleBg, borderColor: colors.brandGreen }]} value={qty} onChangeText={v => setNewItems(prev => ({ ...prev, [prodId]: { ...prev[prodId], qty: v } }))} keyboardType="numeric" placeholder="0" placeholderTextColor={colors.textSub} />
                         </View>
                         <View style={{ flex: 1.2, alignItems: 'flex-end' }}>
                           <Text style={[styles.subtotalText, { color: colors.textMain }]}>Bs {subtotal.toFixed(2)}</Text>
                         </View>
-                        <TouchableOpacity
-                          style={{ width: 32, alignItems: 'center' }}
-                          onPress={() => setNewItems(prev => { const n = { ...prev }; delete n[prodId]; return n; })}
-                        >
+                        <TouchableOpacity style={{ width: 32, alignItems: 'center' }} onPress={() => setNewItems(prev => { const n = { ...prev }; delete n[prodId]; return n; })}>
                           <Ionicons name="trash-outline" size={19} color="#EF4444" />
                         </TouchableOpacity>
                       </View>
                     );
                   })}
 
-                  {/* Total */}
-                  <View style={[styles.totalBar, {
-                    backgroundColor: isDark ? 'rgba(42,140,74,0.15)' : '#F0FDF4',
-                    borderColor: isDark ? 'rgba(42,140,74,0.3)' : '#BBF7D0',
-                  }]}>
+                  <View style={[styles.totalBar, { backgroundColor: isDark ? 'rgba(42,140,74,0.15)' : '#F0FDF4', borderColor: isDark ? 'rgba(42,140,74,0.3)' : '#BBF7D0' }]}>
                     <Text style={[styles.totalBarLabel, { color: colors.textSub }]}>TOTAL</Text>
                     <Text style={[styles.totalBarAmt, { color: colors.brandGreen }]}>Bs {calcularTotalModal().toFixed(2)}</Text>
                   </View>
 
-                  {/* Notas */}
                   <View style={styles.notasSection}>
                     <Text style={[styles.secTitle, { color: colors.textSub, marginHorizontal: 0 }]}>NOTAS</Text>
-                    <TextInput
-                      style={[styles.notasInput, {
-                        backgroundColor: subtleBg, color: colors.textMain,
-                        borderColor: modalNote.trim() ? '#7C3AED' : cardBorder,
-                      }]}
-                      placeholder="Ej: A credito 30 dias, pago en efectivo..."
-                      placeholderTextColor={colors.textSub}
-                      value={modalNote}
-                      onChangeText={setModalNote}
-                      multiline numberOfLines={3} textAlignVertical="top"
-                      editable={modalMode === 'edit'}
-                    />
+                    <TextInput style={[styles.notasInput, { backgroundColor: subtleBg, color: colors.textMain, borderColor: modalNote.trim() ? '#7C3AED' : cardBorder }]} placeholder="Ej: A credito 30 dias, pago en efectivo..." placeholderTextColor={colors.textSub} value={modalNote} onChangeText={setModalNote} multiline numberOfLines={3} textAlignVertical="top" editable={modalMode === 'edit'} />
                   </View>
                 </>
               )}
             </ScrollView>
 
-            {/* Footer */}
             <View style={[styles.modalFooter, { borderTopColor: cardBorder }]}>
               <TouchableOpacity style={[styles.cancelBtn, { borderColor: cardBorder }]} onPress={closeModal}>
-                <Text style={[styles.cancelText, { color: colors.textSub }]}>
-                  {modalMode === 'edit' ? 'Cancelar' : 'Cerrar'}
-                </Text>
+                <Text style={[styles.cancelText, { color: colors.textSub }]}>{modalMode === 'edit' ? 'Cancelar' : 'Cerrar'}</Text>
               </TouchableOpacity>
               {modalMode === 'edit' && (
-                <TouchableOpacity
-                  style={[styles.saveBtn, { backgroundColor: colors.brandGreen, opacity: saving ? 0.7 : 1 }]}
-                  onPress={guardarCambios}
-                  disabled={saving || loadingDetalles}
-                >
-                  {saving ? <ActivityIndicator color="#FFF" size="small" /> : (
-                    <>
-                      <Ionicons name="checkmark-circle" size={17} color="#FFF" />
-                      <Text style={styles.saveText}>Guardar</Text>
-                    </>
-                  )}
+                <TouchableOpacity style={[styles.saveBtn, { backgroundColor: colors.brandGreen, opacity: saving ? 0.7 : 1 }]} onPress={guardarCambios} disabled={saving || loadingDetalles}>
+                  {saving ? <ActivityIndicator color="#FFF" size="small" /> : <><Ionicons name="checkmark-circle" size={17} color="#FFF" /><Text style={styles.saveText}>Guardar</Text></>}
                 </TouchableOpacity>
               )}
             </View>
@@ -968,9 +795,6 @@ tbody tr:not(:last-child) td{border-bottom:1px solid #F3F4F6;}
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Estilos
-// ─────────────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1 },
   header: { paddingBottom: 16, borderBottomLeftRadius: 28, borderBottomRightRadius: 28 },

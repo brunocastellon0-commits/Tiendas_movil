@@ -1,8 +1,10 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Dimensions,
   Image,
+  Linking,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -11,6 +13,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -76,6 +79,15 @@ const MENU_MODULES = [
     icon: 'chart-bar',
     color: '#0D9488',
     route: '/Reportes/ReporteInventario',
+    adminOnly: false,
+  },
+  {
+    id: 'catalogo',
+    title: 'Catálogo',
+    iconLib: 'MaterialCommunityIcons',
+    icon: 'book-open-page-variant-outline',
+    color: '#EA580C',
+    route: '/catalogo/Catalogo',
     adminOnly: false,
   },
   // ── Solo Admin ──────────────────────────────────────────────────────────────
@@ -155,7 +167,26 @@ export default function HomeScreen() {
     session?.user?.user_metadata?.full_name?.split(' ')[0] || ''
   );
 
-  // ── Módulos visibles según rol ──────────────────────────────────────────────
+  // ── Pedir permiso de ubicación al entrar al home ────────────────────────────
+  // Solo se pide una vez — si ya fue concedido, requestForegroundPermissionsAsync
+  // devuelve 'granted' sin mostrar el diálogo del sistema.
+  useEffect(() => {
+    (async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === 'denied') {
+        // El usuario denegó — le explicamos por qué lo necesitamos
+        Alert.alert(
+          'Ubicación requerida',
+          'La app usa tu ubicación para registrar visitas y mostrar pedidos en el mapa. Actívala en Configuración.',
+          [
+            { text: 'Ahora no', style: 'cancel' },
+            { text: 'Abrir ajustes', onPress: () => Linking.openSettings() },
+          ]
+        );
+      }
+      // Si es 'granted' no hacemos nada — LocationService ya se encarga en map.tsx
+    })();
+  }, []); // Solo se ejecuta al montar (primera entrada al home)
   // useMemo evita recalcular en cada render y depende solo de isAdmin,
   // que es estable desde AuthContext → elimina el parpadeo de módulos.
   const visibleModules = useMemo(
@@ -167,7 +198,12 @@ export default function HomeScreen() {
   const fetchStats = async () => {
     try {
       if (!session?.user) return;
-      const today = new Date().toISOString().split('T')[0];
+
+      // Usamos hora local Bolivia para que el filtro "hoy" no se desfase por UTC
+      const pad = (n: number) => n.toString().padStart(2, '0');
+      const now = new Date();
+      const todayStart = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T00:00:00-04:00`;
+      const todayEnd   = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T23:59:59-04:00`;
 
       // Cargar nombre desde employees si aún no lo tenemos
       if (!userName) {
@@ -186,7 +222,8 @@ export default function HomeScreen() {
       let query = supabase
         .from('pedidos')
         .select('id, total_venta, estado')
-        .gte('crated_at', `${today}T00:00:00`);
+        .gte('crated_at', todayStart)
+        .lte('crated_at', todayEnd);
 
       // Vendedor solo ve sus propios pedidos
       if (!isAdmin) {

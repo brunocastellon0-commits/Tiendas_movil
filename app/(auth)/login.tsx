@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { ActivityIndicator, Alert, Dimensions, Keyboard, KeyboardAvoidingView, Platform, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
+import * as Location from 'expo-location';
 import { useTheme } from '../../contexts/ThemeContext';
 import { supabase } from '../../lib/supabase';
 
@@ -59,6 +60,24 @@ export default function Login() {
     );
   };
 
+  // ✅ Pedir ubicación obligatoria al ingresar
+  const requestLocationPermission = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Ubicación requerida',
+          'Esta app necesita acceso a tu ubicación para registrar visitas y pedidos. Por favor actívala en Configuración.',
+          [{ text: 'Entendido' }]
+        );
+      }
+      // Si se concede, intentar obtener la posición inicial para "calentar" el GPS
+      if (status === 'granted') {
+        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }).catch(() => null);
+      }
+    } catch (_) { }
+  };
+
   // ✅ FUNCIÓN DE LOGIN MEJORADA
   async function signInWithEmail() {
     if (loading) return;
@@ -82,7 +101,8 @@ export default function Login() {
       Alert.alert('Error de acceso', error.message);
       setLoading(false);
     } else {
-      // Login exitoso: Disparamos la animación
+      // Login exitoso: pedir permiso de ubicación (obligatorio)
+      await requestLocationPermission();
       startTruckAnimation();
     }
   }

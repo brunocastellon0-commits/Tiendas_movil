@@ -1,551 +1,322 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
+import { Stack, useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
+import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Modal,
   ScrollView,
-  StatusBar,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../../contexts/ThemeContext';
-import { useAuth } from '../../contexts/AuthContext';
+import { useVisitTracker } from '../../hooks/hookVisita';
+import { VisitToast } from '../../components/VisitToast';
 import { clientService } from '../../services/ClienteService';
 import { Client } from '../../types/Cliente.interface';
-import { supabase } from '../../lib/supabase';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Opciones del modal de resultado de visita
-//
-// El modal aparece al pulsar "Finalizar visita".
-// El cronómetro se detuvo cuando se creó el pedido (o si no hubo pedido,
-// se detiene al finalizar aquí).
-// ─────────────────────────────────────────────────────────────────────────────
-type VisitOutcome = 'sale' | 'no_sale' | 'closed';
-
-interface OutcomeOption {
-  value: VisitOutcome;
+interface InfoRowProps {
   label: string;
-  sublabel: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  color: string;
-  bgLight: string;
-  bgDark: string;
+  value: string;
+  isMoney?: boolean;
+  highlight?: boolean;
+  colors: any;
 }
 
-const OUTCOME_OPTIONS: OutcomeOption[] = [
-  {
-    value: 'sale',
-    label: 'Venta realizada',
-    sublabel: 'Se concretó el pedido',
-    icon: 'checkmark-circle',
-    color: '#16A34A',
-    bgLight: '#F0FDF4',
-    bgDark: '#052e16',
-  },
-  {
-    value: 'no_sale',
-    label: 'Sin venta',
-    sublabel: 'El cliente no compró',
-    icon: 'close-circle',
-    color: '#DC2626',
-    bgLight: '#FEF2F2',
-    bgDark: '#2d0a0a',
-  },
-  {
-    value: 'closed',
-    label: 'Tienda cerrada',
-    sublabel: 'No habia nadie',
-    icon: 'lock-closed',
-    color: '#D97706',
-    bgLight: '#FFFBEB',
-    bgDark: '#2d1a00',
-  },
-];
+const InfoRow = ({ label, value, isMoney, highlight, colors }: InfoRowProps) => (
+  <View style={styles.infoRow}>
+    <Text style={[styles.infoLabel, { color: colors.textSub }]}>{label}</Text>
+    <Text style={[
+      styles.infoValue,
+      { color: highlight ? colors.brandGreen : colors.textMain },
+      isMoney && { fontWeight: '700' },
+    ]}>
+      {value}
+    </Text>
+  </View>
+);
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Componente principal
-// ─────────────────────────────────────────────────────────────────────────────
+interface SectionCardProps {
+  title: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  children: React.ReactNode;
+  colors: any;
+  isDark: boolean;
+}
+
+const SectionCard = ({ title, icon, children, colors, isDark }: SectionCardProps) => (
+  <View style={[styles.sectionCard, {
+    backgroundColor: colors.cardBg,
+    borderColor: isDark ? colors.cardBorder : 'transparent',
+    borderWidth: isDark ? 1 : 0,
+  }]}>
+    <View style={styles.sectionHeader}>
+      <View style={[styles.sectionIconBg, { backgroundColor: `${colors.brandGreen}18` }]}>
+        <Ionicons name={icon} size={16} color={colors.brandGreen} />
+      </View>
+      <Text style={[styles.sectionTitle, { color: colors.textMain }]}>{title}</Text>
+    </View>
+    {children}
+  </View>
+);
+
 export default function ClientDetailScreen() {
-  const { id, autoStartVisit } = useLocalSearchParams<{ id: string; autoStartVisit?: string }>();
+  const { id } = useLocalSearchParams();
   const router = useRouter();
   const { colors, isDark } = useTheme();
-  const { session } = useAuth();
 
   const [client, setClient] = useState<Client | null>(null);
   const [loading, setLoading] = useState(true);
-  const [savingOutcome, setSavingOutcome] = useState(false);
 
-  // ── Cronómetro (invisible para el usuario) ──────────────────────────────────
-  // startTimeRef guarda el momento en que se abrió esta vista.
-  // Se usa al finalizar la visita para calcular la duración total.
-  const startTimeRef = useRef<Date>(new Date());
-  const visitIdRef = useRef<number | null>(null);
+  const {
+    isVisiting,
+    visitId,
+    startVisit,
+    endVisit,
+    loading: visitLoading,
+    checkActiveVisit // Usado para actualizar el estado silenciosamente al volver
+  } = useVisitTracker();
 
-  // ── Modal de resultado ──────────────────────────────────────────────────────
-  const [outcomeModal, setOutcomeModal] = useState(false);
-  const [selectedOutcome, setSelectedOutcome] = useState<VisitOutcome | null>(null);
+  const [showEndVisitModal, setShowEndVisitModal] = useState(false);
+  const [visitOutcome, setVisitOutcome] = useState<'sale' | 'no_sale' | 'closed'>('sale');
+  const [visitNotes, setVisitNotes] = useState('');
 
-  // ── Carga del cliente ───────────────────────────────────────────────────────
-  useEffect(() => {
-    if (id) loadClient();
-  }, [id]);
+  // Carga del cliente y revisión de visita silenciosa al enfocar la pantalla.
+  // Pasamos el id del cliente para que solo detecte visitas de ESTE cliente.
+  useFocusEffect(
+    useCallback(() => {
+      if (id) {
+        fetchClientDetails();
+        checkActiveVisit(id as string); // Solo visita activa de este cliente
+      }
+    }, [id])
+  );
 
-  const loadClient = async () => {
-    const data = await clientService.getClientById(id);
+  const fetchClientDetails = async () => {
+    const data = await clientService.getClientById(id as string);
     if (data) {
       setClient(data);
-      // Si viene de "Botón Pedido" → registrar el inicio de visita en Supabase
-      if (autoStartVisit === 'true' && session?.user) {
-        await registerVisitStart();
-      }
     } else {
-      Alert.alert('Error', 'No se encontró el cliente');
       router.back();
     }
     setLoading(false);
   };
 
-  // Registra el inicio de visita en la tabla visits (outcome: pending)
-  const registerVisitStart = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('visits')
-        .insert({
-          seller_id: session!.user.id,
-          client_id: id,
-          start_time: startTimeRef.current.toISOString(),
-          outcome: 'pending',
-        })
-        .select('id')
-        .single();
-
-      if (!error && data) {
-        visitIdRef.current = data.id;
-      }
-    } catch {
-      // No interrumpir la navegación si falla el registro
-    }
-  };
-
-  // ── Ir a crear pedido ───────────────────────────────────────────────────────
-  const handleCreateOrder = () => {
+  const handleStartVisit = async () => {
     if (!client) return;
-    router.push(`/pedidos/NuevoPedido?clientId=${client.id}` as any);
+    await startVisit(client.id);
   };
 
-  // ── Finalizar visita ────────────────────────────────────────────────────────
-  // 1. Abre el modal de resultado
-  // 2. Al confirmar → calcula duración, guarda en visits, vuelve al inicio
-  const handleFinishVisit = () => {
-    setSelectedOutcome(null);
-    setOutcomeModal(true);
+  const handleEndVisit = async () => {
+    await endVisit(visitOutcome, visitNotes);
+    setShowEndVisitModal(false);
+    setVisitNotes('');
+    setVisitOutcome('sale');
   };
 
-  const handleOutcomeConfirm = async () => {
-    if (!selectedOutcome) {
-      Alert.alert('Selecciona un resultado', 'Indica que ocurrio en la visita.');
-      return;
-    }
-
-    setOutcomeModal(false);
-    setSavingOutcome(true);
-
-    try {
-      const endTime = new Date();
-      const duration = Math.round((endTime.getTime() - startTimeRef.current.getTime()) / 1000);
-
-      if (visitIdRef.current) {
-        // Actualizar el registro de visita existente
-        await supabase
-          .from('visits')
-          .update({
-            end_time: endTime.toISOString(),
-            duration_seconds: duration,
-            outcome: selectedOutcome,
-          })
-          .eq('id', visitIdRef.current);
-      } else if (session?.user) {
-        // Si no se registró inicio (vino por tarjeta, no por botón), insertar completo
-        await supabase.from('visits').insert({
-          seller_id: session.user.id,
-          client_id: id,
-          start_time: startTimeRef.current.toISOString(),
-          end_time: endTime.toISOString(),
-          duration_seconds: duration,
-          outcome: selectedOutcome,
-        });
-      }
-
-      // Volver al inicio
-      router.replace('/(tabs)');
-    } catch {
-      Alert.alert('Error', 'No se pudo guardar el resultado de la visita.');
-    } finally {
-      setSavingOutcome(false);
-    }
-  };
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // Loading
-  // ─────────────────────────────────────────────────────────────────────────
   if (loading) {
     return (
-      <View style={[styles.centerContainer, { backgroundColor: colors.bgStart }]}>
-        <Stack.Screen options={{ headerShown: false }} />
+      <View style={[styles.loadingContainer, { backgroundColor: colors.bgStart }]}>
         <ActivityIndicator size="large" color={colors.brandGreen} />
-        <Text style={[styles.loadingText, { color: colors.textSub }]}>Cargando cliente...</Text>
       </View>
     );
   }
 
   if (!client) return null;
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // RENDER
-  // ─────────────────────────────────────────────────────────────────────────
+  const isVigente = client.status === 'Vigente';
+
   return (
     <View style={[styles.container, { backgroundColor: colors.bgStart }]}>
       <Stack.Screen options={{ headerShown: false }} />
-      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+      <VisitToast />
 
-      {/* Header */}
-      <LinearGradient
-        colors={[colors.brandGreen, '#1e6b38']}
-        style={styles.header}
-      >
-        <SafeAreaView edges={['top']}>
-          <View style={styles.headerTop}>
-            <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-              <Ionicons name="arrow-back" size={24} color="#fff" />
-            </TouchableOpacity>
-            <View style={{ width: 40 }} />
-          </View>
-
-          {/* Nombre del cliente */}
-          <Text style={styles.headerName} numberOfLines={2}>
-            {client.name || 'Sin nombre'}
-          </Text>
-
-          {/* Badge de código */}
-          {client.code ? (
-            <View style={styles.codeBadge}>
-              <Ionicons name="barcode-outline" size={12} color="#166534" />
-              <Text style={styles.codeBadgeText}>{client.code}</Text>
-            </View>
-          ) : null}
-
-          {/* Badge de estado */}
-          <View style={[
-            styles.statusBadge,
-            { backgroundColor: client.status === 'Vigente' ? '#E8F5E9' : '#FEE2E2' },
-          ]}>
-            <Text style={[
-              styles.statusText,
-              { color: client.status === 'Vigente' ? '#2E7D32' : '#991B1B' },
-            ]}>
-              {client.status}
-            </Text>
-          </View>
-        </SafeAreaView>
-      </LinearGradient>
-
-      {/* Contenido */}
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-
-        {/* Tarjeta de información */}
-        <View style={[styles.card, {
-          backgroundColor: colors.cardBg,
-          borderColor: isDark ? colors.cardBorder : 'transparent',
-          borderWidth: isDark ? 1 : 0,
-        }]}>
-          <Text style={[styles.cardTitle, { color: colors.brandGreen }]}>
-            INFORMACION DEL CLIENTE
-          </Text>
-
-          <InfoRow
-            label="Nombre"
-            value={client.name || 'Sin nombre'}
-            icon="person-outline"
-            colors={colors}
-          />
-          <InfoRow
-            label="Codigo"
-            value={client.code || 'Sin codigo'}
-            icon="barcode-outline"
-            colors={colors}
-          />
-          <InfoRow
-            label="Direccion"
-            value={client.address || 'No registrada'}
-            icon="location-outline"
-            colors={colors}
-          />
-          {client.tax_id ? (
-            <InfoRow
-              label="NIT / CI"
-              value={client.tax_id}
-              icon="document-text-outline"
-              colors={colors}
-            />
-          ) : null}
-          {client.phones ? (
-            <InfoRow
-              label="Telefono"
-              value={client.phones}
-              icon="call-outline"
-              colors={colors}
-            />
-          ) : null}
-          {client.business_name ? (
-            <InfoRow
-              label="Razon Social"
-              value={client.business_name}
-              icon="business-outline"
-              colors={colors}
-            />
-          ) : null}
+      <LinearGradient colors={[colors.brandGreen, '#166534']} style={styles.header}>
+        <View style={styles.headerTop}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.headerIconBtn}>
+            <Ionicons name="arrow-back" size={22} color="#fff" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => router.push(`/clients/edit/${client.id}` as any)}
+            style={styles.headerIconBtn}
+          >
+            <Ionicons name="pencil" size={20} color="#fff" />
+          </TouchableOpacity>
         </View>
 
-        {/* Saldo pendiente */}
-        {client.current_balance > 0 && (
-          <View style={[styles.balanceCard, {
-            backgroundColor: isDark ? '#2d1a00' : '#FFFBEB',
-            borderColor: isDark ? '#78350f' : '#FDE68A',
-          }]}>
-            <Ionicons name="alert-circle-outline" size={20} color="#D97706" />
-            <View style={{ marginLeft: 12 }}>
-              <Text style={[styles.balanceLabel, { color: isDark ? '#FCD34D' : '#92400E' }]}>
-                Saldo pendiente
-              </Text>
-              <Text style={[styles.balanceAmount, { color: isDark ? '#FBBF24' : '#B45309' }]}>
-                Bs {client.current_balance.toFixed(2)}
-              </Text>
-            </View>
-          </View>
+        <Text style={styles.headerTitle} numberOfLines={2}>{client.name}</Text>
+        {client.code && (
+          <Text style={styles.headerCode}>#{client.code}</Text>
         )}
 
+        <View style={styles.headerBadgesRow}>
+          <View style={[
+            styles.statusBadge,
+            { backgroundColor: isVigente ? 'rgba(255,255,255,0.25)' : 'rgba(239,68,68,0.3)' }
+          ]}>
+            <Text style={styles.statusBadgeText}>{client.status}</Text>
+          </View>
+
+          {isVisiting && (
+            <View style={styles.visitBadge}>
+              <Ionicons name="radio-button-on" size={10} color="#4ade80" />
+              <Text style={styles.visitBadgeText}>Visita activa</Text>
+            </View>
+          )}
+        </View>
+      </LinearGradient>
+
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <SectionCard title="Información financiera" icon="wallet-outline" colors={colors} isDark={isDark}>
+          <InfoRow label="Límite de crédito" value={`Bs. ${client.credit_limit?.toFixed(2) ?? '0.00'}`} isMoney colors={colors} />
+          <InfoRow label="Días de plazo" value={`${client.credit_days ?? 0} días`} colors={colors} />
+          <InfoRow label="Saldo actual" value={`Bs. ${client.current_balance?.toFixed(2) ?? '0.00'}`} isMoney highlight={client.current_balance > 0} colors={colors} />
+          <InfoRow label="Saldo inicial" value={`Bs. ${client.initial_balance?.toFixed(2) ?? '0.00'}`} isMoney colors={colors} />
+        </SectionCard>
+
+        <SectionCard title="Contacto y dirección" icon="call-outline" colors={colors} isDark={isDark}>
+          <InfoRow label="Razón social" value={client.business_name || client.name} colors={colors} />
+          <InfoRow label="Dirección" value={client.address || 'No registrada'} colors={colors} />
+          <InfoRow label="Teléfono" value={client.phones || 'S/N'} colors={colors} />
+        </SectionCard>
+
+        <View style={{ height: 100 }} />
       </ScrollView>
 
-      {/* Footer con acciones */}
-      <View style={[styles.footer, {
-        backgroundColor: colors.cardBg,
-        borderTopColor: isDark ? colors.cardBorder : '#E5E7EB',
-      }]}>
-        {savingOutcome ? (
-          <ActivityIndicator color={colors.brandGreen} style={{ paddingVertical: 16 }} />
+      {/* ── FOOTER MANUAL ── */}
+      <View style={[styles.footer, { backgroundColor: colors.cardBg, borderTopColor: isDark ? colors.cardBorder : '#E5E7EB' }]}>
+        {!isVisiting ? (
+          // SOLO 1 BOTÓN PARA INICIAR MANUALMENTE
+          <TouchableOpacity
+            style={[styles.footerBtn, { backgroundColor: colors.brandGreen }]}
+            onPress={handleStartVisit}
+            disabled={visitLoading}
+          >
+            <Ionicons name="play-circle-outline" size={20} color="#fff" />
+            <Text style={styles.footerBtnText}>
+              {visitLoading ? 'Registrando ubicación...' : 'Iniciar Visita'}
+            </Text>
+          </TouchableOpacity>
         ) : (
-          <View style={styles.footerRow}>
-            {/* Crear pedido */}
+          // VISITA ACTIVA: MUESTRA LOS DOS BOTONES
+          <>
             <TouchableOpacity
-              style={[styles.footerBtn, styles.footerBtnPrimary, { backgroundColor: colors.brandGreen }]}
-              onPress={handleCreateOrder}
-              activeOpacity={0.85}
+              style={[styles.footerBtn, { backgroundColor: '#166534' }]}
+              onPress={() => router.push(`/pedidos/NuevoPedido?clientId=${client.id}&visitId=${visitId}` as any)}
             >
               <Ionicons name="cart-outline" size={20} color="#fff" />
-              <Text style={styles.footerBtnText}>Crear Pedido</Text>
+              <Text style={styles.footerBtnText}>Nuevo Pedido</Text>
             </TouchableOpacity>
 
-            {/* Finalizar visita */}
             <TouchableOpacity
-              style={[styles.footerBtn, styles.footerBtnSecondary, {
-                borderColor: isDark ? colors.cardBorder : '#D1D5DB',
-              }]}
-              onPress={handleFinishVisit}
-              activeOpacity={0.85}
+              style={[styles.footerBtn, { backgroundColor: colors.brandGreen }]}
+              onPress={() => setShowEndVisitModal(true)}
+              disabled={visitLoading}
             >
-              <Ionicons name="flag-outline" size={20} color={colors.textSub} />
-              <Text style={[styles.footerBtnTextSecondary, { color: colors.textSub }]}>
-                Finalizar
-              </Text>
+              <Ionicons name="checkmark-circle-outline" size={20} color="#fff" />
+              <Text style={styles.footerBtnText}>Finalizar visita</Text>
             </TouchableOpacity>
-          </View>
+          </>
         )}
       </View>
 
-      {/* Modal de resultado de visita */}
+      {/* ── MODAL ORIGINAL FINALIZAR VISITA ── */}
       <Modal
-        visible={outcomeModal}
+        visible={showEndVisitModal}
         transparent
         animationType="slide"
-        onRequestClose={() => setOutcomeModal(false)}
+        onRequestClose={() => setShowEndVisitModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalBox, { backgroundColor: colors.cardBg }]}>
+          <View style={[styles.modalContent, { backgroundColor: colors.cardBg }]}>
+            <Text style={[styles.modalTitle, { color: colors.textMain }]}>Finalizar visita</Text>
+            <Text style={[styles.modalLabel, { color: colors.textSub }]}>Resultado</Text>
 
-            {/* Encabezado */}
-            <View style={styles.modalHeader}>
-              <Ionicons name="clipboard-outline" size={22} color={colors.brandGreen} />
-              <Text style={[styles.modalTitle, { color: colors.textMain }]}>
-                Resultado de la visita
-              </Text>
-            </View>
-            <Text style={[styles.modalSubtitle, { color: colors.textSub }]}>
-              Indica que ocurrio antes de cerrar la visita.
-            </Text>
-
-            {/* Opciones */}
-            {OUTCOME_OPTIONS.map(opt => {
-              const isSelected = selectedOutcome === opt.value;
-              return (
+            <View style={styles.outcomeRow}>
+              {(
+                [
+                  { key: 'sale', label: 'Venta', icon: 'checkmark-circle' },
+                  { key: 'no_sale', label: 'Sin venta', icon: 'close-circle' },
+                  { key: 'closed', label: 'Cerrado', icon: 'lock-closed' },
+                ] as const
+              ).map(opt => (
                 <TouchableOpacity
-                  key={opt.value}
-                  style={[styles.outcomeOption, {
-                    backgroundColor: isSelected
-                      ? (isDark ? opt.bgDark : opt.bgLight)
-                      : (isDark ? colors.inputBg : '#F9FAFB'),
-                    borderColor: isSelected ? opt.color : (isDark ? colors.cardBorder : '#E5E7EB'),
-                  }]}
-                  onPress={() => setSelectedOutcome(opt.value)}
+                  key={opt.key}
+                  style={[
+                    styles.outcomeBtn,
+                    { borderColor: colors.cardBorder },
+                    visitOutcome === opt.key && { backgroundColor: colors.brandGreen, borderColor: colors.brandGreen },
+                  ]}
+                  onPress={() => setVisitOutcome(opt.key)}
                 >
-                  <View style={[styles.outcomeIcon, {
-                    backgroundColor: isSelected ? opt.color : (colors.textSub + '33'),
-                  }]}>
-                    <Ionicons
-                      name={opt.icon}
-                      size={20}
-                      color={isSelected ? '#fff' : colors.textSub}
-                    />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.outcomeLabel, {
-                      color: isSelected ? opt.color : colors.textMain,
-                    }]}>
-                      {opt.label}
-                    </Text>
-                    <Text style={[styles.outcomeSub, { color: colors.textSub }]}>
-                      {opt.sublabel}
-                    </Text>
-                  </View>
-                  {isSelected && (
-                    <Ionicons name="checkmark-circle" size={20} color={opt.color} />
-                  )}
+                  <Ionicons name={opt.icon} size={22} color={visitOutcome === opt.key ? '#fff' : colors.textSub} />
+                  <Text style={[styles.outcomeBtnText, { color: visitOutcome === opt.key ? '#fff' : colors.textSub }]}>{opt.label}</Text>
                 </TouchableOpacity>
-              );
-            })}
-
-            {/* Botones */}
-            <View style={styles.modalFooter}>
-              <TouchableOpacity
-                style={[styles.modalCancelBtn, {
-                  borderColor: isDark ? colors.cardBorder : '#D1D5DB',
-                }]}
-                onPress={() => setOutcomeModal(false)}
-              >
-                <Text style={[styles.modalCancelText, { color: colors.textSub }]}>Cancelar</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.modalConfirmBtn, {
-                  backgroundColor: selectedOutcome ? colors.brandGreen : colors.textSub + '55',
-                }]}
-                onPress={handleOutcomeConfirm}
-                disabled={!selectedOutcome}
-              >
-                <Text style={styles.modalConfirmText}>Confirmar</Text>
-              </TouchableOpacity>
+              ))}
             </View>
 
+            <Text style={[styles.modalLabel, { color: colors.textSub }]}>Notas (opcional)</Text>
+            <TextInput
+              style={[styles.notesInput, { color: colors.textMain, borderColor: colors.cardBorder, backgroundColor: isDark ? colors.inputBg : '#F9FAFB' }]}
+              placeholder="Ej: El dueño no estaba..."
+              placeholderTextColor={colors.textSub}
+              value={visitNotes}
+              onChangeText={setVisitNotes}
+              multiline
+              numberOfLines={3}
+            />
+
+            <View style={styles.modalBtnsRow}>
+              <TouchableOpacity style={[styles.modalBtn, { backgroundColor: isDark ? colors.inputBg : '#F3F4F6' }]} onPress={() => setShowEndVisitModal(false)}>
+                <Text style={[styles.modalBtnText, { color: colors.textSub }]}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.modalBtn, { backgroundColor: colors.brandGreen }]} onPress={handleEndVisit} disabled={visitLoading}>
+                {visitLoading ? <ActivityIndicator color="#fff" /> : <Text style={[styles.modalBtnText, { color: '#fff' }]}>Confirmar</Text>}
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
-
     </View>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// InfoRow — fila de información del cliente
-// ─────────────────────────────────────────────────────────────────────────────
-const InfoRow = ({
-  label,
-  value,
-  icon,
-  colors,
-}: {
-  label: string;
-  value: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  colors: any;
-}) => (
-  <View style={styles.infoRow}>
-    <View style={styles.infoLeft}>
-      <Ionicons name={icon} size={16} color={colors.textSub} style={{ marginRight: 6 }} />
-      <Text style={[styles.infoLabel, { color: colors.textSub }]}>{label}</Text>
-    </View>
-    <Text style={[styles.infoValue, { color: colors.textMain }]} numberOfLines={2}>
-      {value}
-    </Text>
-  </View>
-);
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Estilos
-// ─────────────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { marginTop: 12, fontSize: 14 },
-
-  // Header
-  header: { paddingBottom: 20, paddingHorizontal: 20, borderBottomLeftRadius: 28, borderBottomRightRadius: 28 },
-  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, marginTop: 8 },
-  backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center' },
-  headerName: { color: '#fff', fontSize: 22, fontWeight: '800', marginBottom: 10, lineHeight: 28 },
-  codeBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#E8F5E9', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, alignSelf: 'flex-start', marginBottom: 8 },
-  codeBadgeText: { color: '#166534', fontWeight: '700', fontSize: 12 },
-  statusBadge: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 10, alignSelf: 'flex-start' },
-  statusText: { fontSize: 12, fontWeight: '700' },
-
-  // Scroll
-  scroll: { flex: 1 },
-  scrollContent: { padding: 20, paddingBottom: 120 },
-
-  // Card info
-  card: { borderRadius: 20, padding: 20, marginBottom: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 },
-  cardTitle: { fontSize: 11, fontWeight: '800', letterSpacing: 1, marginBottom: 16 },
-  infoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.05)' },
-  infoLeft: { flexDirection: 'row', alignItems: 'center', flex: 0.4 },
-  infoLabel: { fontSize: 13, fontWeight: '500' },
-  infoValue: { fontSize: 13, fontWeight: '700', textAlign: 'right', flex: 0.58 },
-
-  // Balance
-  balanceCard: { flexDirection: 'row', alignItems: 'center', borderRadius: 14, padding: 16, borderWidth: 1, marginBottom: 16 },
-  balanceLabel: { fontSize: 11, fontWeight: '700', marginBottom: 2 },
-  balanceAmount: { fontSize: 18, fontWeight: '800' },
-
-  // Footer
-  footer: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 16, paddingBottom: 28, borderTopWidth: 1 },
-  footerRow: { flexDirection: 'row', gap: 10 },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  header: { paddingTop: 52, paddingBottom: 22, paddingHorizontal: 20, borderBottomLeftRadius: 24, borderBottomRightRadius: 24 },
+  headerTop: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 },
+  headerIconBtn: { padding: 6, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.15)' },
+  headerTitle: { color: '#fff', fontSize: 22, fontWeight: '700', marginBottom: 4 },
+  headerCode: { color: 'rgba(255,255,255,0.75)', fontSize: 13, fontWeight: '600', marginBottom: 12 },
+  headerBadgesRow: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
+  statusBadge: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20 },
+  statusBadgeText: { color: '#fff', fontSize: 12, fontWeight: '600' },
+  visitBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
+  visitBadgeText: { color: '#fff', fontSize: 12, fontWeight: '600' },
+  scrollContent: { padding: 16 },
+  sectionCard: { borderRadius: 16, padding: 16, marginBottom: 12, elevation: 2 },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 14, gap: 10 },
+  sectionIconBg: { width: 30, height: 30, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
+  sectionTitle: { fontSize: 15, fontWeight: '700' },
+  infoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 },
+  infoLabel: { fontSize: 13, flex: 1 },
+  infoValue: { fontSize: 13, textAlign: 'right', flex: 1.2, marginLeft: 12 },
+  footer: { position: 'absolute', bottom: 0, left: 0, right: 0, flexDirection: 'row', gap: 10, padding: 16, borderTopWidth: 1 },
   footerBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: 14 },
-  footerBtnPrimary: {},
-  footerBtnSecondary: { borderWidth: 1.5, backgroundColor: 'transparent' },
   footerBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  footerBtnTextSecondary: { fontSize: 15, fontWeight: '600' },
-
-  // Modal
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end', padding: 16 },
-  modalBox: { borderRadius: 24, padding: 24, elevation: 10 },
-  modalHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 6 },
-  modalTitle: { fontSize: 18, fontWeight: '800' },
-  modalSubtitle: { fontSize: 13, marginBottom: 20, lineHeight: 18 },
-  outcomeOption: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 2 },
-  outcomeIcon: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
-  outcomeLabel: { fontSize: 14, fontWeight: '700', marginBottom: 2 },
-  outcomeSub: { fontSize: 12 },
-  modalFooter: { flexDirection: 'row', gap: 10, marginTop: 8 },
-  modalCancelBtn: { flex: 1, paddingVertical: 13, borderRadius: 12, alignItems: 'center', borderWidth: 1.5 },
-  modalCancelText: { fontSize: 14, fontWeight: '600' },
-  modalConfirmBtn: { flex: 2, paddingVertical: 13, borderRadius: 12, alignItems: 'center' },
-  modalConfirmText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalContent: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 36 },
+  modalTitle: { fontSize: 18, fontWeight: '700', textAlign: 'center', marginBottom: 20 },
+  modalLabel: { fontSize: 13, fontWeight: '600', marginBottom: 10, marginTop: 4 },
+  outcomeRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
+  outcomeBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, borderWidth: 1.5, alignItems: 'center', gap: 4 },
+  outcomeBtnText: { fontSize: 11, fontWeight: '600' },
+  notesInput: { borderWidth: 1, borderRadius: 12, padding: 12, fontSize: 14, minHeight: 80, textAlignVertical: 'top', marginBottom: 16 },
+  modalBtnsRow: { flexDirection: 'row', gap: 10 },
+  modalBtn: { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
+  modalBtnText: { fontSize: 15, fontWeight: '700' },
 });

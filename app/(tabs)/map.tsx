@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -34,12 +34,12 @@ function parseGeoPoint(value: any): { lat: number | null; lng: number | null } {
         const bo = parseInt(value.slice(0, 2), 16);
         const hasSRID = (parseInt(value.slice(2, 10), 16) & 0x20000000) !== 0;
         const off = 10 + (hasSRID ? 8 : 0);
-        const f64 = (h: string) => { const b = new ArrayBuffer(8); const v = new DataView(b); for (let i = 0; i < 8; i++) v.setUint8(i, parseInt(h.substr(i*2,2),16)); return v.getFloat64(0, bo===1); };
-        const lng = f64(value.slice(off, off+16)), lat = f64(value.slice(off+16, off+32));
+        const f64 = (h: string) => { const b = new ArrayBuffer(8); const v = new DataView(b); for (let i = 0; i < 8; i++) v.setUint8(i, parseInt(h.substr(i * 2, 2), 16)); return v.getFloat64(0, bo === 1); };
+        const lng = f64(value.slice(off, off + 16)), lat = f64(value.slice(off + 16, off + 32));
         if (!isNaN(lat) && !isNaN(lng)) return { lat, lng };
       }
     }
-  } catch(_) {}
+  } catch (_) { }
   return { lat: null, lng: null };
 }
 
@@ -163,26 +163,26 @@ export default function LeafletMapScreen() {
   const { isAdmin } = useAuth();
   const webViewRef = useRef<WebView>(null);
 
-  const [searchText,  setSearchText]  = useState('');
-  const [clients,     setClients]     = useState<any[]>([]);
+  const [searchText, setSearchText] = useState('');
+  const [clients, setClients] = useState<any[]>([]);
   const [suggestions, setSuggestions] = useState<any[]>([]);
 
   const [isTrackingEnabled, setIsTrackingEnabled] = useState(false);
 
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
-  const [selectedZoneId,     setSelectedZoneId]     = useState<string | null>(null);
-  const [employees,    setEmployees]    = useState<any[]>([]);
-  const [zones,        setZones]        = useState<any[]>([]);
-  const [zonasFull,    setZonasFull]    = useState<any[]>([]);
-  const [showFilters,  setShowFilters]  = useState(false);
+  const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
+  const [employees, setEmployees] = useState<any[]>([]);
+  const [zones, setZones] = useState<any[]>([]);
+  const [zonasFull, setZonasFull] = useState<any[]>([]);
+  const [showFilters, setShowFilters] = useState(false);
   const [activeFilter, setActiveFilter] = useState<'employee' | 'zone' | null>(null);
 
-  const [assignModal,   setAssignModal]   = useState(false);
+  const [assignModal, setAssignModal] = useState(false);
   const [assignPointId, setAssignPointId] = useState<string | null>(null);
-  const [assignSearch,  setAssignSearch]  = useState('');
+  const [assignSearch, setAssignSearch] = useState('');
   const [assignResults, setAssignResults] = useState<any[]>([]);
   const [assignLoading, setAssignLoading] = useState(false);
-  const [savingAssign,  setSavingAssign]  = useState(false);
+  const [savingAssign, setSavingAssign] = useState(false);
 
   const [webViewReady, setWebViewReady] = useState(false);
 
@@ -197,7 +197,7 @@ export default function LeafletMapScreen() {
         const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }).catch(() => null);
         sendMessage({ type: 'CENTER_USER', lat: loc?.coords.latitude ?? -17.3895, lng: loc?.coords.longitude ?? -66.1568 });
       }
-    } catch (_) {}
+    } catch (_) { }
 
     try {
       const { data: clientsData } = await supabase
@@ -220,14 +220,14 @@ export default function LeafletMapScreen() {
         if (rpError) console.warn('[route_points] Error:', rpError.message);
 
         routeMarkers = (rpData || []).map((rp: any) => ({
-          lat:        rp.latitude,
-          lng:        rp.longitude,
-          label:      rp.label || '',
-          color:      rp.color || '#6366F1',
-          clientId:   rp.client_id,
+          lat: rp.latitude,
+          lng: rp.longitude,
+          label: rp.label || '',
+          color: rp.color || '#6366F1',
+          clientId: rp.client_id,
           clientName: Array.isArray(rp.clients) ? rp.clients[0]?.name : rp.clients?.name,
-          zoneName:   zones.find((z: any) => z.id === rp.zona_id)?.codigo_zona || null,
-          pointId:    rp.id,
+          zoneName: zones.find((z: any) => z.id === rp.zona_id)?.codigo_zona || null,
+          pointId: rp.id,
         }));
       }
 
@@ -236,10 +236,11 @@ export default function LeafletMapScreen() {
       let employeeMarkers: any[] = [];
 
       if (userId) {
-        // ✅ FIX: columna correcta es 'created_at' no 'crated_at'
+        // La tabla 'pedidos' tiene un typo histórico: la columna se llama 'crated_at'
+        // (no 'created_at'). Usamos el nombre real de la BD para que el filtro funcione.
         let oq = supabase.from('pedidos')
-          .select('id,total_venta,created_at,ubicacion_venta,visit_id,visits:visit_id(outcome)')
-          .gte('created_at', `${today}T00:00:00`).not('ubicacion_venta','is',null);
+          .select('id,total_venta,crated_at,ubicacion_venta,visit_id,visits:visit_id(outcome)')
+          .gte('crated_at', `${today}T00:00:00`).not('ubicacion_venta', 'is', null);
         if (!isAdmin) oq = oq.eq('empleado_id', userId);
         else if (selectedEmployeeId) oq = oq.eq('empleado_id', selectedEmployeeId);
         const { data: od } = await oq;
@@ -247,13 +248,13 @@ export default function LeafletMapScreen() {
           const { lat, lng } = parseGeoPoint(o.ubicacion_venta);
           if (!lat || !lng) return null;
           const vd = Array.isArray(o.visits) ? o.visits[0] : o.visits;
-          return { id: o.id, lat, lng, total: o.total_venta, outcome: vd?.outcome || null, time: new Date(o.created_at).toLocaleTimeString('es-BO',{hour:'2-digit',minute:'2-digit'}) };
+          return { id: o.id, lat, lng, total: o.total_venta, outcome: vd?.outcome || null, time: new Date(o.crated_at).toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit' }) };
         }).filter(Boolean);
 
         let vq = supabase.from('visits').select('id,outcome,end_time,check_in_location,check_out_location')
           .gte('end_time', `${today}T00:00:00`)
           .or('check_in_location.not.is.null,check_out_location.not.is.null')
-          .neq('outcome','pending');
+          .neq('outcome', 'pending');
         if (!isAdmin) vq = vq.eq('seller_id', userId);
         else if (selectedEmployeeId) vq = vq.eq('seller_id', selectedEmployeeId);
         const { data: vd } = await vq;
@@ -265,9 +266,9 @@ export default function LeafletMapScreen() {
           return {
             id: `visit-${v.id}`,
             lat, lng,
-            total:   0,
+            total: 0,
             outcome: v.outcome,
-            time:    new Date(v.end_time).toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit' })
+            time: new Date(v.end_time).toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit' })
           };
         }).filter(Boolean);
         orderMarkers = [...orderMarkers, ...visitMarkers];
@@ -275,13 +276,13 @@ export default function LeafletMapScreen() {
         if (isAdmin) {
           const { data: ed } = await supabase.from('employees')
             .select('id,full_name,job_title,role,location,updated_at')
-            .eq('status','Habilitado').not('location','is',null).neq('id', userId);
+            .eq('status', 'Habilitado').not('location', 'is', null).neq('id', userId);
           employeeMarkers = (ed || []).map((emp: any) => {
             const { lat, lng } = parseGeoPoint(emp.location);
             if (!lat || !lng) return null;
             const parts = emp.full_name.split(' ');
-            const initials = parts.length >= 2 ? parts[0][0]+parts[1][0] : emp.full_name.slice(0,2);
-            return { id: emp.id, lat, lng, name: emp.full_name, role: emp.job_title||emp.role||'Empleado', initials: initials.toUpperCase(), lastUpdate: emp.updated_at ? new Date(emp.updated_at).toLocaleTimeString('es-BO',{hour:'2-digit',minute:'2-digit'}) : null };
+            const initials = parts.length >= 2 ? parts[0][0] + parts[1][0] : emp.full_name.slice(0, 2);
+            return { id: emp.id, lat, lng, name: emp.full_name, role: emp.job_title || emp.role || 'Empleado', initials: initials.toUpperCase(), lastUpdate: emp.updated_at ? new Date(emp.updated_at).toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit' }) : null };
           }).filter(Boolean);
         }
       }
@@ -296,6 +297,19 @@ export default function LeafletMapScreen() {
     if (webViewReady) loadMapData();
   }, [webViewReady, selectedEmployeeId, selectedZoneId]);
 
+  // ── Refresh automático al volver al mapa ────────────────────────────────────
+  // PROBLEMA: cuando el usuario crea un pedido y vuelve al mapa, el globito
+  // nuevo no aparece porque loadMapData solo corre al montar (webViewReady).
+  // SOLUCIÓN: useFocusEffect recarga los datos cada vez que la pantalla
+  // del mapa gana el foco — es decir, al volver de NuevoPedido o cualquier
+  // otra pantalla. webViewReady garantiza que el WebView ya está listo.
+  useFocusEffect(
+    useCallback(() => {
+      if (webViewReady) loadMapData();
+    }, [webViewReady, loadMapData])
+  );
+  // Importar useFocusEffect: ya viene de expo-router (ver imports de useRouter)
+
   useEffect(() => {
     (async () => {
       try {
@@ -305,7 +319,7 @@ export default function LeafletMapScreen() {
           await LocationService.initialize();
           setIsTrackingEnabled(true);
         }
-      } catch (_) {}
+      } catch (_) { }
     })();
     return () => { LocationService.stopTrackingInterval(); };
   }, []);
@@ -319,7 +333,7 @@ export default function LeafletMapScreen() {
       if (isAdmin) {
         // ✅ FIX: tabla correcta es 'zones' (no 'zonas'), sin filtro 'estado'
         const [{ data: emps }, { data: zns }] = await Promise.all([
-          supabase.from('employees').select('id,full_name,job_title').eq('status','Habilitado').order('full_name'),
+          supabase.from('employees').select('id,full_name,job_title').eq('status', 'Habilitado').order('full_name'),
           supabase.from('zones').select('id,codigo_zona,name,vendedor_id,color_marcador,employees:vendedor_id(id,full_name)').order('codigo_zona'),
         ]);
         if (emps) setEmployees(emps);
@@ -344,16 +358,18 @@ export default function LeafletMapScreen() {
       const ok = await LocationService.enableTracking();
       setIsTrackingEnabled(ok);
       if (ok) {
-        Alert.alert('✅ Ubicación Activa', 'Tu ruta está siendo registrada.', [{text:'OK'}]);
+        Alert.alert('✅ Ubicación Activa', 'Tu ruta está siendo registrada.', [{ text: 'OK' }]);
         centerOnMyLocation();
       }
     } else {
       Alert.alert('⚠️ Desactivar', '¿Confirmas desactivar el tracking?', [
         { text: 'Cancelar', style: 'cancel' },
-        { text: 'Desactivar', style: 'destructive', onPress: async () => {
-          await LocationService.disableTracking('Usuario desactivó desde toggle');
-          setIsTrackingEnabled(false);
-        }},
+        {
+          text: 'Desactivar', style: 'destructive', onPress: async () => {
+            await LocationService.disableTracking('Usuario desactivó desde toggle');
+            setIsTrackingEnabled(false);
+          }
+        },
       ]);
     }
   };
@@ -375,12 +391,12 @@ export default function LeafletMapScreen() {
   const handleSearch = (text: string) => {
     setSearchText(text);
     if (!text) { setSuggestions([]); return; }
-    setSuggestions(clients.filter(c => c.name.toLowerCase().includes(text.toLowerCase()) || (c.code && c.code.toLowerCase().includes(text.toLowerCase()))).slice(0,5));
+    setSuggestions(clients.filter(c => c.name.toLowerCase().includes(text.toLowerCase()) || (c.code && c.code.toLowerCase().includes(text.toLowerCase()))).slice(0, 5));
   };
 
   const handleSelectClient = (client: any) => {
     setSearchText(client.name); setSuggestions([]); Keyboard.dismiss();
-    sendMessage({ type: 'FLY_TO', id: 'rp_'+client.id });
+    sendMessage({ type: 'FLY_TO', id: 'rp_' + client.id });
   };
 
   const handleMessage = async (event: any) => {
@@ -398,7 +414,7 @@ export default function LeafletMapScreen() {
         setAssignResults([]);
         setAssignModal(true);
       }
-    } catch (_) {}
+    } catch (_) { }
   };
 
   const searchClientsForAssign = async (text: string) => {
@@ -407,7 +423,7 @@ export default function LeafletMapScreen() {
     setAssignLoading(true);
     try {
       const { data } = await supabase.from('clients').select('id,name,code,address')
-        .or(`name.ilike.%${text}%,code.ilike.%${text}%`).eq('status','Vigente').limit(10);
+        .or(`name.ilike.%${text}%,code.ilike.%${text}%`).eq('status', 'Vigente').limit(10);
       setAssignResults(data || []);
     } finally { setAssignLoading(false); }
   };
@@ -431,13 +447,13 @@ export default function LeafletMapScreen() {
         return z.id === selectedZoneId;
       });
       sendMessage({
-        type:       'UPDATE_POINT_POPUP',
-        pointId:    assignPointId,
-        clientId:   client.id,
+        type: 'UPDATE_POINT_POPUP',
+        pointId: assignPointId,
+        clientId: client.id,
         clientName: client.name,
-        zoneName:   zona?.codigo_zona || null,
-        label:      null, // el WebView mantiene el label existente del popup
-        color:      null,
+        zoneName: zona?.codigo_zona || null,
+        label: null, // el WebView mantiene el label existente del popup
+        color: null,
       });
 
       // Cerrar modal y limpiar sin tocar el mapa
@@ -493,7 +509,7 @@ export default function LeafletMapScreen() {
           <Ionicons name="search" size={18} color="#666" style={{ marginRight: 8 }} />
           <TextInput placeholder="Buscar cliente..." style={styles.searchInput} value={searchText}
             onChangeText={handleSearch}
-            onFocus={() => searchText && setSuggestions(clients.filter(c => c.name.toLowerCase().includes(searchText.toLowerCase())).slice(0,5))} />
+            onFocus={() => searchText && setSuggestions(clients.filter(c => c.name.toLowerCase().includes(searchText.toLowerCase())).slice(0, 5))} />
           {searchText.length > 0 && (
             <TouchableOpacity onPress={() => { setSearchText(''); setSuggestions([]); Keyboard.dismiss(); }}>
               <Ionicons name="close-circle" size={18} color="#999" />
@@ -550,7 +566,7 @@ export default function LeafletMapScreen() {
 
             {isAdmin && (
               <View style={styles.filterTabs}>
-                {(['employee','zone'] as const).map(tab => (
+                {(['employee', 'zone'] as const).map(tab => (
                   <TouchableOpacity
                     key={tab}
                     style={[styles.filterTab, activeFilter === tab && styles.filterTabActive]}
@@ -716,7 +732,7 @@ export default function LeafletMapScreen() {
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.modalClientName}>{item.name}</Text>
-                    {item.code    && <Text style={styles.modalClientSub}>{item.code}</Text>}
+                    {item.code && <Text style={styles.modalClientSub}>{item.code}</Text>}
                     {item.address && <Text style={styles.modalClientSub} numberOfLines={1}>{item.address}</Text>}
                   </View>
                   {savingAssign
@@ -741,7 +757,7 @@ const styles = StyleSheet.create({
   trackingLabel: { flex: 1, marginLeft: 8, fontSize: 13, fontWeight: '600', color: '#6B7280' },
   searchWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, paddingHorizontal: 14, height: 46, marginBottom: 6, elevation: 5, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4 },
   searchInput: { flex: 1, fontSize: 15, color: '#333' },
-  suggestionsList: { backgroundColor: '#fff', borderRadius: 10, marginBottom: 6, maxHeight: 200, elevation: 5, shadowColor: '#000', shadowOffset:{width:0,height:2}, shadowOpacity:0.1, shadowRadius:4 },
+  suggestionsList: { backgroundColor: '#fff', borderRadius: 10, marginBottom: 6, maxHeight: 200, elevation: 5, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4 },
   suggestionItem: { flexDirection: 'row', alignItems: 'center', padding: 12, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
   suggestionAvatar: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#e6f4ea', justifyContent: 'center', alignItems: 'center', marginRight: 10 },
   suggestionInitial: { color: '#2a8c4a', fontWeight: 'bold', fontSize: 13 },
@@ -752,7 +768,7 @@ const styles = StyleSheet.create({
   filterBtnPulse: { borderColor: '#F59E0B', borderWidth: 1.5 },
   filterBtnText: { fontSize: 13, fontWeight: '600', color: '#2a8c4a', marginLeft: 6, maxWidth: 200 },
   filterBtnSubText: { fontSize: 11, color: 'rgba(255,255,255,0.8)', marginLeft: 2 },
-  filtersPanel: { backgroundColor: '#fff', borderRadius: 14, overflow: 'hidden', elevation: 8, shadowColor: '#000', shadowOffset:{width:0,height:4}, shadowOpacity:0.15, shadowRadius:8 },
+  filtersPanel: { backgroundColor: '#fff', borderRadius: 14, overflow: 'hidden', elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 8 },
   filterTabs: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
   filterTab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 10 },
   filterTabActive: { backgroundColor: '#2a8c4a' },
@@ -774,7 +790,7 @@ const styles = StyleSheet.create({
   filterEmptyText: { fontSize: 13, color: '#9CA3AF', textAlign: 'center', paddingHorizontal: 20 },
   filterFooterHint: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FFFBEB', paddingHorizontal: 14, paddingVertical: 10, borderTopWidth: 1, borderTopColor: '#FDE68A' },
   filterFooterHintText: { flex: 1, fontSize: 12, color: '#92400E', fontWeight: '500' },
-  reloadBtn: { position: 'absolute', bottom: 30, right: 20, backgroundColor: '#fff', width: 46, height: 46, borderRadius: 23, justifyContent: 'center', alignItems: 'center', elevation: 6, zIndex: 1000, shadowColor: '#000', shadowOffset:{width:0,height:2}, shadowOpacity:0.15, shadowRadius:6 },
+  reloadBtn: { position: 'absolute', bottom: 30, right: 20, backgroundColor: '#fff', width: 46, height: 46, borderRadius: 23, justifyContent: 'center', alignItems: 'center', elevation: 6, zIndex: 1000, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 6 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalCard: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 20, maxHeight: '85%' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingHorizontal: 20, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
@@ -789,5 +805,5 @@ const styles = StyleSheet.create({
   modalClientInitial: { fontSize: 16, fontWeight: '700', color: '#6366F1' },
   modalClientName: { fontSize: 15, fontWeight: '600', color: '#111827' },
   modalClientSub: { fontSize: 12, color: '#9CA3AF', marginTop: 1 },
-  myLocationBtn: { position: 'absolute', bottom: 86, right: 20, backgroundColor: '#fff', width: 46, height: 46, borderRadius: 23, justifyContent: 'center', alignItems: 'center', elevation: 6, zIndex: 1000, shadowColor: '#000', shadowOffset:{width:0,height:2}, shadowOpacity:0.15, shadowRadius:6 },
+  myLocationBtn: { position: 'absolute', bottom: 86, right: 20, backgroundColor: '#fff', width: 46, height: 46, borderRadius: 23, justifyContent: 'center', alignItems: 'center', elevation: 6, zIndex: 1000, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 6 },
 });

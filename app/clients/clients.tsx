@@ -20,9 +20,6 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { clientService } from '../../services/ClienteService';
 import { Client } from '../../types/Cliente.interface';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Hook debounce — evita buscar en cada tecla
-// ─────────────────────────────────────────────────────────────────────────────
 function useDebounce<T>(value: T, delayMs: number): T {
   const [debounced, setDebounced] = useState<T>(value);
   useEffect(() => {
@@ -34,14 +31,6 @@ function useDebounce<T>(value: T, delayMs: number): T {
 
 type FilterStatus = 'Todos' | 'Vigente' | 'Inactivo';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ClientCard
-//
-// Tocar la tarjeta → detalle del cliente ([id].tsx, flujo normal)
-// Botón "Pedido"   → detalle con autoStartVisit=true (arranca cronómetro)
-// Botón lápiz      → editar
-// Botón basura     → solo admin
-// ─────────────────────────────────────────────────────────────────────────────
 interface ClientCardProps {
   item: Client;
   onPress: () => void;
@@ -62,97 +51,53 @@ const ClientCard = ({ item, onPress, onEdit, onOrder, onDelete, colors, isDark }
       borderWidth: isDark ? 1 : 0,
       shadowColor: colors.shadowColor,
     }]}>
-
-      {/* Fila principal: ícono + info + botones */}
       <View style={styles.cardMain}>
-
-        {/* Área de info — sin acción al tocar */}
         <View style={styles.cardContent}>
-          <View style={[styles.avatar, {
-            backgroundColor: isDark ? 'rgba(42,140,74,0.15)' : '#E8F5E9',
-          }]}>
+          <View style={[styles.avatar, { backgroundColor: isDark ? 'rgba(42,140,74,0.15)' : '#E8F5E9' }]}>
             <MaterialCommunityIcons name="storefront" size={22} color={colors.brandGreen} />
           </View>
 
           <View style={styles.infoContainer}>
-            <Text style={[styles.nameText, { color: colors.textMain }]} numberOfLines={1}>
-              {item.name}
-            </Text>
-
+            <Text style={[styles.nameText, { color: colors.textMain }]} numberOfLines={1}>{item.name}</Text>
             {item.code ? (
-              <View style={[styles.codeChip, {
-                backgroundColor: isDark ? 'rgba(42,140,74,0.15)' : '#F0FDF4',
-                alignSelf: 'flex-start',
-                marginBottom: 3,
-              }]}>
-                <Text style={[styles.codeText, { color: colors.brandGreen }]}>
-                  #{item.code}
-                </Text>
+              <View style={[styles.codeChip, { backgroundColor: isDark ? 'rgba(42,140,74,0.15)' : '#F0FDF4', alignSelf: 'flex-start', marginBottom: 3 }]}>
+                <Text style={[styles.codeText, { color: colors.brandGreen }]}>#{item.code}</Text>
               </View>
             ) : null}
-
-            <Text style={[styles.subText, { color: colors.textSub }]} numberOfLines={1}>
-              {item.business_name || 'Sin Razon Social'}
-            </Text>
-
+            <Text style={[styles.subText, { color: colors.textSub }]} numberOfLines={1}>{item.business_name || 'Sin Razon Social'}</Text>
             <View style={styles.tagsRow}>
-              <View style={[styles.badge, {
-                backgroundColor: isVigente
-                  ? (isDark ? 'rgba(46,125,50,0.2)' : '#E8F5E9')
-                  : (isDark ? 'rgba(198,40,40,0.2)' : '#FFEBEE'),
-              }]}>
-                <Text style={[styles.badgeText, { color: isVigente ? '#2E7D32' : '#C62828' }]}>
-                  {item.status || 'Inactivo'}
-                </Text>
+              <View style={[styles.badge, { backgroundColor: isVigente ? (isDark ? 'rgba(46,125,50,0.2)' : '#E8F5E9') : (isDark ? 'rgba(198,40,40,0.2)' : '#FFEBEE') }]}>
+                <Text style={[styles.badgeText, { color: isVigente ? '#2E7D32' : '#C62828' }]}>{item.status || 'Inactivo'}</Text>
               </View>
               {item.current_balance > 0 && (
-                <Text style={[styles.balanceText, { color: '#EAB308' }]}>
-                  · Bs {item.current_balance.toFixed(2)}
-                </Text>
+                <Text style={[styles.balanceText, { color: '#EAB308' }]}>· Bs {item.current_balance.toFixed(2)}</Text>
               )}
             </View>
           </View>
         </View>
 
-        {/* Botones icónicos (lápiz / basura) */}
         <View style={styles.iconBtns}>
-          <TouchableOpacity
-            onPress={onEdit}
-            style={[styles.iconBtn, { backgroundColor: isDark ? colors.inputBg : '#F0F9FF' }]}
-          >
+          <TouchableOpacity onPress={onEdit} style={[styles.iconBtn, { backgroundColor: isDark ? colors.inputBg : '#F0F9FF' }]}>
             <Ionicons name="pencil" size={15} color="#0284C7" />
           </TouchableOpacity>
-
           {onDelete && (
-            <TouchableOpacity
-              onPress={onDelete}
-              style={[styles.iconBtn, { backgroundColor: isDark ? colors.inputBg : '#FEF2F2', marginTop: 6 }]}
-            >
+            <TouchableOpacity onPress={onDelete} style={[styles.iconBtn, { backgroundColor: isDark ? colors.inputBg : '#FEF2F2', marginTop: 6 }]}>
               <Ionicons name="trash-outline" size={15} color="#EF4444" />
             </TouchableOpacity>
           )}
         </View>
       </View>
 
-      {/* Footer: botón Pedido — navega directo al flujo de visita */}
       <View style={styles.cardFooter}>
-        <TouchableOpacity
-          onPress={onOrder}
-          style={[styles.orderBtn, { backgroundColor: colors.brandGreen }]}
-          activeOpacity={0.8}
-        >
+        <TouchableOpacity onPress={onOrder} style={[styles.orderBtn, { backgroundColor: colors.brandGreen }]} activeOpacity={0.8}>
           <Ionicons name="cart-outline" size={13} color="#fff" />
           <Text style={styles.orderBtnText}>Pedido</Text>
         </TouchableOpacity>
       </View>
-
     </View>
   );
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Pantalla principal
-// ─────────────────────────────────────────────────────────────────────────────
 export default function ClientsListScreen() {
   const router = useRouter();
   const { colors, isDark } = useTheme();
@@ -163,9 +108,6 @@ export default function ClientsListScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('Todos');
 
-  // ── Dos buscadores independientes ─────────────────────────────────────────
-  // searchNombre: busca en name y business_name (includes)
-  // searchCodigo: busca por prefijo de code o tax_id (startsWith)
   const [searchNombre, setSearchNombre] = useState('');
   const [searchCodigo, setSearchCodigo] = useState('');
 
@@ -176,9 +118,7 @@ export default function ClientsListScreen() {
     try {
       const data = await clientService.getClients();
       setClients(data);
-    } catch {
-      // error silencioso — la lista queda vacía
-    } finally {
+    } catch { } finally {
       setLoading(false);
       setRefreshing(false);
     }
@@ -186,68 +126,32 @@ export default function ClientsListScreen() {
 
   useFocusEffect(useCallback(() => { fetchClients(); }, [fetchClients]));
 
-  // ── Filtrado con AND lógico ────────────────────────────────────────────────
   const filteredClients = useMemo(() => {
     const nombre = debouncedNombre.toLowerCase().trim();
     const codigo = debouncedCodigo.toLowerCase().trim();
-
     return clients.filter(c => {
-      // Filtro por estado — aplica para todos los usuarios
-      const statusOk =
-        filterStatus === 'Todos'
-        || (filterStatus === 'Vigente' && c.status === 'Vigente')
-        || (filterStatus === 'Inactivo' && c.status !== 'Vigente');
-
+      const statusOk = filterStatus === 'Todos' || (filterStatus === 'Vigente' && c.status === 'Vigente') || (filterStatus === 'Inactivo' && c.status !== 'Vigente');
       if (!statusOk) return false;
-
-      // Filtro nombre (includes en name o business_name)
-      const cumpleNombre = !nombre
-        || c.name?.toLowerCase().includes(nombre)
-        || c.business_name?.toLowerCase().includes(nombre);
-
-      // Filtro código (startsWith en code o tax_id)
-      const cumpleCodigo = !codigo
-        || c.code?.toLowerCase().startsWith(codigo)
-        || c.tax_id?.toLowerCase().startsWith(codigo);
-
+      const cumpleNombre = !nombre || c.name?.toLowerCase().includes(nombre) || c.business_name?.toLowerCase().includes(nombre);
+      const cumpleCodigo = !codigo || c.code?.toLowerCase().startsWith(codigo) || c.tax_id?.toLowerCase().startsWith(codigo);
       return cumpleNombre && cumpleCodigo;
     });
   }, [clients, debouncedNombre, debouncedCodigo, filterStatus, isAdmin]);
 
   const handleDelete = (id: string, name: string) => {
-    Alert.alert(
-      'Suspender Cliente',
-      `Suspender a "${name}"?\n\nSus datos se conservan pero quedara inactivo.`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Suspender', style: 'destructive',
-          onPress: async () => {
-            await clientService.deleteClient(id);
-            fetchClients();
-          },
-        },
-      ]
-    );
+    Alert.alert('Suspender Cliente', `Suspender a "${name}"?\n\nSus datos se conservan pero quedara inactivo.`, [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Suspender', style: 'destructive', onPress: async () => { await clientService.deleteClient(id); fetchClients(); } },
+    ]);
   };
 
   const hayFiltros = searchNombre || searchCodigo;
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // RENDER
-  // ─────────────────────────────────────────────────────────────────────────
   return (
     <View style={[styles.screen, { backgroundColor: colors.bgStart }]}>
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
-
-      {/* Header con buscadores */}
-      <LinearGradient
-        colors={[colors.brandGreen, '#1e6b38']}
-        style={styles.headerGradient}
-      >
+      <LinearGradient colors={[colors.brandGreen, '#1e6b38']} style={styles.headerGradient}>
         <SafeAreaView edges={['top']} style={styles.headerContent}>
-
-          {/* Nav */}
           <View style={styles.navBar}>
             <TouchableOpacity onPress={() => router.back()} style={styles.navBtn}>
               <Ionicons name="arrow-back" size={22} color="#fff" />
@@ -256,90 +160,40 @@ export default function ClientsListScreen() {
             <View style={{ width: 38 }} />
           </View>
 
-          {/* Buscador por NOMBRE */}
           <Text style={styles.searchLabel}>Buscar por nombre</Text>
           <View style={[styles.searchBar, { backgroundColor: 'rgba(255,255,255,0.15)', marginBottom: 8 }]}>
             <Ionicons name="person-outline" size={18} color="rgba(255,255,255,0.7)" />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Ej: Juan, Tienda del Norte..."
-              placeholderTextColor="rgba(255,255,255,0.55)"
-              value={searchNombre}
-              onChangeText={setSearchNombre}
-              returnKeyType="search"
-              autoCorrect={false}
-              autoCapitalize="words"
-            />
-            {searchNombre.length > 0 && (
-              <TouchableOpacity onPress={() => setSearchNombre('')}>
-                <Ionicons name="close-circle" size={16} color="rgba(255,255,255,0.8)" />
-              </TouchableOpacity>
-            )}
+            <TextInput style={styles.searchInput} placeholder="Ej: Juan, Tienda del Norte..." placeholderTextColor="rgba(255,255,255,0.55)" value={searchNombre} onChangeText={setSearchNombre} returnKeyType="search" autoCorrect={false} autoCapitalize="words" />
+            {searchNombre.length > 0 && <TouchableOpacity onPress={() => setSearchNombre('')}><Ionicons name="close-circle" size={16} color="rgba(255,255,255,0.8)" /></TouchableOpacity>}
           </View>
 
-          {/* Buscador por CÓDIGO */}
           <Text style={styles.searchLabel}>Buscar por codigo</Text>
           <View style={[styles.searchBar, { backgroundColor: 'rgba(255,255,255,0.15)', marginBottom: 10 }]}>
             <Ionicons name="barcode-outline" size={18} color="rgba(255,255,255,0.7)" />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Ej: 002-095, 078..."
-              placeholderTextColor="rgba(255,255,255,0.55)"
-              value={searchCodigo}
-              onChangeText={setSearchCodigo}
-              returnKeyType="search"
-              autoCorrect={false}
-              autoCapitalize="none"
-            />
-            {searchCodigo.length > 0 && (
-              <TouchableOpacity onPress={() => setSearchCodigo('')}>
-                <Ionicons name="close-circle" size={16} color="rgba(255,255,255,0.8)" />
-              </TouchableOpacity>
-            )}
+            <TextInput style={styles.searchInput} placeholder="Ej: 002-095, 078..." placeholderTextColor="rgba(255,255,255,0.55)" value={searchCodigo} onChangeText={setSearchCodigo} returnKeyType="search" autoCorrect={false} autoCapitalize="none" />
+            {searchCodigo.length > 0 && <TouchableOpacity onPress={() => setSearchCodigo('')}><Ionicons name="close-circle" size={16} color="rgba(255,255,255,0.8)" /></TouchableOpacity>}
           </View>
 
-          {/* Indicador de resultados + limpiar */}
           {hayFiltros && (
             <View style={styles.filterRow}>
-              <Text style={styles.filterCount}>
-                {filteredClients.length} resultado{filteredClients.length !== 1 ? 's' : ''}
-              </Text>
+              <Text style={styles.filterCount}>{filteredClients.length} resultado{filteredClients.length !== 1 ? 's' : ''}</Text>
               <TouchableOpacity onPress={() => { setSearchNombre(''); setSearchCodigo(''); }}>
                 <Text style={styles.filterClear}>Limpiar filtros</Text>
               </TouchableOpacity>
             </View>
           )}
 
-          {/* Tabs de estado — visibles para todos */}
           <View style={styles.tabsRow}>
             {(['Todos', 'Vigente', 'Inactivo'] as FilterStatus[]).map(s => (
-              <TouchableOpacity
-                key={s}
-                onPress={() => setFilterStatus(s)}
-                style={[
-                  styles.tabPill,
-                  filterStatus === s
-                    ? { backgroundColor: '#fff' }
-                    : { backgroundColor: 'rgba(0,0,0,0.2)' },
-                ]}
-              >
-                <Text style={[
-                  styles.tabText,
-                  { color: filterStatus === s ? colors.brandGreen : 'rgba(255,255,255,0.8)' },
-                ]}>
-                  {s}
-                </Text>
+              <TouchableOpacity key={s} onPress={() => setFilterStatus(s)} style={[styles.tabPill, filterStatus === s ? { backgroundColor: '#fff' } : { backgroundColor: 'rgba(0,0,0,0.2)' }]}>
+                <Text style={[styles.tabText, { color: filterStatus === s ? colors.brandGreen : 'rgba(255,255,255,0.8)' }]}>{s}</Text>
               </TouchableOpacity>
             ))}
-            <View style={styles.countChip}>
-              <Text style={styles.countText}>{filteredClients.length}</Text>
-            </View>
+            <View style={styles.countChip}><Text style={styles.countText}>{filteredClients.length}</Text></View>
           </View>
-
         </SafeAreaView>
       </LinearGradient>
 
-      {/* Lista */}
       <View style={styles.bodyContainer}>
         {loading && !refreshing ? (
           <View style={styles.centerView}>
@@ -355,8 +209,8 @@ export default function ClientsListScreen() {
                 item={item}
                 onPress={() => router.push(`/clients/${item.id}` as any)}
                 onEdit={() => router.push(`/clients/edit/${item.id}` as any)}
-                // Botón Pedido → detalle con autoStartVisit para iniciar cronómetro
-                onOrder={() => router.push(`/clients/${item.id}?autoStartVisit=true` as any)}
+                // 🔥 AQUÍ SE ARREGLÓ EL AUTO-INICIO: MANDA AL CLIENTE SIN PARÁMETROS RAROS
+                onOrder={() => router.push(`/clients/${item.id}` as any)}
                 onDelete={isAdmin ? () => handleDelete(item.id, item.name) : undefined}
                 colors={colors}
                 isDark={isDark}
@@ -365,29 +219,12 @@ export default function ClientsListScreen() {
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={() => { setRefreshing(true); fetchClients(); }}
-                tintColor={colors.brandGreen}
-              />
-            }
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchClients(); }} tintColor={colors.brandGreen} />}
             ListEmptyComponent={
               <View style={styles.emptyView}>
-                <FontAwesome5
-                  name={hayFiltros ? 'search' : 'users-slash'}
-                  size={40}
-                  color={colors.iconGray}
-                  style={{ opacity: 0.5 }}
-                />
-                <Text style={[styles.emptyTitle, { color: colors.textMain }]}>
-                  {hayFiltros ? 'Sin resultados' : 'No hay clientes'}
-                </Text>
-                <Text style={[styles.emptySubText, { color: colors.textSub }]}>
-                  {hayFiltros
-                    ? 'Intenta con otros terminos o limpia los filtros'
-                    : 'Agrega tu primer cliente'}
-                </Text>
+                <FontAwesome5 name={hayFiltros ? 'search' : 'users-slash'} size={40} color={colors.iconGray} style={{ opacity: 0.5 }} />
+                <Text style={[styles.emptyTitle, { color: colors.textMain }]}>{hayFiltros ? 'Sin resultados' : 'No hay clientes'}</Text>
+                <Text style={[styles.emptySubText, { color: colors.textSub }]}>{hayFiltros ? 'Intenta con otros terminos o limpia los filtros' : 'Agrega tu primer cliente'}</Text>
               </View>
             }
           />
@@ -397,38 +234,26 @@ export default function ClientsListScreen() {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Estilos
-// ─────────────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   screen: { flex: 1 },
-
-  // Header
   headerGradient: { paddingBottom: 16, borderBottomLeftRadius: 28, borderBottomRightRadius: 28, zIndex: 10 },
   headerContent: { paddingHorizontal: 20 },
   navBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8, marginBottom: 14 },
   navBtn: { padding: 8, borderRadius: 12 },
   headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#fff' },
-
   searchLabel: { fontSize: 10, fontWeight: '700', color: 'rgba(255,255,255,0.8)', marginBottom: 4, letterSpacing: 0.5 },
   searchBar: { flexDirection: 'row', alignItems: 'center', borderRadius: 14, height: 46, paddingHorizontal: 14 },
   searchInput: { flex: 1, fontSize: 14, color: '#fff', marginLeft: 8 },
-
   filterRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   filterCount: { color: 'rgba(255,255,255,0.9)', fontSize: 12, fontWeight: '600' },
   filterClear: { color: '#fff', fontSize: 12, fontWeight: '700', textDecorationLine: 'underline' },
-
   tabsRow: { flexDirection: 'row', gap: 8, alignItems: 'center', marginTop: 4 },
   tabPill: { paddingVertical: 6, paddingHorizontal: 14, borderRadius: 20 },
   tabText: { fontSize: 13, fontWeight: '600' },
   countChip: { marginLeft: 'auto', backgroundColor: 'rgba(255,255,255,0.25)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
   countText: { color: '#fff', fontSize: 12, fontWeight: '700' },
-
-  // Body
   bodyContainer: { flex: 1, marginTop: -16, zIndex: 1 },
   listContent: { paddingHorizontal: 16, paddingTop: 28, paddingBottom: 40 },
-
-  // Card
   card: { borderRadius: 16, paddingHorizontal: 14, paddingTop: 14, paddingBottom: 10, marginBottom: 12, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 },
   cardMain: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 8 },
   cardContent: { flex: 1, flexDirection: 'row', alignItems: 'flex-start' },
@@ -447,8 +272,6 @@ const styles = StyleSheet.create({
   cardFooter: { flexDirection: 'row', justifyContent: 'flex-end', borderTopWidth: 1, borderTopColor: 'rgba(0,0,0,0.05)', paddingTop: 8 },
   orderBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
   orderBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
-
-  // Vacío / carga
   centerView: { flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: 50 },
   loadingText: { marginTop: 15, fontSize: 14 },
   emptyView: { alignItems: 'center', marginTop: 60 },

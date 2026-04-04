@@ -37,7 +37,7 @@ export default function CobranzasScreen() {
   const [loading, setLoading] = useState(true);
   const [fechaDesde, setFechaDesde] = useState('');
   const [fechaHasta, setFechaHasta] = useState('');
-  
+
   // Filtros solo para admin
   const [selectedVendedor, setSelectedVendedor] = useState<string | null>(null);
   const [vendedores, setVendedores] = useState<any[]>([]);
@@ -63,7 +63,7 @@ export default function CobranzasScreen() {
       .select('id, full_name')
       .eq('status', 'active')
       .order('full_name');
-    
+
     if (data) {
       setVendedores(data);
     }
@@ -77,7 +77,7 @@ export default function CobranzasScreen() {
   const loadCobranzas = async () => {
     try {
       setLoading(true);
-      
+
       if (!session?.user) return;
 
       // Query de pedidos con saldo pendiente (solo créditos pendientes)
@@ -89,6 +89,7 @@ export default function CobranzasScreen() {
           total_venta,
           estado,
           tipo_pago,
+          numero_documento,
           clients!clients_id (
             name
           ),
@@ -96,7 +97,8 @@ export default function CobranzasScreen() {
             full_name
           )
         `)
-        .eq('estado', 'Pendiente') // Solo pedidos pendientes de pago
+        .eq('estado', 'Pendiente')
+        .eq('tipo_pago', 'Crédito')
         .order('crated_at', { ascending: false });
 
       // Filtrar por vendedor si NO es admin
@@ -116,7 +118,7 @@ export default function CobranzasScreen() {
       }
 
       const { data, error } = await query;
-if (error) {
+      if (error) {
 
         return;
       }
@@ -126,7 +128,7 @@ if (error) {
         const cobranzasFormateadas: Cobranza[] = data.map(pedido => {
           const cliente = Array.isArray(pedido.clients) ? pedido.clients[0] : pedido.clients;
           const empleado = Array.isArray(pedido.employees) ? pedido.employees[0] : pedido.employees;
-          
+
           // Por ahora asumimos que todo está pendiente de cobro
           const total = pedido.total_venta || 0;
           const cobrado = 0; // TODO: Implementar lógica de pagos
@@ -136,7 +138,7 @@ if (error) {
             id: pedido.id,
             fecha: new Date(pedido.crated_at).toLocaleDateString('es-BO'),
             tipo: 'VD', // Venta Directa
-            numero: pedido.id.slice(0, 8),
+            numero: pedido.numero_documento || pedido.id.slice(0, 8),
             cliente: cliente?.name || 'Sin nombre',
             zona: 'N/A', // TODO: Implementar zonas
             vendedor: empleado?.full_name || 'Desconocido',
