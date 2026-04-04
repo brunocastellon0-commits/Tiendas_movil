@@ -488,6 +488,34 @@ export default function LeafletMapScreen() {
 
   const hasActiveFilter = !!(selectedEmployeeId || selectedZoneId);
 
+  // ── Vista restringida para vendedores ─────────────────────────────────────
+  // El mapa tile se renderiza (se ve el mapa en blanco), pero sin datos,
+  // sin búsqueda, sin filtros y con un overlay informativo.
+  if (!isAdmin) {
+    return (
+      <View style={styles.container}>
+        <WebView
+          originWhitelist={['*']}
+          source={{ html: LEAFLET_HTML }}
+          style={styles.map}
+          scrollEnabled={false}
+          javaScriptEnabled
+          domStorageEnabled
+        />
+        {/* Overlay semitransparente centrado */}
+        <View style={styles.restrictedOverlay}>
+          <View style={styles.restrictedCard}>
+            <Ionicons name="lock-closed" size={32} color="#6B7280" />
+            <Text style={styles.restrictedTitle}>Vista no disponible</Text>
+            <Text style={styles.restrictedBody}>
+              El mapa de seguimiento es exclusivo para administradores.
+            </Text>
+          </View>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
 
@@ -806,4 +834,9 @@ const styles = StyleSheet.create({
   modalClientName: { fontSize: 15, fontWeight: '600', color: '#111827' },
   modalClientSub: { fontSize: 12, color: '#9CA3AF', marginTop: 1 },
   myLocationBtn: { position: 'absolute', bottom: 86, right: 20, backgroundColor: '#fff', width: 46, height: 46, borderRadius: 23, justifyContent: 'center', alignItems: 'center', elevation: 6, zIndex: 1000, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 6 },
+  // ── Overlay de acceso restringido (vendedores) ───────────────────────────
+  restrictedOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.55)', zIndex: 999 },
+  restrictedCard: { backgroundColor: '#fff', borderRadius: 20, padding: 28, alignItems: 'center', maxWidth: 280, elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 12, gap: 10 },
+  restrictedTitle: { fontSize: 16, fontWeight: '700', color: '#374151', textAlign: 'center' },
+  restrictedBody: { fontSize: 13, color: '#6B7280', textAlign: 'center', lineHeight: 20 },
 });

@@ -119,7 +119,7 @@ export const useVisitTracker = () => {
       // Lanzamos el mensaje de éxito al darle al botón
       showVisitToast({
         title: 'Visita iniciada',
-        subtitle: 'La visita ha sido registrada correctamente.',
+        subtitle: '',
         type: 'success',
       });
 
@@ -181,9 +181,9 @@ export const useVisitTracker = () => {
 
       // Mapeo exacto: Venta=success | Sin Venta=info | Cerrado=error
       const toastMap: Record<typeof outcome, { title: string; subtitle: string; type: 'success' | 'info' | 'error' }> = {
-        sale:     { title: 'Venta realizada',    subtitle: 'El pedido quedó registrado correctamente.', type: 'success' },
-        no_sale:  { title: 'Sin venta',          subtitle: 'La visita fue cerrada sin pedido.',          type: 'info'    },
-        closed:   { title: 'Cliente cerrado',     subtitle: 'El local estaba cerrado al momento de la visita.', type: 'error'  },
+        sale: { title: 'Venta realizada', subtitle: 'El pedido quedó registrado correctamente.', type: 'success' },
+        no_sale: { title: 'Sin venta', subtitle: 'La visita fue cerrada sin pedido.', type: 'info' },
+        closed: { title: 'Cliente cerrado', subtitle: 'El local estaba cerrado al momento de la visita.', type: 'error' },
       };
 
       showVisitToast(toastMap[outcome]);

@@ -10,16 +10,17 @@ import { useTheme } from '../../contexts/ThemeContext';
 // ─────────────────────────────────────────────────────────────────────────────
 // TabLayout
 //
-// Tab bar visible: Inicio + Mapa (igual para Admin y Vendedor).
+// Tab bar visible: Inicio (todos) + Mapa (solo Admin).
 // La diferencia de acceso entre roles se controla en el home mediante adminOnly.
 //
 // Vendedor ve en el home: Clientes, Cobranza, Pedidos, Reporte Inventario, Catálogo.
 // Admin ve en el home: todo lo anterior + Inventario, Proveedores, Zonas, Personal, Categorías.
+// El mapa solo es visible para Administrador.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function TabLayout() {
   const { colors, isDark } = useTheme();
-  const { session, loading } = useAuth();
+  const { session, loading, isAdmin } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
@@ -99,7 +100,7 @@ export default function TabLayout() {
         }}
       />
 
-      {/* ── MAPA ── visible para todos */}
+      {/* ── MAPA ── visible para todos, contenido restringido por rol */}
       <Tabs.Screen
         name="map"
         options={{

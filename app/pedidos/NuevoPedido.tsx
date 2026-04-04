@@ -28,12 +28,11 @@ interface Product {
 interface CartItem extends Product { qty: number; }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MAPEO TEXTO → NÚMERO para la BD
-//   tipo_documento: Nota=0 (fijo, Factura eliminada del flujo)
-//   tipo_pago:      Contado=0 (fijo, crédito eliminado del flujo)
+// MAPEO TEXTO → BD
+//   tipo_documento: Nota=0
+//   tipo_pago:      'Contado' | 'Credito' (texto directo)
 // ─────────────────────────────────────────────────────────────────────────────
 const TIPO_DOCUMENTO_NOTA = 0;
-const TIPO_PAGO_CONTADO = 0;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // NuevoPedido
@@ -63,35 +62,22 @@ export default function NuevoPedido() {
   const [fecha] = useState(new Date().toLocaleDateString('es-BO'));
   const [observation, setObservation] = useState('');
   const [descuentoMonto, setDescuentoMonto] = useState('0');
+  const [tipoPago, setTipoPago] = useState<'Contado' | 'Credito'>('Contado');
 
-  // ── Modal de éxito con countdown ────────────────────────────────────────────
+  // ── Modal de éxito ───────────────────────────────────────────────────────────
   const [successModal, setSuccessModal] = useState(false);
-  const [countdown, setCountdown] = useState(5);
-  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const navTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showSuccessModal = () => {
     setSuccessModal(true);
-    setCountdown(5);
-
-    countdownRef.current = setInterval(() => {
-      setCountdown(prev => {
-        if (prev <= 1) {
-          if (countdownRef.current) clearInterval(countdownRef.current);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
 
     navTimerRef.current = setTimeout(() => {
       setSuccessModal(false);
       router.back();
-    }, 5000);
+    }, 3000);
   };
 
   useEffect(() => () => {
-    if (countdownRef.current) clearInterval(countdownRef.current);
     if (navTimerRef.current) clearTimeout(navTimerRef.current);
   }, []);
 
@@ -187,7 +173,7 @@ export default function NuevoPedido() {
         numero_documento: nroDocumento,
         fecha_pedido: new Date().toISOString(),
         tipo_documento: TIPO_DOCUMENTO_NOTA,
-        tipo_pago: TIPO_PAGO_CONTADO,
+        tipo_pago: tipoPago,
         almacen: 'Central',
         sucursal: 'Principal',
         dias_plazo: 0,
@@ -195,7 +181,7 @@ export default function NuevoPedido() {
         descuento_monto: descuentoValor(),
         descuento_porcentaje: descuentoPct(),
         observacion: observation,
-        estado: 'Pagado',
+        estado: 'Pendiente',
         ubicacion_venta: `POINT(${loc.coords.longitude} ${loc.coords.latitude})`,
         clients_id: clientId,
         empleado_id: session?.user.id,
@@ -350,7 +336,7 @@ export default function NuevoPedido() {
 
             <View style={[styles.divider, { backgroundColor: isDark ? colors.cardBorder : '#E5E7EB' }]} />
 
-            {/* Tipo de documento y pago — fijos, solo informativos */}
+            {/* Tipo de documento y pago */}
             <View style={styles.rowBetween}>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.fieldCaption, { color: colors.textSub }]}>TIPO DE DOCUMENTO</Text>
@@ -362,10 +348,33 @@ export default function NuevoPedido() {
               </View>
               <View style={{ flex: 1, alignItems: 'flex-end' }}>
                 <Text style={[styles.fieldCaption, { color: colors.textSub }]}>TIPO DE PAGO</Text>
-                <View style={[styles.staticBadge, {
-                  backgroundColor: isDark ? 'rgba(42,140,74,0.15)' : '#F0FDF4',
-                }]}>
-                  <Text style={[styles.staticBadgeText, { color: colors.brandGreen }]}>Contado</Text>
+                <View style={[styles.payToggleRow, { marginTop: 6 }]}>
+                  <TouchableOpacity
+                    style={[
+                      styles.payToggleBtn,
+                      tipoPago === 'Contado' && { backgroundColor: colors.brandGreen },
+                      tipoPago !== 'Contado' && { backgroundColor: isDark ? 'rgba(42,140,74,0.12)' : '#F0FDF4', borderColor: colors.brandGreen, borderWidth: 1 },
+                    ]}
+                    onPress={() => setTipoPago('Contado')}
+                  >
+                    <Text style={[
+                      styles.payToggleText,
+                      { color: tipoPago === 'Contado' ? '#FFF' : colors.brandGreen },
+                    ]}>Contado</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.payToggleBtn,
+                      tipoPago === 'Credito' && { backgroundColor: '#2563EB' },
+                      tipoPago !== 'Credito' && { backgroundColor: isDark ? 'rgba(37,99,235,0.12)' : '#EFF6FF', borderColor: '#2563EB', borderWidth: 1 },
+                    ]}
+                    onPress={() => setTipoPago('Credito')}
+                  >
+                    <Text style={[
+                      styles.payToggleText,
+                      { color: tipoPago === 'Credito' ? '#FFF' : '#2563EB' },
+                    ]}>Crédito</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
             </View>
@@ -631,12 +640,6 @@ export default function NuevoPedido() {
             <Text style={[styles.modalTitle, { color: colors.textMain }]}>
               Pedido enviado exitosamente
             </Text>
-            <Text style={[styles.modalBody, { color: colors.textSub }]}>
-              Serás redirigido en unos segundos
-            </Text>
-            <View style={[styles.countdownCircle, { borderColor: colors.brandGreen }]}>
-              <Text style={[styles.countdownNum, { color: colors.brandGreen }]}>{countdown}</Text>
-            </View>
           </View>
         </View>
       </Modal>
@@ -707,9 +710,12 @@ const styles = StyleSheet.create({
   clientSub: { fontSize: 12 },
   divider: { height: 1, marginVertical: 12 },
 
-  // Badges estáticos (Nota / Contado)
+  // Badges estáticos (Nota) y selector de pago
   staticBadge: { alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, marginTop: 6 },
   staticBadgeText: { fontSize: 13, fontWeight: '700' },
+  payToggleRow: { flexDirection: 'row', gap: 6 },
+  payToggleBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
+  payToggleText: { fontSize: 12, fontWeight: '700' },
 
   searchBox: { flexDirection: 'row', alignItems: 'center', borderRadius: 12, paddingHorizontal: 12, height: 46, marginBottom: 12, borderWidth: 1.5 },
   searchInput: { flex: 1, marginLeft: 8, fontSize: 14 },
@@ -757,9 +763,6 @@ const styles = StyleSheet.create({
   confirmBtn: { paddingHorizontal: 22, paddingVertical: 12, borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 8 },
   confirmBtnText: { color: '#FFF', fontSize: 14, fontWeight: '700' },
 
-  // Countdown modal
-  countdownCircle: { width: 56, height: 56, borderRadius: 28, borderWidth: 3, justifyContent: 'center', alignItems: 'center', marginTop: 12 },
-  countdownNum: { fontSize: 24, fontWeight: '900' },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', padding: 24 },
   modalBox: { width: '100%', maxWidth: 340, borderRadius: 20, padding: 24, alignItems: 'center', elevation: 10 },

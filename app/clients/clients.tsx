@@ -156,7 +156,7 @@ export default function ClientsListScreen() {
             <TouchableOpacity onPress={() => router.back()} style={styles.navBtn}>
               <Ionicons name="arrow-back" size={22} color="#fff" />
             </TouchableOpacity>
-            <Text style={styles.headerTitle}>Cartera de Clientes</Text>
+            <Text style={styles.headerTitle}>Clientes</Text>
             <View style={{ width: 38 }} />
           </View>
 
@@ -198,7 +198,7 @@ export default function ClientsListScreen() {
         {loading && !refreshing ? (
           <View style={styles.centerView}>
             <ActivityIndicator size="large" color={colors.brandGreen} />
-            <Text style={[styles.loadingText, { color: colors.textSub }]}>Cargando cartera...</Text>
+            <Text style={[styles.loadingText, { color: colors.textSub }]}>Cargando...</Text>
           </View>
         ) : (
           <FlatList
@@ -209,7 +209,7 @@ export default function ClientsListScreen() {
                 item={item}
                 onPress={() => router.push(`/clients/${item.id}` as any)}
                 onEdit={() => router.push(`/clients/edit/${item.id}` as any)}
-                // 🔥 AQUÍ SE ARREGLÓ EL AUTO-INICIO: MANDA AL CLIENTE SIN PARÁMETROS RAROS
+                //AQUÍ SE ARREGLÓ EL AUTO-INICIO: MANDA AL CLIENTE SIN PARÁMETROS RAROS
                 onOrder={() => router.push(`/clients/${item.id}` as any)}
                 onDelete={isAdmin ? () => handleDelete(item.id, item.name) : undefined}
                 colors={colors}

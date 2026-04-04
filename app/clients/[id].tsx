@@ -163,7 +163,6 @@ export default function ClientDetailScreen() {
           {isVisiting && (
             <View style={styles.visitBadge}>
               <Ionicons name="radio-button-on" size={10} color="#4ade80" />
-              <Text style={styles.visitBadgeText}>Visita activa</Text>
             </View>
           )}
         </View>
@@ -197,7 +196,7 @@ export default function ClientDetailScreen() {
           >
             <Ionicons name="play-circle-outline" size={20} color="#fff" />
             <Text style={styles.footerBtnText}>
-              {visitLoading ? 'Registrando ubicación...' : 'Iniciar Visita'}
+              {visitLoading ? 'Iniciar Visita' : 'Iniciar Visita'}
             </Text>
           </TouchableOpacity>
         ) : (
