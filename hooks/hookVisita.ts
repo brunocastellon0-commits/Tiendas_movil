@@ -1,9 +1,61 @@
 import { useEffect, useState } from 'react';
-import { Alert } from 'react-native';
+import { Alert, Linking } from 'react-native';
 import * as Location from 'expo-location';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { showVisitToast } from '../components/VisitToast';
+
+// Solicita permisos de GPS de forma explícita y retorna las coords o null.
+// Si el usuario denegó el permiso, muestra un alert con instrucciones para
+// habilitarlo manualmente en la configuración del dispositivo.
+const requestGPSCoords = async (): Promise<{ point: string; accuracy: number | null } | null> => {
+  try {
+    // Primero revisamos el estado actual sin pedirlo de nuevo si ya se decidió
+    const { status: currentStatus } = await Location.getForegroundPermissionsAsync();
+
+    if (currentStatus === 'denied') {
+      // El usuario ya denegó antes — no podemos volver a preguntar en Android.
+      // Debemos mandarlo a Configuración.
+      Alert.alert(
+        'Permiso de ubicación denegado',
+        'Para registrar tu visita con GPS necesitas habilitar la ubicación en la ' +
+          'configuración de tu dispositivo.\n\nVe a: Ajustes → Aplicaciones → [esta app] → Permisos → Ubicación → Permitir.',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          {
+            text: 'Abrir ajustes',
+            onPress: () => Linking.openSettings(),
+          },
+        ]
+      );
+      return null;
+    }
+
+    // Si todavía no se ha pedido (undetermined) o ya fue granted, solicitamos/confirmamos
+    const { status } = await Location.requestForegroundPermissionsAsync();
+
+    if (status !== 'granted') {
+      Alert.alert(
+        'Ubicación no disponible',
+        'No se pudo obtener el permiso de ubicación. La visita se registrará sin coordenadas GPS.',
+        [{ text: 'Entendido' }]
+      );
+      return null;
+    }
+
+    const loc = await Location.getCurrentPositionAsync({
+      accuracy: Location.Accuracy.High,
+    });
+
+    return {
+      point: `POINT(${loc.coords.longitude} ${loc.coords.latitude})`,
+      accuracy: loc.coords.accuracy ?? null,
+    };
+  } catch (e) {
+    console.warn('[hookVisita] No se pudo obtener coordenadas GPS:', e);
+    return null;
+  }
+};
 
 // Ajuste para mandar la hora exacta de Bolivia (-04:00) y evitar saltos de día por UTC
 const getBoliviaIsoString = () => {
@@ -79,19 +131,10 @@ export const useVisitTracker = () => {
     setLoading(true);
     try {
       // Pedimos GPS al inicio para que el mapa web dibuje el globito (check_in_location)
-      let point = null;
-      let accuracy = null;
-
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status === 'granted') {
-          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-          point = `POINT(${loc.coords.longitude} ${loc.coords.latitude})`;
-          accuracy = loc.coords.accuracy;
-        }
-      } catch (e) {
-        console.log("No se pudo obtener ubicación al iniciar");
-      }
+      // requestGPSCoords() maneja permisos denegados con un Alert claro al usuario.
+      const gpsResult = await requestGPSCoords();
+      const point    = gpsResult?.point    ?? null;
+      const accuracy = gpsResult?.accuracy ?? null;
 
       const start = new Date();
       const localTime = getBoliviaIsoString();
@@ -141,21 +184,10 @@ export const useVisitTracker = () => {
     setLoading(true);
     try {
       // GPS al finalizar (check_out_location para el mapa web). No bloqueante.
-      let checkOutPoint = null;
-      let checkOutAccuracy = null;
-
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status === 'granted') {
-          const location = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.High,
-          });
-          checkOutPoint = `POINT(${location.coords.longitude} ${location.coords.latitude})`;
-          checkOutAccuracy = location.coords.accuracy;
-        }
-      } catch (e) {
-        console.log('No se pudo obtener ubicación al finalizar');
-      }
+      // Reutilizamos requestGPSCoords() para consistencia en el manejo de permisos.
+      const gpsOut         = await requestGPSCoords();
+      const checkOutPoint    = gpsOut?.point    ?? null;
+      const checkOutAccuracy = gpsOut?.accuracy ?? null;
 
       const endTime = new Date();
       const localEndTime = getBoliviaIsoString(); // ← hora local Bolivia, no UTC

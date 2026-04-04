@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { supabase } from '../../lib/supabase';
+import { ensureLocationGranted } from '../../hooks/useLocationPermission';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Interfaces
@@ -161,8 +162,15 @@ export default function NuevoPedido() {
     }
     setSaving(true);
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') throw new Error('Se requiere permiso de ubicacion para confirmar el pedido.');
+      // ── Verificar GPS ANTES de cualquier otra cosa ────────────────────────────
+      // Si la ubicación está desactivada, muestra el alert con acceso a Ajustes
+      // y aborta sin crear ningún registro.
+      const locationGranted = await ensureLocationGranted();
+      if (!locationGranted) {
+        setSaving(false);
+        return;
+      }
+
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
 
       // ── Verificar sesión activa ─────────────────────────────────────────────

@@ -19,6 +19,7 @@ import { supabase } from '../../lib/supabase'; // Ajusta la ruta a tu cliente
 // Hook para acceder a los colores del tema (Dark/Light)
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../../contexts/ThemeContext';
+import { useRoleGuard } from '../../hooks/useRoleGuard';
 
 // --- 2. DEFINICIÓN DE TIPOS ---
 // Estructura de datos que esperamos recibir de Supabase
@@ -109,8 +110,9 @@ const EmployeeCard = ({
 
 // --- 4. PANTALLA PRINCIPAL (GESTIÓN DE EMPLEADOS) ---
 export default function EmployeeManagementScreen() {
-  const { colors, isDark } = useTheme(); // Obtenemos colores globales
-  const router = useRouter(); // Para navegar
+  useRoleGuard('Administrador'); // 🔒 Solo admins
+  const { colors, isDark } = useTheme();
+  const router = useRouter();
 
   // Estados locales
   const [employees, setEmployees] = useState<Employee[]>([]); // Lista completa

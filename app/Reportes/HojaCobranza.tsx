@@ -49,8 +49,8 @@ export default function HojaCobranzaScreen() {
                 .single();
             if (userData) setVendorName(userData.full_name);
 
-            // 2. Consultar directamente a Supabase (EVITAMOS LA IP LOCAL)
-            // Traemos todos los pedidos que estén marcados como Crédito
+            // 2. Traemos SOLO los pedidos a Crédito del vendedor logueado.
+            //    Cada usuario (admin o vendedor) ve únicamente su propia cartera.
             const { data, error } = await supabase
                 .from('pedidos')
                 .select(`
@@ -65,6 +65,7 @@ export default function HojaCobranzaScreen() {
                     )
                 `)
                 .eq('tipo_pago', 'Crédito')
+                .eq('empleado_id', user.id)
                 .order('fecha_pedido', { ascending: false });
 
             if (error) throw error;

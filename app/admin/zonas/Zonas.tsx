@@ -3,12 +3,14 @@ import { View, Text, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator, 
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons, MaterialIcons, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../../../contexts/ThemeContext';
+import { useRoleGuard } from '../../../hooks/useRoleGuard';
 import { Zona } from '../../../types/Zonas.interface';
 import { zonaService } from '../../../services/ZonaService';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function ListaZonas() {
+    useRoleGuard('Administrador'); // 🔒 Solo admins
     const router = useRouter();
     const { colors, isDark } = useTheme();
     const [zonas, setZonas] = useState<Zona[]>([]);

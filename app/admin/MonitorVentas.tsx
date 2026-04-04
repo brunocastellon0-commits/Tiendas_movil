@@ -12,6 +12,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect, Stack } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
+import { useRoleGuard } from '../../hooks/useRoleGuard';
 
 // --- Tipos ---
 interface OrderSummary {
@@ -24,6 +25,7 @@ interface OrderSummary {
 }
 
 export default function AdminOrdersScreen() {
+  useRoleGuard('Administrador'); // 🔒 Solo admins
   const router = useRouter();
   const [orders, setOrders] = useState<OrderSummary[]>([]);
   const [loading, setLoading] = useState(true);

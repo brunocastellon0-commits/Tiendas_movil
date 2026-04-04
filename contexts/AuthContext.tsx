@@ -211,7 +211,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     };
   }, []);
 
-  const isAdmin = role === 'Administrador';
+  // Comparación sin importar mayúsculas/minúsculas ni espacios extra
+  // para garantizar que 'Administrador', 'administrador', 'ADMINISTRADOR' funcionen igual.
+  const isAdmin = role?.trim().toLowerCase() === 'administrador';
 
   return (
     <AuthContext.Provider value={{ session, loading, isAdmin, jobTitle, role, status }}>

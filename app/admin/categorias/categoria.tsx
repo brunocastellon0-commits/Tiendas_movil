@@ -12,12 +12,14 @@ import { Categorias } from '../../../types/Categorias.inteface'; // Corregí 'in
 import { LinearGradient } from 'expo-linear-gradient';
 // Hook de tema para modo oscuro
 import { useTheme } from '../../../contexts/ThemeContext';
+import { useRoleGuard } from '../../../hooks/useRoleGuard';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function ListaCategorias() {
     // 1. CONFIGURACIÓN
+    useRoleGuard('Administrador'); // 🔒 Solo admins
     const router = useRouter();
-    const { colors, isDark } = useTheme(); // Colores globales
+    const { colors, isDark } = useTheme();
 
     // Estados
     const [categorias, setCategorias] = useState<Categorias[]>([]);

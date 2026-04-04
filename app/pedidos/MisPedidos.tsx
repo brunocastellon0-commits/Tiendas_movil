@@ -590,7 +590,7 @@ tbody tr:not(:last-child) td{border-bottom:1px solid #F3F4F6;}
                   {puedeEditar && (
                     <TouchableOpacity
                       style={[styles.cardActionBtn, { backgroundColor: isDark ? 'rgba(124,58,237,0.15)' : '#EDE9FE' }]}
-                      onPress={() => openModal(pedido, 'edit')}
+                      onPress={() => router.push(`/pedidos/EditarPedido?pedidoId=${pedido.id}` as any)}
                       activeOpacity={0.7}
                     >
                       <Ionicons name="pencil" size={15} color="#7C3AED" />
