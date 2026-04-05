@@ -8,19 +8,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../../contexts/ThemeContext';
-import { supabase } from '../../lib/supabase';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
-
-// Interfaz de Deuda
-export interface Deuda {
-    id: string;
-    cliente: { nombre: string; zona: string; direccion: string; telefono: string };
-    nro_doc: string;
-    fecha: string;
-    dias_mora: number;
-    saldo: number;
-}
+import { reporteService } from '../../services/ReporteCobranzas';
+import { Deuda } from '../../types/Cobranza.interface';
 
 export default function HojaCobranzaScreen() {
     const router = useRouter();
@@ -29,7 +20,6 @@ export default function HojaCobranzaScreen() {
     const [loading, setLoading] = useState(true);
     const [deudas, setDeudas] = useState<Deuda[]>([]);
     const [totalGeneral, setTotalGeneral] = useState(0);
-    const [vendorName, setVendorName] = useState('');
 
     useEffect(() => {
         cargarDatos();
@@ -38,75 +28,13 @@ export default function HojaCobranzaScreen() {
     const cargarDatos = async () => {
         try {
             setLoading(true);
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user) return;
+            const datos = await reporteService.getHojaCobranza();
+            setDeudas(datos);
 
-            // 1. Obtener nombre del vendedor
-            const { data: userData } = await supabase
-                .from('employees')
-                .select('full_name')
-                .eq('id', user.id)
-                .single();
-            if (userData) setVendorName(userData.full_name);
-
-            // 2. Traemos SOLO los pedidos a Crédito del vendedor logueado.
-            //    Cada usuario (admin o vendedor) ve únicamente su propia cartera.
-            const { data, error } = await supabase
-                .from('pedidos')
-                .select(`
-                    id,
-                    numero_documento,
-                    fecha_pedido,
-                    total_venta,
-                    clients:clients_id (
-                        name,
-                        address,
-                        phones
-                    )
-                `)
-                .eq('tipo_pago', 'Crédito')
-                .eq('empleado_id', user.id)
-                .order('fecha_pedido', { ascending: false });
-
-            if (error) throw error;
-
-            const hoy = new Date();
-
-            // Mapeamos los datos de Supabase a la estructura visual de la App
-            const datosFormateados: Deuda[] = (data || []).map((c: any) => {
-                // Usamos la fecha del pedido, o la actual como respaldo
-                const fechaVenta = new Date(c.fecha_pedido || new Date());
-
-                // Calcular días de mora
-                const diffTime = Math.abs(hoy.getTime() - fechaVenta.getTime());
-                const diasMora = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-                // A veces Supabase devuelve un arreglo en las relaciones, extraemos el primer elemento
-                const clienteData = Array.isArray(c.clients) ? c.clients[0] : c.clients;
-
-                return {
-                    id: c.id.toString(),
-                    cliente: {
-                        nombre: clienteData?.name || 'Sin nombre',
-                        zona: 'No especificada',
-                        direccion: clienteData?.address || 'Revisar en sistema',
-                        telefono: clienteData?.phones || ''
-                    },
-                    nro_doc: c.numero_documento || 'S/N',
-                    fecha: fechaVenta.toLocaleDateString('es-BO'),
-                    dias_mora: diasMora,
-                    saldo: c.total_venta || 0
-                };
-            });
-
-            setDeudas(datosFormateados);
-
-            // Calcular Total
-            const sumaTotal = datosFormateados.reduce((acc, item) => acc + item.saldo, 0);
+            const sumaTotal = datos.reduce((acc, item) => acc + item.saldo, 0);
             setTotalGeneral(sumaTotal);
-
         } catch (error) {
-            console.error("Error cargando deudas desde Supabase:", error);
+            console.error('Error cargando cuentas pendientes:', error);
             Alert.alert('Error', 'No se pudieron cargar las cuentas por cobrar.');
         } finally {
             setLoading(false);
@@ -116,29 +44,25 @@ export default function HojaCobranzaScreen() {
     // --- LÓGICA DE DESCARGA PDF ---
     const savePdf = async () => {
         if (deudas.length === 0) {
-            Alert.alert("Vacío", "No hay datos para generar el reporte.");
+            Alert.alert('Vacío', 'No hay datos para generar el reporte.');
             return;
         }
 
         try {
-            const fechaReporte = new Date().toLocaleDateString('es-ES');
+            const fechaReporte = new Date().toLocaleDateString('es-BO');
             const fileName = `Cobranza_${fechaReporte.replace(/\//g, '-')}.pdf`;
 
-            // 1. Generar HTML
             const filasHTML = deudas.map(d => `
                 <tr style="border-bottom: 1px solid #eee;">
                     <td style="padding: 10px;">
                         <div style="font-weight: bold; font-size: 12px;">${d.cliente.nombre}</div>
-                        <div style="font-size: 10px; color: #666;">${d.cliente.zona}</div>
+                        <div style="font-size: 10px; color: #666;">Doc: ${d.nro_doc}</div>
                     </td>
-                    <td style="padding: 10px; font-size: 11px;">${d.nro_doc}</td>
                     <td style="padding: 10px; font-size: 11px;">${d.fecha}</td>
-                    <td style="padding: 10px; text-align: center; color: ${d.dias_mora > 30 ? 'red' : 'black'}; font-weight: bold; font-size: 11px;">
-                        ${d.dias_mora}
-                    </td>
-                    <td style="padding: 10px; text-align: right; font-weight: bold; font-size: 12px;">
-                        Bs ${d.saldo.toFixed(2)}
-                    </td>
+                    <td style="padding: 10px; text-align: right; font-size: 11px;">Bs ${d.monto_total.toFixed(2)}</td>
+                    <td style="padding: 10px; text-align: right; font-size: 11px;">Bs ${d.monto_pagado.toFixed(2)}</td>
+                    <td style="padding: 10px; text-align: center; color: ${d.dias_mora > 30 ? 'red' : 'black'}; font-weight: bold; font-size: 11px;">${d.dias_mora}d</td>
+                    <td style="padding: 10px; text-align: right; font-weight: bold; color: #DC2626; font-size: 12px;">Bs ${d.saldo.toFixed(2)}</td>
                 </tr>
             `).join('');
 
@@ -154,22 +78,23 @@ export default function HojaCobranzaScreen() {
                       table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
                       th { background-color: #f3f4f6; padding: 10px; text-align: left; border-bottom: 2px solid #ddd; font-size: 11px; color: #166534; font-weight: bold; }
                       td { padding: 8px; font-size: 11px; }
-                      .total { text-align: right; font-size: 16px; font-weight: bold; margin-top: 20px; color: #166534; border-top: 2px solid #166534; padding-top: 10px; }
+                      .total { text-align: right; font-size: 16px; font-weight: bold; margin-top: 20px; color: #DC2626; border-top: 2px solid #DC2626; padding-top: 10px; }
                     </style>
                   </head>
                   <body>
                     <h1>HOJA DE COBRANZA</h1>
                     <div class="header">
-                      <p>Vendedor: <strong>${vendorName}</strong> | Fecha: ${fechaReporte}</p>
+                      <p>Fecha: <strong>${fechaReporte}</strong> | Total pendiente: <strong>Bs ${totalGeneral.toFixed(2)}</strong></p>
                     </div>
                     <table>
                       <thead>
                         <tr>
-                          <th width="35%">CLIENTE</th>
-                          <th width="15%">DOC</th>
-                          <th width="15%">FECHA</th>
-                          <th width="10%" style="text-align: center">DIAS</th>
-                          <th width="25%" style="text-align: right">SALDO</th>
+                          <th width="28%">CLIENTE / DOC</th>
+                          <th width="12%">FECHA</th>
+                          <th width="15%" style="text-align:right">TOTAL</th>
+                          <th width="15%" style="text-align:right">PAGADO</th>
+                          <th width="10%" style="text-align:center">MORA</th>
+                          <th width="20%" style="text-align:right">SALDO</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -177,16 +102,14 @@ export default function HojaCobranzaScreen() {
                       </tbody>
                     </table>
                     <div class="total">
-                      TOTAL POR COBRAR: Bs ${totalGeneral.toFixed(2)}
+                      TOTAL CARTERA PENDIENTE: Bs ${totalGeneral.toFixed(2)}
                     </div>
                   </body>
                 </html>
             `;
 
-            // 2. Generar PDF
             const { uri } = await Print.printToFileAsync({ html });
 
-            // 3. Compartir/Guardar PDF (funciona en Android e iOS)
             await Sharing.shareAsync(uri, {
                 UTI: '.pdf',
                 mimeType: 'application/pdf',
@@ -194,27 +117,27 @@ export default function HojaCobranzaScreen() {
             });
 
         } catch (error) {
-            Alert.alert("Error", "No se pudo generar el PDF");
+            Alert.alert('Error', 'No se pudo generar el PDF');
             console.error(error);
         }
     };
 
     const handleLlamar = (telefono: string) => {
-        if (telefono) Linking.openURL(`tel:${telefono}`);
-        else Alert.alert("Aviso", "El cliente no tiene teléfono registrado en el sistema antiguo.");
+        if (telefono) {
+            Linking.openURL(`tel:${telefono}`);
+        } else {
+            Alert.alert('Aviso', 'Este cliente no tiene teléfono registrado.');
+        }
     };
 
     const renderItem = ({ item }: { item: Deuda }) => (
         <View style={[styles.card, { backgroundColor: colors.cardBg, borderColor: isDark ? colors.cardBorder : 'transparent' }]}>
 
-            {/* Cabecera */}
+            {/* Cabecera: nombre + saldo pendiente */}
             <View style={styles.cardHeader}>
                 <View style={{ flex: 1, paddingRight: 10 }}>
                     <Text style={[styles.clientName, { color: colors.textMain }]}>{item.cliente.nombre}</Text>
-                    <View style={styles.zoneBadge}>
-                        <Ionicons name="map" size={10} color="#fff" style={{ marginRight: 4 }} />
-                        <Text style={styles.zoneText}>{item.cliente.zona}</Text>
-                    </View>
+                    <Text style={[styles.nroDoc, { color: colors.textSub }]}>Doc: {item.nro_doc}</Text>
                 </View>
                 <View style={styles.amountBox}>
                     <Text style={styles.labelAmount}>SALDO PENDIENTE</Text>
@@ -224,15 +147,15 @@ export default function HojaCobranzaScreen() {
 
             <View style={[styles.divider, { backgroundColor: isDark ? '#444' : '#F3F4F6' }]} />
 
-            {/* Detalles */}
+            {/* Desglose: Total venta | Pagado | Días mora */}
             <View style={styles.detailsRow}>
                 <View style={styles.detailBox}>
-                    <Text style={styles.labelDetail}>DOCUMENTO</Text>
-                    <Text style={[styles.valueDetail, { color: colors.textMain }]}>{item.nro_doc}</Text>
+                    <Text style={styles.labelDetail}>TOTAL VENTA</Text>
+                    <Text style={[styles.valueDetail, { color: colors.textMain }]}>Bs {item.monto_total.toFixed(2)}</Text>
                 </View>
                 <View style={styles.detailBoxCenter}>
-                    <Text style={styles.labelDetail}>FECHA CRÉDITO</Text>
-                    <Text style={[styles.valueDetail, { color: colors.textMain }]}>{item.fecha}</Text>
+                    <Text style={styles.labelDetail}>PAGADO</Text>
+                    <Text style={[styles.valueDetail, { color: '#10B981' }]}>Bs {item.monto_pagado.toFixed(2)}</Text>
                 </View>
                 <View style={styles.detailBoxRight}>
                     <Text style={styles.labelDetail}>MORA</Text>
@@ -244,14 +167,17 @@ export default function HojaCobranzaScreen() {
                 </View>
             </View>
 
-            {/* Dirección */}
+            {/* Fecha de venta */}
             <View style={styles.addressRow}>
-                <Ionicons name="location-outline" size={14} color={colors.textSub} style={{ marginTop: 2 }} />
-                <Text style={[styles.addressText, { color: colors.textSub }]}>{item.cliente.direccion}</Text>
+                <Ionicons name="calendar-outline" size={14} color={colors.textSub} style={{ marginTop: 2 }} />
+                <Text style={[styles.addressText, { color: colors.textSub }]}>Fecha de venta: {item.fecha}</Text>
             </View>
 
-            {/* Botón */}
-            <TouchableOpacity style={styles.callButton} onPress={() => handleLlamar(item.cliente.telefono)}>
+            {/* Botón llamar (si tiene teléfono) */}
+            <TouchableOpacity
+                style={styles.callButton}
+                onPress={() => handleLlamar(item.cliente.telefono)}
+            >
                 <Ionicons name="call" size={16} color="#4B5563" />
                 <Text style={styles.callButtonText}>Contactar Cliente</Text>
             </TouchableOpacity>
@@ -282,10 +208,12 @@ export default function HojaCobranzaScreen() {
                         </View>
                     </View>
 
+                    {/* Tarjeta resumen total */}
                     <View style={styles.totalFloatingCard}>
                         <View>
-                            <Text style={styles.totalLabel}>TOTAL CARTERA</Text>
+                            <Text style={styles.totalLabel}>TOTAL CARTERA PENDIENTE</Text>
                             <Text style={styles.totalValue}>Bs {totalGeneral.toFixed(2)}</Text>
+                            <Text style={styles.totalSub}>{deudas.length} cliente(s) con saldo</Text>
                         </View>
                         <View style={styles.iconCircle}>
                             <MaterialCommunityIcons name="finance" size={32} color={colors.brandGreen} />
@@ -310,7 +238,9 @@ export default function HojaCobranzaScreen() {
                             <View style={styles.emptyContainer}>
                                 <Ionicons name="checkmark-circle-outline" size={80} color="#10B981" />
                                 <Text style={[styles.emptyTitle, { color: colors.textMain }]}>Cartera Limpia</Text>
-                                <Text style={{ color: colors.textSub, marginTop: 5 }}>No hay cuentas pendientes por cobrar.</Text>
+                                <Text style={{ color: colors.textSub, marginTop: 5, textAlign: 'center' }}>
+                                    No hay cuentas pendientes por cobrar.
+                                </Text>
                             </View>
                         }
                     />
@@ -321,24 +251,24 @@ export default function HojaCobranzaScreen() {
 }
 
 const styles = StyleSheet.create({
-    headerGradient: { height: 190, borderBottomLeftRadius: 35, borderBottomRightRadius: 35, paddingHorizontal: 20, position: 'absolute', top: 0, width: '100%', zIndex: 10 },
+    headerGradient: { height: 210, borderBottomLeftRadius: 35, borderBottomRightRadius: 35, paddingHorizontal: 20, position: 'absolute', top: 0, width: '100%', zIndex: 10 },
     headerContent: { flex: 1 },
     navBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 },
     iconBtn: { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center' },
     headerTitle: { fontSize: 18, fontWeight: '800', color: '#fff' },
 
-    totalFloatingCard: { position: 'absolute', bottom: -45, left: 20, right: 20, backgroundColor: '#fff', borderRadius: 24, padding: 24, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.1, shadowRadius: 12, elevation: 10 },
+    totalFloatingCard: { position: 'absolute', bottom: -50, left: 20, right: 20, backgroundColor: '#fff', borderRadius: 24, padding: 24, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.1, shadowRadius: 12, elevation: 10 },
     totalLabel: { fontSize: 11, color: '#9CA3AF', fontWeight: '800', letterSpacing: 1 },
-    totalValue: { fontSize: 26, fontWeight: '900', color: '#1F2937', marginTop: 4 },
+    totalValue: { fontSize: 26, fontWeight: '900', color: '#DC2626', marginTop: 4 },
+    totalSub: { fontSize: 11, color: '#9CA3AF', marginTop: 2 },
     iconCircle: { width: 55, height: 55, borderRadius: 28, backgroundColor: '#F0FDF4', justifyContent: 'center', alignItems: 'center' },
 
-    listWrapper: { flex: 1, marginTop: 140 },
+    listWrapper: { flex: 1, marginTop: 160 },
 
     card: { borderRadius: 24, padding: 24, borderWidth: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 3 },
     cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-    clientName: { fontSize: 17, fontWeight: '800', marginBottom: 6 },
-    zoneBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#4B5563', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, alignSelf: 'flex-start' },
-    zoneText: { color: '#fff', fontSize: 10, fontWeight: '700', textTransform: 'uppercase' },
+    clientName: { fontSize: 17, fontWeight: '800', marginBottom: 4 },
+    nroDoc: { fontSize: 12, marginBottom: 2 },
 
     amountBox: { alignItems: 'flex-end' },
     labelAmount: { fontSize: 10, color: '#EF4444', fontWeight: '800' },
@@ -362,6 +292,6 @@ const styles = StyleSheet.create({
     callButton: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 14, borderRadius: 14, borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: '#F9FAFB', gap: 8 },
     callButtonText: { fontSize: 14, fontWeight: '700', color: '#374151' },
 
-    emptyContainer: { alignItems: 'center', marginTop: 60, opacity: 0.6 },
+    emptyContainer: { alignItems: 'center', marginTop: 60, opacity: 0.6, paddingHorizontal: 40 },
     emptyTitle: { fontSize: 20, fontWeight: 'bold', marginTop: 15 },
 });

@@ -1,64 +1,83 @@
 import { supabase } from '../lib/supabase';
-import { Deuda, PedidoCobranza } from '../types/Cobranza.interface';
+import { CuentaPendiente, Deuda } from '../types/Cobranza.interface';
 
 export const reporteService = {
-    async getHojaCobranza(vendedorId: string) {
+    /**
+     * Obtiene todas las cuentas pendientes de la tabla cuentas_pendientes.
+     * La vista es de sólo lectura: se muestran los créditos sin saldar,
+     * sin posibilidad de registrar pagos desde la app.
+     */
+    async getHojaCobranza(): Promise<Deuda[]> {
         try {
-            // 1. Buscamos pedidos a CRÉDITO que estén PENDIENTES
+            // Consultamos directamente la tabla cuentas_pendientes
+            // Solo traemos filas con saldo_pendiente > 0 y ordenamos por fecha_venta
             const { data, error } = await supabase
-                .from('pedidos')
+                .from('cuentas_pendientes')
                 .select(`
                     id,
-                    fecha_pedido,
+                    legacy_id_venta,
                     numero_documento,
-                    total_venta,
-                    clients (
-                        name,
-                        address,
-                        zone_name,
-                        phones
-                    )`)
-                .eq('empleado_id', vendedorId) // Solo de este vendedor
-                .eq('tipo_pago', 'Crédito')    // Solo créditos
-                .neq('estado', 'Pagado')       // Que deban dinero
-                .order('fecha_pedido', { ascending: true }); // Los más antiguos primero
+                    fecha_venta,
+                    client_id,
+                    nombre_cliente,
+                    monto_total,
+                    monto_pagado,
+                    saldo_pendiente
+                `)
+                .gt('saldo_pendiente', 0)          // Solo cuentas con deuda real
+                .order('fecha_venta', { ascending: true }); // Las más antiguas primero
 
             if (error) throw error;
             if (!data) return [];
 
-            // 2. Procesamos los datos para calcular la mora
-            const deudas: Deuda[] = data.map((item: PedidoCobranza) => {
-                // Calcular días de mora
-                const fechaPedido = new Date(item.fecha_pedido);
-                const hoy = new Date();
-                const diferenciaTiempo = Math.abs(hoy.getTime() - fechaPedido.getTime());
-                const diasMora = Math.ceil(diferenciaTiempo / (1000 * 60 * 60 * 24));
+            const hoy = new Date();
 
-                // Extraer información del cliente de forma segura
-                const clienteData = item.clients && item.clients.length > 0 ? item.clients[0] : null;
+            const deudas: Deuda[] = (data as CuentaPendiente[]).map((item) => {
+                // Calcular días de mora desde la fecha de la venta
+                const fechaVenta = item.fecha_venta ? new Date(item.fecha_venta) : hoy;
+                const diferenciaTiempo = Math.abs(hoy.getTime() - fechaVenta.getTime());
+                const diasMora = Math.ceil(diferenciaTiempo / (1000 * 60 * 60 * 24));
 
                 return {
                     id: item.id,
-                    fecha: new Date(item.fecha_pedido).toLocaleDateString(),
-                    nro_doc: item.numero_documento,
-                    total: item.total_venta,
-                    // Si tuvieras pagos parciales, aquí restarías lo pagado. 
-                    // Por ahora asumimos que debe todo el total.
-                    saldo: item.total_venta,
+                    fecha: fechaVenta.toLocaleDateString('es-BO'),
+                    nro_doc: item.numero_documento || `#${item.legacy_id_venta}`,
+                    monto_total: item.monto_total,
+                    monto_pagado: item.monto_pagado,
+                    saldo: item.saldo_pendiente,
                     dias_mora: diasMora,
                     cliente: {
-                        nombre: clienteData?.name || 'Cliente Desconocido',
-                        direccion: clienteData?.address || 'Sin dirección',
-                        zona: clienteData?.zone_name || 'General',
-                        telefono: clienteData?.phones || ''
-                    }
+                        nombre: item.nombre_cliente || 'Cliente Desconocido',
+                        telefono: '',
+                    },
                 };
             });
 
             return deudas;
         } catch (error) {
-            console.error('Error obteniendo cobranza:', error);
+            console.error('Error obteniendo cobranza desde cuentas_pendientes:', error);
             return [];
         }
-    }
+    },
+
+    /**
+     * Calcula el total de cartera (suma de todos los saldos pendientes).
+     */
+    async getTotalCartera(): Promise<number> {
+        try {
+            const { data, error } = await supabase
+                .from('cuentas_pendientes')
+                .select('saldo_pendiente')
+                .gt('saldo_pendiente', 0);
+
+            if (error) throw error;
+            if (!data) return 0;
+
+            return (data as Pick<CuentaPendiente, 'saldo_pendiente'>[])
+                .reduce((acc, row) => acc + (row.saldo_pendiente || 0), 0);
+        } catch (error) {
+            console.error('Error calculando total cartera:', error);
+            return 0;
+        }
+    },
 };

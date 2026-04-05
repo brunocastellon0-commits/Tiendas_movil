@@ -241,7 +241,21 @@ export default function NuevoPedido() {
 
       console.log('[NuevoPedido] Detalles guardados exitosamente:', detailsData.length, 'filas');
 
-      // Mostrar modal de éxito con countdown de 5 segundos
+      // ── Actualizar stock local para reflejar el descuento inmediatamente ──
+      // El trigger de Supabase ya descontó en la BD; aquí actualizamos la UI
+      // para que el vendedor vea el stock correcto sin recargar la pantalla.
+      setProducts(prev =>
+        prev.map(p => {
+          const itemVendido = validItems.find(vi => vi.id === p.id);
+          if (!itemVendido) return p;
+          return {
+            ...p,
+            stock_actual: Math.max(0, p.stock_actual - itemVendido.qty),
+          };
+        })
+      );
+
+      // Mostrar modal de éxito
       showSuccessModal();
 
     } catch (error: any) {

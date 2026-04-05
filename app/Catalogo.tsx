@@ -1,263 +1,337 @@
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import * as DocumentPicker from 'expo-document-picker';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import {
-    ActivityIndicator, Alert, FlatList, Modal,
-    StatusBar, StyleSheet, Text, TouchableOpacity, View,
+    ActivityIndicator,
+    Alert,
+    Dimensions,
+    FlatList,
+    Linking,
+    Modal,
+    StatusBar,
+    StyleSheet,
+    Switch,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from 'react-native';
-import Pdf from 'react-native-pdf';           // npx expo install react-native-pdf
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from 'expo-router';
-import { useAuth } from '../../contexts/AuthContext';
-import { useTheme } from '../../contexts/ThemeContext';
-import { supabase } from '../../lib/supabase';
+import { WebView } from 'react-native-webview';
+import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../contexts/ThemeContext';
+import { catalogoService } from '../services/CatalogoService';
+import { CatalogoPDF } from '../types/Catalogo.interface';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// PANTALLA: Catálogo
-// Ruta: app/catalogo/Catalogo.tsx
-//
-// Admin:   puede subir PDFs a Supabase Storage → tabla catalogo_archivos
-// Vendedor: solo puede abrir/ver los PDFs (visor tipo librito nativo)
-//
-// Tabla necesaria en Supabase:
-//   CREATE TABLE catalogo_archivos (
-//     id          uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-//     titulo      text NOT NULL,
-//     url_pdf     text NOT NULL,
-//     storage_path text NOT NULL,
-//     subido_por  uuid REFERENCES employees(id),
-//     created_at  timestamptz DEFAULT now()
-//   );
-//
-//   -- Storage bucket público (o con policy de lectura autenticada):
-//   -- bucket name: 'catalogos'
-// ─────────────────────────────────────────────────────────────────────────────
-
-interface Archivo {
-    id: string;
-    titulo: string;
-    url_pdf: string;
-    storage_path: string;
-    created_at: string;
-}
+const { width, height } = Dimensions.get('window');
 
 export default function CatalogoScreen() {
     const router = useRouter();
     const { colors, isDark } = useTheme();
     const { isAdmin } = useAuth();
 
-    const [archivos, setArchivos] = useState<Archivo[]>([]);
+    // ── Estado de la lista ────────────────────────────────────────────────────
+    const [catalogos, setCatalogos] = useState<CatalogoPDF[]>([]);
     const [loading, setLoading] = useState(true);
     const [uploading, setUploading] = useState(false);
+    const [togglingId, setTogglingId] = useState<string | null>(null);
 
-    // Visor PDF
+    // ── Estado del visor PDF ──────────────────────────────────────────────────
     const [pdfVisible, setPdfVisible] = useState(false);
     const [pdfUrl, setPdfUrl] = useState('');
     const [pdfTitle, setPdfTitle] = useState('');
     const [pdfLoading, setPdfLoading] = useState(false);
 
-    useFocusEffect(useCallback(() => { cargarArchivos(); }, []));
+    // ── Estado del modal "Agregar catálogo" ───────────────────────────────────
+    const [addModalVisible, setAddModalVisible] = useState(false);
+    const [addMode, setAddMode] = useState<'pdf' | 'link'>('pdf');
+    const [nuevoTitulo, setNuevoTitulo] = useState('');
+    const [nuevoLink, setNuevoLink] = useState('');
 
-    const cargarArchivos = async () => {
+    // ── Carga de datos ────────────────────────────────────────────────────────
+    const cargarCatalogos = useCallback(async () => {
         try {
             setLoading(true);
-            const { data, error } = await supabase
-                .from('catalogo_archivos')
-                .select('id, titulo, url_pdf, storage_path, created_at')
-                .order('created_at', { ascending: false });
-            if (error) throw error;
-            setArchivos(data || []);
+            const data = await catalogoService.listar(isAdmin);
+            setCatalogos(data);
         } catch (e: any) {
-            Alert.alert('Error', e.message);
+            Alert.alert('Error', e.message || 'No se pudieron cargar los catálogos.');
         } finally {
             setLoading(false);
         }
-    };
+    }, [isAdmin]);
 
-    // ── Subir PDF (solo admin) ─────────────────────────────────────────────────
-    const subirPDF = async () => {
+    useFocusEffect(useCallback(() => { cargarCatalogos(); }, [cargarCatalogos]));
+
+    // ── Handlers ──────────────────────────────────────────────────────────────
+    const handleSubirPDF = async () => {
+        if (!nuevoTitulo.trim()) {
+            Alert.alert('Aviso', 'Escribe un título para el catálogo antes de continuar.');
+            return;
+        }
         try {
-            const result = await DocumentPicker.getDocumentAsync({
-                type: 'application/pdf',
-                copyToCacheDirectory: true,
-            });
-
-            if (result.canceled || !result.assets?.[0]) return;
-
-            const asset = result.assets[0];
-            const fileName = asset.name || `catalogo_${Date.now()}.pdf`;
-            const storagePath = `catalogos/${Date.now()}_${fileName}`;
-
             setUploading(true);
-
-            // Leer el archivo como ArrayBuffer
-            const response = await fetch(asset.uri);
-            const blob = await response.blob();
-
-            // Subir a Supabase Storage
-            const { error: uploadError } = await supabase.storage
-                .from('catalogos')
-                .upload(storagePath, blob, { contentType: 'application/pdf', upsert: false });
-
-            if (uploadError) throw uploadError;
-
-            // Obtener URL pública
-            const { data: urlData } = supabase.storage
-                .from('catalogos')
-                .getPublicUrl(storagePath);
-
-            const urlPublica = urlData.publicUrl;
-
-            // Guardar en la tabla
-            const { error: dbError } = await supabase.from('catalogo_archivos').insert({
-                titulo: fileName.replace('.pdf', '').replace(/_/g, ' '),
-                url_pdf: urlPublica,
-                storage_path: storagePath,
-            });
-
-            if (dbError) throw dbError;
-
-            Alert.alert('✅ Subido', 'El catálogo se subió correctamente.');
-            cargarArchivos();
-
+            setAddModalVisible(false);
+            const subido = await catalogoService.subirPDF(nuevoTitulo);
+            if (subido) {
+                Alert.alert('✅ Subido', `"${nuevoTitulo.trim()}" se subió correctamente.`);
+                resetForm();
+                cargarCatalogos();
+            }
         } catch (e: any) {
-            Alert.alert('Error al subir', e.message);
+            Alert.alert('Error al subir', e.message || 'Ocurrió un error.');
         } finally {
             setUploading(false);
         }
     };
 
-    // ── Eliminar PDF (solo admin) ──────────────────────────────────────────────
-    const eliminarArchivo = (archivo: Archivo) => {
-        Alert.alert('¿Eliminar catálogo?', `Se eliminará "${archivo.titulo}" permanentemente.`, [
-            { text: 'Cancelar', style: 'cancel' },
-            {
-                text: 'Eliminar', style: 'destructive', onPress: async () => {
-                    try {
-                        await supabase.storage.from('catalogos').remove([archivo.storage_path]);
-                        await supabase.from('catalogo_archivos').delete().eq('id', archivo.id);
-                        cargarArchivos();
-                    } catch (e: any) {
-                        Alert.alert('Error', e.message);
-                    }
-                },
-            },
-        ]);
+    const handleGuardarLink = async () => {
+        if (!nuevoTitulo.trim()) {
+            Alert.alert('Aviso', 'Escribe un título para el catálogo.');
+            return;
+        }
+        if (!nuevoLink.trim().startsWith('http')) {
+            Alert.alert('Aviso', 'Ingresa un link válido (debe empezar con http:// o https://).');
+            return;
+        }
+        try {
+            setUploading(true);
+            setAddModalVisible(false);
+            await catalogoService.guardarLink(nuevoTitulo, nuevoLink);
+            Alert.alert('✅ Guardado', `"${nuevoTitulo.trim()}" se guardó correctamente.`);
+            resetForm();
+            cargarCatalogos();
+        } catch (e: any) {
+            Alert.alert('Error', e.message || 'No se pudo guardar el link.');
+        } finally {
+            setUploading(false);
+        }
     };
 
-    // ── Abrir visor ────────────────────────────────────────────────────────────
-    const abrirPDF = (archivo: Archivo) => {
-        setPdfUrl(archivo.url_pdf);
-        setPdfTitle(archivo.titulo);
+    const handleToggleActivo = async (catalogo: CatalogoPDF) => {
+        try {
+            setTogglingId(catalogo.id);
+            await catalogoService.toggleActivo(catalogo.id, catalogo.activo);
+            // Actualización optimista local
+            setCatalogos(prev =>
+                prev.map(c => c.id === catalogo.id ? { ...c, activo: !c.activo } : c)
+            );
+        } catch (e: any) {
+            Alert.alert('Error', e.message);
+        } finally {
+            setTogglingId(null);
+        }
+    };
+
+    const handleEliminar = (catalogo: CatalogoPDF) => {
+        Alert.alert(
+            '¿Eliminar catálogo?',
+            `Se eliminará "${catalogo.titulo}" permanentemente. Esta acción no se puede deshacer.`,
+            [
+                { text: 'Cancelar', style: 'cancel' },
+                {
+                    text: 'Eliminar', style: 'destructive', onPress: async () => {
+                        try {
+                            await catalogoService.eliminar(catalogo);
+                            setCatalogos(prev => prev.filter(c => c.id !== catalogo.id));
+                        } catch (e: any) {
+                            Alert.alert('Error', e.message);
+                        }
+                    },
+                },
+            ]
+        );
+    };
+
+    const abrirVisor = (catalogo: CatalogoPDF) => {
+        setPdfUrl(catalogo.archivo_url);
+        setPdfTitle(catalogo.titulo);
+        setPdfLoading(true);
         setPdfVisible(true);
+    };
+
+    const resetForm = () => {
+        setNuevoTitulo('');
+        setNuevoLink('');
+        setAddMode('pdf');
     };
 
     const formatFecha = (iso: string) =>
         new Date(iso).toLocaleDateString('es-BO', { day: '2-digit', month: 'short', year: 'numeric' });
 
-    const renderItem = ({ item }: { item: Archivo }) => (
-        <TouchableOpacity
-            style={[styles.card, { backgroundColor: colors.cardBg, borderColor: isDark ? colors.cardBorder : 'transparent', borderWidth: isDark ? 1 : 0 }]}
-            onPress={() => abrirPDF(item)}
-            activeOpacity={0.85}
-        >
-            <View style={[styles.cardIcon, { backgroundColor: '#FEF2F2' }]}>
-                <MaterialCommunityIcons name="file-pdf-box" size={36} color="#EF4444" />
-            </View>
+    // ── Render item ───────────────────────────────────────────────────────────
+    const renderItem = ({ item }: { item: CatalogoPDF }) => {
+        const isLink = !item.storage_path;
 
-            <View style={{ flex: 1 }}>
-                <Text style={[styles.cardTitle, { color: colors.textMain }]} numberOfLines={2}>
-                    {item.titulo}
-                </Text>
-                <Text style={[styles.cardDate, { color: colors.textSub }]}>
-                    {formatFecha(item.created_at)}
-                </Text>
-            </View>
+        return (
+            <View style={[
+                styles.card,
+                {
+                    backgroundColor: colors.cardBg,
+                    borderColor: isDark ? colors.cardBorder : 'transparent',
+                    borderWidth: isDark ? 1 : 0,
+                },
+            ]}>
+                {/* Ícono tipo (PDF ó Link) */}
+                <View style={[styles.cardIcon, { backgroundColor: isLink ? '#EFF6FF' : '#FEF2F2' }]}>
+                    <MaterialCommunityIcons
+                        name={isLink ? 'link-variant' : 'file-pdf-box'}
+                        size={36}
+                        color={isLink ? '#3B82F6' : '#EF4444'}
+                    />
+                </View>
 
-            <View style={{ alignItems: 'flex-end', gap: 8 }}>
-                <TouchableOpacity
-                    style={[styles.openBtn, { backgroundColor: `${colors.brandGreen}15` }]}
-                    onPress={() => abrirPDF(item)}
-                >
-                    <Ionicons name="book-outline" size={16} color={colors.brandGreen} />
-                    <Text style={[styles.openBtnText, { color: colors.brandGreen }]}>Ver</Text>
-                </TouchableOpacity>
+                {/* Info */}
+                <View style={{ flex: 1 }}>
+                    <Text style={[styles.cardTitle, { color: colors.textMain }]} numberOfLines={2}>
+                        {item.titulo}
+                    </Text>
+                    <Text style={[styles.cardDate, { color: colors.textSub }]}>
+                        {formatFecha(item.created_at)} · {isLink ? 'Link externo' : 'PDF'}
+                    </Text>
 
-                {isAdmin && (
+                    {/* Badge activo/inactivo — solo visible para el admin */}
+                    {isAdmin && (
+                        <View style={[
+                            styles.activoBadge,
+                            { backgroundColor: item.activo ? '#DCFCE7' : '#F1F5F9' },
+                        ]}>
+                            <View style={[
+                                styles.activoDot,
+                                { backgroundColor: item.activo ? '#22C55E' : '#94A3B8' },
+                            ]} />
+                            <Text style={[
+                                styles.activoText,
+                                { color: item.activo ? '#15803D' : '#64748B' },
+                            ]}>
+                                {item.activo ? 'Activo' : 'Inactivo'}
+                            </Text>
+                        </View>
+                    )}
+                </View>
+
+                {/* Acciones */}
+                <View style={styles.cardActions}>
+                    {/* Botón Ver */}
                     <TouchableOpacity
-                        style={[styles.deleteBtn, { backgroundColor: '#FEF2F2' }]}
-                        onPress={() => eliminarArchivo(item)}
+                        style={[styles.verBtn, { backgroundColor: `${colors.brandGreen}18` }]}
+                        onPress={() => abrirVisor(item)}
                     >
-                        <Ionicons name="trash-outline" size={14} color="#EF4444" />
+                        <Ionicons name="book-outline" size={16} color={colors.brandGreen} />
+                        <Text style={[styles.verBtnText, { color: colors.brandGreen }]}>Ver</Text>
                     </TouchableOpacity>
-                )}
-            </View>
-        </TouchableOpacity>
-    );
 
+                    {/* Controles exclusivos del admin */}
+                    {isAdmin && (
+                        <View style={styles.adminActions}>
+                            {togglingId === item.id ? (
+                                <ActivityIndicator size="small" color={colors.brandGreen} />
+                            ) : (
+                                <Switch
+                                    value={item.activo}
+                                    onValueChange={() => handleToggleActivo(item)}
+                                    trackColor={{ false: '#CBD5E1', true: `${colors.brandGreen}80` }}
+                                    thumbColor={item.activo ? colors.brandGreen : '#94A3B8'}
+                                    style={{ transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] }}
+                                />
+                            )}
+                            <TouchableOpacity
+                                style={styles.deleteBtn}
+                                onPress={() => handleEliminar(item)}
+                            >
+                                <Ionicons name="trash-outline" size={15} color="#EF4444" />
+                            </TouchableOpacity>
+                        </View>
+                    )}
+                </View>
+            </View>
+        );
+    };
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // RENDER PRINCIPAL
+    // ─────────────────────────────────────────────────────────────────────────
     return (
         <View style={{ flex: 1, backgroundColor: colors.bgStart }}>
             <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
-            {/* HEADER */}
-            <LinearGradient colors={[colors.brandGreen, '#166534']} style={styles.headerGradient}>
+            {/* ── HEADER ── */}
+            <LinearGradient colors={[colors.brandGreen, '#14532d']} style={styles.headerGradient}>
                 <SafeAreaView edges={['top']} style={styles.headerContent}>
                     <View style={styles.navBar}>
                         <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
                             <Ionicons name="arrow-back" size={24} color="#fff" />
                         </TouchableOpacity>
-                        <Text style={styles.headerTitle}>Catálogo de Productos</Text>
+                        <View style={{ flex: 1, alignItems: 'center' }}>
+                            <Text style={styles.headerTitle}>Catálogo</Text>
+                            <Text style={styles.headerSub}>
+                                {isAdmin
+                                    ? `${catalogos.length} catálogo(s) registrado(s)`
+                                    : 'Catálogo de productos'}
+                            </Text>
+                        </View>
                         {isAdmin ? (
                             <TouchableOpacity
-                                style={[styles.iconBtn, { backgroundColor: 'rgba(255,255,255,0.2)' }]}
-                                onPress={subirPDF}
+                                style={[styles.iconBtn, { backgroundColor: 'rgba(255,255,255,0.25)' }]}
+                                onPress={() => setAddModalVisible(true)}
                                 disabled={uploading}
                             >
                                 {uploading
                                     ? <ActivityIndicator color="#fff" size="small" />
-                                    : <Ionicons name="cloud-upload-outline" size={22} color="#fff" />}
+                                    : <Ionicons name="add" size={26} color="#fff" />}
                             </TouchableOpacity>
                         ) : (
-                            <View style={{ width: 40 }} />
+                            <View style={{ width: 44 }} />
                         )}
                     </View>
 
+                    {/* Banner de acción rápida para admin */}
                     {isAdmin && (
                         <TouchableOpacity
                             style={styles.uploadBanner}
-                            onPress={subirPDF}
+                            onPress={() => setAddModalVisible(true)}
                             disabled={uploading}
                         >
-                            <Ionicons name="add-circle-outline" size={18} color="rgba(255,255,255,0.9)" />
+                            <Ionicons name="cloud-upload-outline" size={18} color="rgba(255,255,255,0.9)" />
                             <Text style={styles.uploadBannerText}>
-                                {uploading ? 'Subiendo...' : 'Subir nuevo catálogo PDF'}
+                                {uploading ? 'Procesando...' : 'Subir nuevo catálogo (PDF o link)'}
                             </Text>
+                            <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.6)" />
                         </TouchableOpacity>
                     )}
                 </SafeAreaView>
             </LinearGradient>
 
-            {/* LISTA */}
+            {/* ── LISTA ── */}
             <View style={styles.body}>
                 {loading ? (
                     <View style={styles.center}>
                         <ActivityIndicator size="large" color={colors.brandGreen} />
+                        <Text style={[styles.centerText, { color: colors.textSub }]}>Cargando catálogos...</Text>
                     </View>
                 ) : (
                     <FlatList
-                        data={archivos}
+                        data={catalogos}
                         keyExtractor={i => i.id}
                         renderItem={renderItem}
                         contentContainerStyle={styles.listContent}
                         showsVerticalScrollIndicator={false}
                         ListEmptyComponent={
                             <View style={styles.emptyContainer}>
-                                <MaterialCommunityIcons name="book-open-page-variant-outline" size={64} color={colors.textSub} style={{ opacity: 0.4 }} />
-                                <Text style={[styles.emptyTitle, { color: colors.textMain }]}>Sin catálogos</Text>
+                                <MaterialCommunityIcons
+                                    name="book-open-page-variant-outline"
+                                    size={72}
+                                    color={colors.textSub}
+                                    style={{ opacity: 0.35 }}
+                                />
+                                <Text style={[styles.emptyTitle, { color: colors.textMain }]}>
+                                    {isAdmin ? 'Sin catálogos' : 'Sin catálogo disponible'}
+                                </Text>
                                 <Text style={[styles.emptySub, { color: colors.textSub }]}>
-                                    {isAdmin ? 'Sube el primer catálogo con el botón de arriba.' : 'Aún no hay catálogos disponibles.'}
+                                    {isAdmin
+                                        ? 'Toca el botón "+" para subir el primer catálogo.'
+                                        : 'El administrador aún no ha publicado ningún catálogo.'}
                                 </Text>
                             </View>
                         }
@@ -265,82 +339,264 @@ export default function CatalogoScreen() {
                 )}
             </View>
 
-            {/* ── VISOR PDF (tipo librito) ── */}
-            <Modal visible={pdfVisible} animationType="slide" onRequestClose={() => setPdfVisible(false)}>
-                <View style={styles.pdfContainer}>
-                    {/* Header del visor */}
-                    <SafeAreaView edges={['top']} style={[styles.pdfHeader, { backgroundColor: colors.brandGreen }]}>
-                        <TouchableOpacity onPress={() => setPdfVisible(false)} style={styles.pdfBackBtn}>
-                            <Ionicons name="close" size={24} color="#fff" />
-                        </TouchableOpacity>
-                        <Text style={styles.pdfTitle} numberOfLines={1}>{pdfTitle}</Text>
-                        <View style={{ width: 40 }} />
-                    </SafeAreaView>
+            {/* ── MODAL AGREGAR CATÁLOGO (solo admin) ── */}
+            <Modal
+                visible={addModalVisible}
+                transparent
+                animationType="slide"
+                onRequestClose={() => { setAddModalVisible(false); resetForm(); }}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.modalContent, { backgroundColor: colors.cardBg }]}>
 
-                    {/* Visor nativo con efecto de página */}
-                    {pdfUrl ? (
-                        <Pdf
-                            source={{ uri: pdfUrl, cache: true }}
-                            style={styles.pdf}
-                            onLoadBegin={() => setPdfLoading(true)}
-                            onLoadComplete={() => setPdfLoading(false)}
-                            onError={(e) => {
-                                setPdfLoading(false);
-                                Alert.alert('Error', 'No se pudo cargar el PDF: ' + e);
-                            }}
-                            enablePaging        // ← efecto de pasar páginas tipo librito
-                            horizontal          // ← deslizar horizontal como un libro
-                            fitPolicy={0}       // ajustar al ancho
-                            renderActivityIndicator={() => (
-                                <ActivityIndicator size="large" color={colors.brandGreen} />
-                            )}
-                        />
-                    ) : null}
-
-                    {pdfLoading && (
-                        <View style={styles.pdfLoadingOverlay}>
-                            <ActivityIndicator size="large" color={colors.brandGreen} />
-                            <Text style={{ color: colors.textSub, marginTop: 10 }}>Cargando catálogo...</Text>
+                        {/* Cabecera */}
+                        <View style={styles.modalHeader}>
+                            <Text style={[styles.modalTitle, { color: colors.textMain }]}>Nuevo catálogo</Text>
+                            <TouchableOpacity onPress={() => { setAddModalVisible(false); resetForm(); }}>
+                                <Ionicons name="close" size={24} color={colors.textSub} />
+                            </TouchableOpacity>
                         </View>
-                    )}
+
+                        {/* Título */}
+                        <Text style={[styles.inputLabel, { color: colors.textSub }]}>Título del catálogo *</Text>
+                        <TextInput
+                            style={[styles.input, {
+                                backgroundColor: isDark ? '#1F2937' : '#F8FAFC',
+                                color: colors.textMain,
+                                borderColor: isDark ? colors.cardBorder : '#E2E8F0',
+                            }]}
+                            placeholder="Ej: Catálogo Invierno 2026"
+                            placeholderTextColor={colors.textSub}
+                            value={nuevoTitulo}
+                            onChangeText={setNuevoTitulo}
+                        />
+
+                        {/* Selector PDF / Link */}
+                        <View style={styles.modeSelector}>
+                            <TouchableOpacity
+                                style={[styles.modeBtn, addMode === 'pdf' && { backgroundColor: colors.brandGreen }]}
+                                onPress={() => setAddMode('pdf')}
+                            >
+                                <MaterialCommunityIcons
+                                    name="file-pdf-box"
+                                    size={18}
+                                    color={addMode === 'pdf' ? '#fff' : colors.textSub}
+                                />
+                                <Text style={[styles.modeBtnText, { color: addMode === 'pdf' ? '#fff' : colors.textSub }]}>
+                                    Subir PDF
+                                </Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.modeBtn, addMode === 'link' && { backgroundColor: '#3B82F6' }]}
+                                onPress={() => setAddMode('link')}
+                            >
+                                <Ionicons
+                                    name="link-outline"
+                                    size={18}
+                                    color={addMode === 'link' ? '#fff' : colors.textSub}
+                                />
+                                <Text style={[styles.modeBtnText, { color: addMode === 'link' ? '#fff' : colors.textSub }]}>
+                                    Pegar link
+                                </Text>
+                            </TouchableOpacity>
+                        </View>
+
+                        {/* Contenido según modo */}
+                        {addMode === 'pdf' ? (
+                            <TouchableOpacity style={styles.pickFileBtn} onPress={handleSubirPDF}>
+                                <Ionicons name="document-attach-outline" size={22} color={colors.brandGreen} />
+                                <Text style={[styles.pickFileBtnText, { color: colors.brandGreen }]}>
+                                    Seleccionar archivo PDF
+                                </Text>
+                            </TouchableOpacity>
+                        ) : (
+                            <>
+                                <Text style={[styles.inputLabel, { color: colors.textSub }]}>URL del PDF *</Text>
+                                <TextInput
+                                    style={[styles.input, {
+                                        backgroundColor: isDark ? '#1F2937' : '#F8FAFC',
+                                        color: colors.textMain,
+                                        borderColor: isDark ? colors.cardBorder : '#E2E8F0',
+                                    }]}
+                                    placeholder="https://ejemplo.com/catalogo.pdf"
+                                    placeholderTextColor={colors.textSub}
+                                    value={nuevoLink}
+                                    onChangeText={setNuevoLink}
+                                    autoCapitalize="none"
+                                    keyboardType="url"
+                                />
+                                <TouchableOpacity
+                                    style={[styles.saveBtn, { backgroundColor: '#3B82F6' }]}
+                                    onPress={handleGuardarLink}
+                                >
+                                    <Ionicons name="save-outline" size={18} color="#fff" />
+                                    <Text style={styles.saveBtnText}>Guardar link</Text>
+                                </TouchableOpacity>
+                            </>
+                        )}
+
+                        <Text style={[styles.modalHint, { color: colors.textSub }]}>
+                            El catálogo quedará activo automáticamente. Puedes desactivarlo con el switch.
+                        </Text>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* ── VISOR PDF TIPO LIBRO (WebView) ── */}
+            <Modal
+                visible={pdfVisible}
+                animationType="slide"
+                onRequestClose={() => setPdfVisible(false)}
+            >
+                <View style={styles.viewerContainer}>
+                    {/* Header */}
+                    <LinearGradient colors={[colors.brandGreen, '#14532d']} style={styles.viewerHeader}>
+                        <SafeAreaView edges={['top']}>
+                            <View style={styles.viewerNav}>
+                                <TouchableOpacity style={styles.viewerIconBtn} onPress={() => setPdfVisible(false)}>
+                                    <Ionicons name="close" size={24} color="#fff" />
+                                </TouchableOpacity>
+                                <View style={{ flex: 1, alignItems: 'center' }}>
+                                    <Text style={styles.viewerTitle} numberOfLines={1}>{pdfTitle}</Text>
+                                    <Text style={styles.viewerPageIndicator}>Desliza para navegar</Text>
+                                </View>
+                                <TouchableOpacity style={styles.viewerIconBtn} onPress={() => Linking.openURL(pdfUrl)}>
+                                    <Ionicons name="open-outline" size={20} color="#fff" />
+                                </TouchableOpacity>
+                            </View>
+                        </SafeAreaView>
+                    </LinearGradient>
+
+                    {/* Área WebView */}
+                    <View style={styles.pdfWrapper}>
+                        <View style={styles.bookSpineLeft} />
+                        <View style={styles.bookSpineRight} />
+
+                        {pdfUrl ? (
+                            <WebView
+                                source={{
+                                    // Google Docs Viewer renderiza cualquier PDF/link de forma inline
+                                    uri: `https://docs.google.com/gview?embedded=true&url=${encodeURIComponent(pdfUrl)}`,
+                                }}
+                                style={styles.pdf}
+                                onLoadStart={() => setPdfLoading(true)}
+                                onLoad={() => setPdfLoading(false)}
+                                onError={() => {
+                                    setPdfLoading(false);
+                                    Alert.alert(
+                                        'Error',
+                                        'No se pudo cargar el catálogo.\n¿Quieres abrirlo en el navegador?',
+                                        [
+                                            { text: 'Cancelar', style: 'cancel' },
+                                            { text: 'Abrir', onPress: () => Linking.openURL(pdfUrl) },
+                                        ]
+                                    );
+                                }}
+                                startInLoadingState
+                                renderLoading={() => (
+                                    <View style={styles.pdfLoadingOverlay}>
+                                        <MaterialCommunityIcons
+                                            name="book-open-page-variant"
+                                            size={52}
+                                            color="#fff"
+                                            style={{ opacity: 0.7 }}
+                                        />
+                                        <ActivityIndicator size="large" color="#fff" style={{ marginTop: 16 }} />
+                                        <Text style={{ color: '#fff', marginTop: 12, fontSize: 14 }}>
+                                            Abriendo catálogo...
+                                        </Text>
+                                    </View>
+                                )}
+                            />
+                        ) : null}
+
+                        {/* Overlay de carga manual (por si acaso) */}
+                        {pdfLoading && (
+                            <View style={styles.pdfLoadingOverlay}>
+                                <MaterialCommunityIcons
+                                    name="book-open-page-variant"
+                                    size={52}
+                                    color="#fff"
+                                    style={{ opacity: 0.7 }}
+                                />
+                                <ActivityIndicator size="large" color="#fff" style={{ marginTop: 16 }} />
+                                <Text style={{ color: '#fff', marginTop: 12, fontSize: 14 }}>
+                                    Abriendo catálogo...
+                                </Text>
+                            </View>
+                        )}
+                    </View>
                 </View>
             </Modal>
         </View>
     );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ESTILOS
+// ─────────────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-    headerGradient: { paddingBottom: 20, borderBottomLeftRadius: 28, borderBottomRightRadius: 28, zIndex: 10 },
+    // Header
+    headerGradient: { paddingBottom: 20, borderBottomLeftRadius: 28, borderBottomRightRadius: 28 },
     headerContent: { paddingHorizontal: 20 },
     navBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, marginBottom: 12 },
-    iconBtn: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-    headerTitle: { fontSize: 16, fontWeight: '800', color: '#fff', flex: 1, textAlign: 'center' },
+    iconBtn: { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.15)', justifyContent: 'center', alignItems: 'center' },
+    headerTitle: { fontSize: 18, fontWeight: '800', color: '#fff' },
+    headerSub: { fontSize: 11, color: 'rgba(255,255,255,0.75)', fontWeight: '600', marginTop: 2 },
+    uploadBanner: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12, marginBottom: 4 },
+    uploadBannerText: { color: 'rgba(255,255,255,0.9)', fontSize: 14, fontWeight: '600', flex: 1 },
 
-    uploadBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 4 },
-    uploadBannerText: { color: 'rgba(255,255,255,0.9)', fontSize: 14, fontWeight: '600' },
-
-    body: { flex: 1, marginTop: -16, zIndex: 1 },
+    // Lista
+    body: { flex: 1, marginTop: -12, zIndex: 1 },
     listContent: { paddingHorizontal: 20, paddingTop: 28, paddingBottom: 40 },
     center: { flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: 60 },
+    centerText: { fontSize: 14, marginTop: 10 },
 
-    card: { flexDirection: 'row', alignItems: 'center', borderRadius: 16, padding: 16, marginBottom: 12, gap: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 3 },
-    cardIcon: { width: 56, height: 56, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-    cardTitle: { fontSize: 15, fontWeight: '700', marginBottom: 4, lineHeight: 20 },
-    cardDate: { fontSize: 11 },
+    // Card catálogo
+    card: { flexDirection: 'row', alignItems: 'center', borderRadius: 18, padding: 16, marginBottom: 14, gap: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.07, shadowRadius: 8, elevation: 4 },
+    cardIcon: { width: 58, height: 58, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
+    cardTitle: { fontSize: 15, fontWeight: '700', marginBottom: 3, lineHeight: 20 },
+    cardDate: { fontSize: 11, marginBottom: 6 },
+    activoBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, alignSelf: 'flex-start' },
+    activoDot: { width: 7, height: 7, borderRadius: 4 },
+    activoText: { fontSize: 11, fontWeight: '700' },
+    cardActions: { alignItems: 'flex-end', gap: 8 },
+    verBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10 },
+    verBtnText: { fontSize: 13, fontWeight: '700' },
+    adminActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    deleteBtn: { width: 32, height: 32, borderRadius: 10, backgroundColor: '#FEF2F2', justifyContent: 'center', alignItems: 'center' },
 
-    openBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
-    openBtnText: { fontSize: 12, fontWeight: '700' },
-    deleteBtn: { width: 30, height: 30, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
-
-    emptyContainer: { alignItems: 'center', marginTop: 60, gap: 10 },
+    // Vacío
+    emptyContainer: { alignItems: 'center', marginTop: 60, gap: 10, paddingHorizontal: 30 },
     emptyTitle: { fontSize: 18, fontWeight: '700' },
-    emptySub: { fontSize: 13, textAlign: 'center', paddingHorizontal: 30 },
+    emptySub: { fontSize: 13, textAlign: 'center', lineHeight: 20 },
 
-    // VISOR PDF
-    pdfContainer: { flex: 1, backgroundColor: '#1a1a1a' },
-    pdfHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12 },
-    pdfBackBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
-    pdfTitle: { flex: 1, color: '#fff', fontSize: 15, fontWeight: '700', textAlign: 'center', marginHorizontal: 8 },
-    pdf: { flex: 1, backgroundColor: '#1a1a1a' },
-    pdfLoadingOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.6)' },
+    // Modal agregar
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
+    modalContent: { borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingBottom: 40 },
+    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+    modalTitle: { fontSize: 18, fontWeight: '800' },
+    inputLabel: { fontSize: 12, fontWeight: '700', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 },
+    input: { borderWidth: 1, borderRadius: 12, padding: 14, fontSize: 14, marginBottom: 16 },
+    modeSelector: { flexDirection: 'row', gap: 10, marginBottom: 20 },
+    modeBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, borderRadius: 12, backgroundColor: '#F1F5F9' },
+    modeBtnText: { fontSize: 14, fontWeight: '700' },
+    pickFileBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 18, borderRadius: 14, borderWidth: 2, borderColor: '#2a8c4a', borderStyle: 'dashed', marginBottom: 16 },
+    pickFileBtnText: { fontSize: 15, fontWeight: '700' },
+    saveBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 15, borderRadius: 14, marginBottom: 16 },
+    saveBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
+    modalHint: { fontSize: 12, textAlign: 'center', lineHeight: 18 },
+
+    // Visor tipo libro
+    viewerContainer: { flex: 1, backgroundColor: '#0F1117' },
+    viewerHeader: { paddingHorizontal: 16, paddingBottom: 12 },
+    viewerNav: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
+    viewerIconBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center' },
+    viewerTitle: { color: '#fff', fontSize: 15, fontWeight: '800', textAlign: 'center' },
+    viewerPageIndicator: { color: 'rgba(255,255,255,0.7)', fontSize: 11, fontWeight: '600', marginTop: 2, textAlign: 'center' },
+    pdfWrapper: { flex: 1, backgroundColor: '#1C1F27', position: 'relative' },
+    bookSpineLeft: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 8, backgroundColor: 'rgba(0,0,0,0.3)', zIndex: 1 },
+    bookSpineRight: { position: 'absolute', right: 0, top: 0, bottom: 0, width: 8, backgroundColor: 'rgba(0,0,0,0.3)', zIndex: 1 },
+    pdf: { flex: 1, width, height: height - 160 },
+    pdfLoadingOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(15,17,23,0.9)', justifyContent: 'center', alignItems: 'center', zIndex: 99 },
 });
