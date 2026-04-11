@@ -7,7 +7,6 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../../../contexts/ThemeContext';
-import { useRoleGuard } from '../../../hooks/useRoleGuard';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 // Servicios
@@ -17,7 +16,6 @@ import { Producto, Equivalencia } from '../../../types/Producto.interface';
 import { Categorias } from '../../../types/Categorias.inteface';
 
 export default function ProductoScreen() {
-  useRoleGuard('Administrador'); // 🔒 Solo admins
   const router = useRouter();
   const { colors, isDark } = useTheme();
 

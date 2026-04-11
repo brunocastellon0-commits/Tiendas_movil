@@ -64,7 +64,7 @@ export default function RegisterEmployeeScreen() {
     email: '',
     password: '',
     phone: '',
-    jobTitle: 'Preventista',
+    jobTitle: 'vendedor',
   });
 
   const handleRegister = async () => {
@@ -184,7 +184,7 @@ export default function RegisterEmployeeScreen() {
 
               <Text style={[styles.label, { color: colors.textMain, marginTop: 10 }]}>Rol Asignado</Text>
               <View style={styles.roleContainer}>
-                {['Preventista', 'Administrador'].map((role) => {
+                {['vendedor', 'administrador'].map((role) => {
                   const isActive = formData.jobTitle === role;
                   return (
                     <TouchableOpacity
@@ -201,7 +201,7 @@ export default function RegisterEmployeeScreen() {
                       activeOpacity={0.7}
                     >
                       <MaterialIcons
-                        name={role === 'Administrador' ? "admin-panel-settings" : "shopping-bag"}
+                        name={role === 'administrador' ? "admin-panel-settings" : "shopping-bag"}
                         size={24}
                         color={isActive ? '#fff' : colors.textSub}
                       />

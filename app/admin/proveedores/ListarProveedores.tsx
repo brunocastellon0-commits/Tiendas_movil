@@ -9,11 +9,9 @@ import { proveedorService } from '../../../services/ProveedorServices';
 import { Proveedor } from '../../../types/Proveedores.interface';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../../../contexts/ThemeContext';
-import { useRoleGuard } from '../../../hooks/useRoleGuard';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function ListaProveedoresScreen() {
-    useRoleGuard('Administrador'); // 🔒 Solo admins
     const router = useRouter();
     const { colors, isDark } = useTheme();
 

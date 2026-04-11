@@ -1,14 +1,14 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    FlatList,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 // 1. IMPORTACIONES DE ICONOS
 // Importamos MaterialCommunityIcons para iconos específicos de roles (ej. shield-account)
@@ -19,7 +19,7 @@ import { supabase } from '../../lib/supabase'; // Ajusta la ruta a tu cliente
 // Hook para acceder a los colores del tema (Dark/Light)
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../../contexts/ThemeContext';
-import { useRoleGuard } from '../../hooks/useRoleGuard';
+// import { useRoleGuard } from '../../hooks/useRoleGuard';
 
 // --- 2. DEFINICIÓN DE TIPOS ---
 // Estructura de datos que esperamos recibir de Supabase
@@ -27,7 +27,7 @@ interface Employee {
   id: string;
   full_name: string;
   email: string;
-  role: 'Administrador' | 'Preventista' | 'Auditor' | 'vendedor';
+  role: 'administrador' | 'vendedor';
   job_title?: string;
   // El status ahora es estricto según tu CHECK constraint
   status: 'Habilitado' | 'Deshabilitado' | 'Vacaciones';
@@ -53,7 +53,7 @@ const EmployeeCard = ({
   // Lógica para elegir el icono según el rol:
   // - Administrador: Usamos un escudo ('shield-account')
   // - Otros: Usamos una persona con corbata ('account-tie')
-  const roleIcon = item.role === 'Administrador' || item.job_title === 'Administrador'
+  const roleIcon = item.role === 'administrador' || item.job_title === 'administrador'
     ? 'shield-account'
     : 'account-tie';
 
@@ -91,7 +91,7 @@ const EmployeeCard = ({
             borderWidth: 1
           }]}>
             <Text style={[styles.badgeText, { color: colors.textSub }]}>
-              {item.job_title || (item.role === 'vendedor' ? 'Preventista' : item.role)}
+              {item.job_title || item.role}
             </Text>
           </View>
         </View>
@@ -110,7 +110,6 @@ const EmployeeCard = ({
 
 // --- 4. PANTALLA PRINCIPAL (GESTIÓN DE EMPLEADOS) ---
 export default function EmployeeManagementScreen() {
-  useRoleGuard('Administrador'); // 🔒 Solo admins
   const { colors, isDark } = useTheme();
   const router = useRouter();
 
@@ -119,7 +118,7 @@ export default function EmployeeManagementScreen() {
   const [loading, setLoading] = useState(true); // Indicador de carga
   const [refreshing, setRefreshing] = useState(false); // Estado de pull-to-refresh
   const [searchText, setSearchText] = useState(''); // Texto del buscador
-  const [activeFilter, setActiveFilter] = useState<'Todos' | 'Preventista' | 'Administrador'>('Todos'); // Filtro activo
+  const [activeFilter, setActiveFilter] = useState<'Todos' | 'vendedor' | 'administrador'>('Todos'); // Filtro activo
 
 
   // --- FUNCIÓN PARA CARGAR DATOS ---
@@ -155,8 +154,7 @@ export default function EmployeeManagementScreen() {
         emp.email.toLowerCase().includes(searchText.toLowerCase());
 
       // 2. Filtro por Rol (Tab)
-      // Normalizamos 'vendedor' a 'Preventista' para efectos visuales
-      const displayRole = emp.job_title || (emp.role === 'vendedor' ? 'Preventista' : emp.role);
+      const displayRole = emp.job_title || emp.role;
       const matchesRole = activeFilter === 'Todos' || displayRole === activeFilter;
 
       return matchesSearch && matchesRole;
@@ -224,7 +222,7 @@ export default function EmployeeManagementScreen() {
 
           {/* Filtros (Tabs): Cápsulas seleccionables */}
           <View style={styles.tabsRow}>
-            {(['Todos', 'Preventista', 'Administrador'] as const).map((tab) => {
+            {(['Todos', 'vendedor', 'administrador'] as const).map((tab) => {
               const isActive = activeFilter === tab;
               return (
                 <TouchableOpacity

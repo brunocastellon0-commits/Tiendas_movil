@@ -25,7 +25,7 @@ interface Employee {
   id: string;
   full_name: string;
   email: string;
-  role: 'Administrador' | 'Preventista';
+  role: 'administrador' | 'vendedor';
   phone?: string;
 }
 
@@ -45,7 +45,7 @@ export default function EditEmployeeScreen() {
     fullName: '',
     email: '',
     phone: '',
-    role: 'Preventista' as 'Administrador' | 'Preventista',
+    role: 'vendedor' as 'administrador' | 'vendedor',
   });
 
   // 2. Cargar Datos al Iniciar
@@ -70,7 +70,7 @@ export default function EditEmployeeScreen() {
           fullName: data.full_name || '',
           email: data.email || '',
           phone: data.phone || '',
-          role: data.role || 'Preventista',
+          role: data.role || 'vendedor',
         });
       }
     } catch (error: any) {
@@ -311,10 +311,10 @@ export default function EditEmployeeScreen() {
 
             {/* Selector de Rol Moderno */}
             <View style={styles.roleContainer}>
-              {['Preventista', 'Administrador'].map((role) => {
+              {['vendedor', 'administrador'].map((role) => {
                 const isActive = formData.role === role;
                 // Iconos específicos
-                const roleIcon = role === 'Administrador' ? 'shield-account' : 'account-tie';
+                const roleIcon = role === 'administrador' ? 'shield-account' : 'account-tie';
 
                 return (
                   <TouchableOpacity

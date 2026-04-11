@@ -3,7 +3,7 @@ import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,6 +13,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import { supabase } from '../../lib/supabase';
+import { useTheme } from '../../contexts/ThemeContext';
+import { LinearGradient } from 'expo-linear-gradient';
 
 function parseGeoPoint(value: any): { lat: number | null; lng: number | null } {
   if (!value) return { lat: null, lng: null };
@@ -43,15 +45,27 @@ interface VisitDetail {
     address: string;
   };
   empleados: {
-    full_name: string; 
+    full_name: string;
   };
 }
 
 export default function VisitDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const { colors, isDark } = useTheme();
+
   const [visit, setVisit] = useState<VisitDetail | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Estado para el modal de mensaje (1 segundo)
+  const [toast, setToast] = useState({ visible: false, text: '', isError: false });
+
+  const showToast = (text: string, isError = false) => {
+    setToast({ visible: true, text, isError });
+    setTimeout(() => {
+      setToast({ visible: false, text: '', isError: false });
+    }, 1000); // Exactamente 1 segundo
+  };
 
   useEffect(() => {
     fetchVisitDetail();
@@ -86,14 +100,12 @@ export default function VisitDetailScreen() {
         .single();
 
       if (error) {
-        Alert.alert('Error', 'No se pudo cargar el detalle de la visita');
+        showToast('No se pudo cargar el detalle', true);
         return;
       }
 
       if (data) {
         const rawData = data as any;
-        
-        // Manejo del cliente y empleado (array vs objeto)
         const rawClient = Array.isArray(rawData.clients) ? rawData.clients[0] : rawData.clients;
         const rawEmpleado = Array.isArray(rawData.empleados) ? rawData.empleados[0] : rawData.empleados;
         
@@ -115,15 +127,14 @@ export default function VisitDetailScreen() {
             phones: rawClient?.phones || 'Sin teléfono'
           },
           empleados: {
-          
-            full_name: rawEmpleado?.full_name || 'Sin nombre' 
+            full_name: rawEmpleado?.full_name || 'Sin nombre'
           }
         };
 
         setVisit(formattedVisit);
       }
     } catch (error) {
-      Alert.alert('Error', 'Ocurrió un error inesperado');
+      showToast('Ocurrió un error inesperado', true);
     } finally {
       setLoading(false);
     }
@@ -131,20 +142,20 @@ export default function VisitDetailScreen() {
 
   const outcomeConfig = {
     sale: { 
-      bg: '#DCFCE7', 
-      color: '#166534', 
+      bg: isDark ? 'rgba(22, 101, 52, 0.2)' : '#DCFCE7', 
+      color: isDark ? '#4ade80' : '#166534', 
       label: 'Venta Realizada', 
       icon: 'checkmark-circle' 
     },
     no_sale: { 
-      bg: '#FEF9C3', 
-      color: '#854D0E', 
+      bg: isDark ? 'rgba(133, 77, 14, 0.2)' : '#FEF9C3', 
+      color: isDark ? '#facc15' : '#854D0E', 
       label: 'Sin Venta', 
       icon: 'close-circle' 
     },
     closed: { 
-      bg: '#FEE2E2', 
-      color: '#991B1B', 
+      bg: isDark ? 'rgba(153, 27, 27, 0.2)' : '#FEE2E2', 
+      color: isDark ? '#f87171' : '#991B1B', 
       label: 'Tienda Cerrada', 
       icon: 'lock-closed' 
     },
@@ -152,11 +163,11 @@ export default function VisitDetailScreen() {
 
   if (loading) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, { backgroundColor: colors.bgStart }]}>
         <Stack.Screen options={{ headerShown: false }} />
-        <SafeAreaView style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#2a8c4a" />
-          <Text style={styles.loadingText}>Cargando visita...</Text>
+        <SafeAreaView style={styles.centerContainer}>
+          <ActivityIndicator size="large" color={colors.brandGreen} />
+          <Text style={[styles.loadingText, { color: colors.textSub }]}>Cargando visita...</Text>
         </SafeAreaView>
       </View>
     );
@@ -164,13 +175,13 @@ export default function VisitDetailScreen() {
 
   if (!visit) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, { backgroundColor: colors.bgStart }]}>
         <Stack.Screen options={{ headerShown: false }} />
-        <SafeAreaView style={styles.errorContainer}>
+        <SafeAreaView style={styles.centerContainer}>
           <Ionicons name="alert-circle-outline" size={64} color="#EF4444" />
-          <Text style={styles.errorText}>Visita no encontrada</Text>
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <Text style={styles.backButtonText}>Volver</Text>
+          <Text style={[styles.errorText, { color: colors.textMain }]}>Visita no encontrada</Text>
+          <TouchableOpacity style={[styles.backButton, { backgroundColor: colors.brandGreen }]} onPress={() => router.back()}>
+            <Text style={styles.backButtonText}>Volver al Mapa</Text>
           </TouchableOpacity>
         </SafeAreaView>
       </View>
@@ -181,16 +192,13 @@ export default function VisitDetailScreen() {
   
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('es-BO', {
-      day: '2-digit',
-      month: 'long',
-      year: 'numeric',
+      day: '2-digit', month: 'long', year: 'numeric',
     });
   };
   
   const formatTime = (dateString: string) => {
     return new Date(dateString).toLocaleTimeString('es-BO', {
-      hour: '2-digit',
-      minute: '2-digit',
+      hour: '2-digit', minute: '2-digit',
     });
   };
 
@@ -209,12 +217,12 @@ export default function VisitDetailScreen() {
 
     const html = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<style>body{margin:0;padding:0;}#map{width:100%;height:100vh;}
-.custom-marker { background: #2a8c4a; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 4px rgba(0,0,0,0.4); text-align: center; color: white; line-height: 24px; font-size: 12px; font-weight: bold; }
+<style>body{margin:0;padding:0;background-color:${isDark ? '#1a1a1a' : '#ffffff'}}#map{width:100%;height:100vh;}
+.custom-marker { background: ${colors.brandGreen}; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 4px rgba(0,0,0,0.4); text-align: center; color: white; line-height: 24px; font-size: 12px; font-weight: bold; }
 </style></head><body><div id="map"></div>
 <script>
 var map = L.map('map',{zoomControl:false}).setView([${centerLat}, ${centerLng}], 15);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/${isDark ? 'dark_all' : 'light_all'}/{z}/{x}/{y}{r}.png',{maxZoom:19}).addTo(map);
 var iconIn = L.divIcon({className: 'custom-marker', html: 'A', iconSize: [24,24]});
 var iconOut = L.divIcon({className: 'custom-marker', html: 'B', iconSize: [24,24]});
 ${locIn.lat ? `L.marker([${locIn.lat}, ${locIn.lng}], {icon: iconIn}).addTo(map).bindPopup("<b>Inicio de Visita</b>").openPopup();` : ''}
@@ -222,9 +230,9 @@ ${locOut.lat ? `L.marker([${locOut.lat}, ${locOut.lng}], {icon: iconOut}).addTo(
 </script></body></html>`;
 
     return (
-      <View style={styles.mapContainer}>
-        <Text style={styles.cardTitle}>Ubicación GPS</Text>
-        <View style={styles.mapBorder}>
+      <View style={[styles.card, { backgroundColor: colors.cardBg, borderColor: isDark ? colors.cardBorder : 'transparent', borderWidth: isDark ? 1 : 0, shadowColor: colors.shadowColor }]}>
+        <Text style={[styles.cardTitle, { color: colors.textMain }]}>Ubicación GPS</Text>
+        <View style={[styles.mapBorder, { backgroundColor: isDark ? colors.inputBg : '#f3f4f6' }]}>
           <WebView source={{ html }} style={styles.mapView} scrollEnabled={false} pointerEvents="none" />
         </View>
       </View>
@@ -232,24 +240,22 @@ ${locOut.lat ? `L.marker([${locOut.lat}, ${locOut.lng}], {icon: iconOut}).addTo(
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.bgStart }]}>
       <Stack.Screen options={{ headerShown: false }} />
       
-      {/* Header */}
-      <View style={styles.header}>
-        <SafeAreaView edges={['top']}>
-          <View style={styles.headerContent}>
-            <TouchableOpacity
-              style={styles.headerButton}
-              onPress={() => router.back()}
-            >
-              <Ionicons name="arrow-back" size={24} color="#fff" />
-            </TouchableOpacity>
-            <Text style={styles.headerTitle}>Detalle de la Visita</Text>
-            <View style={{ width: 40 }} />
-          </View>
+      {/* Header Curvo Dinámico */}
+      <LinearGradient
+        colors={[colors.brandGreen, '#166534']}
+        style={styles.headerGradient}
+      >
+        <SafeAreaView edges={['top']} style={styles.headerContent}>
+          <TouchableOpacity style={styles.headerButton} onPress={() => router.back()}>
+            <Ionicons name="arrow-back" size={24} color="#fff" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Detalle de la Visita</Text>
+          <View style={{ width: 40 }} />
         </SafeAreaView>
-      </View>
+      </LinearGradient>
 
       <ScrollView 
         style={styles.content}
@@ -257,10 +263,10 @@ ${locOut.lat ? `L.marker([${locOut.lat}, ${locOut.lng}], {icon: iconOut}).addTo(
         contentContainerStyle={{ paddingBottom: 30 }}
       >
         {/* Visit ID y Outcome */}
-        <View style={styles.card}>
+        <View style={[styles.card, { backgroundColor: colors.cardBg, borderColor: isDark ? colors.cardBorder : 'transparent', borderWidth: isDark ? 1 : 0, shadowColor: colors.shadowColor }]}>
           <View style={styles.visitIdRow}>
-            <Text style={styles.visitIdLabel}>Visita</Text>
-            <Text style={styles.visitIdValue}>#{visit.id}</Text>
+            <Text style={[styles.visitIdLabel, { color: colors.textSub }]}>Visita</Text>
+            <Text style={[styles.visitIdValue, { color: colors.textMain }]}>#{visit.id}</Text>
           </View>
           <View style={[styles.outcomeBadgeLarge, { backgroundColor: outcome.bg }]}>
             <Ionicons name={outcome.icon as any} size={24} color={outcome.color} />
@@ -269,38 +275,37 @@ ${locOut.lat ? `L.marker([${locOut.lat}, ${locOut.lng}], {icon: iconOut}).addTo(
             </Text>
           </View>
           <View style={styles.dateRow}>
-            <Ionicons name="calendar-outline" size={16} color="#6B7280" />
-            <Text style={styles.dateText}>{formatDate(visit.start_time)}</Text>
+            <Ionicons name="calendar-outline" size={16} color={colors.textSub} />
+            <Text style={[styles.dateText, { color: colors.textSub }]}>{formatDate(visit.start_time)}</Text>
           </View>
         </View>
 
         {/* Cliente Info */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Cliente</Text>
+        <View style={[styles.card, { backgroundColor: colors.cardBg, borderColor: isDark ? colors.cardBorder : 'transparent', borderWidth: isDark ? 1 : 0, shadowColor: colors.shadowColor }]}>
+          <Text style={[styles.cardTitle, { color: colors.textMain }]}>Cliente</Text>
           <View style={styles.infoGroup}>
             <View style={styles.infoRow}>
-              <Ionicons name="person-outline" size={20} color="#2a8c4a" />
-              <Text style={styles.infoText}>{visit.clients.name}</Text>
+              <Ionicons name="person-outline" size={20} color={colors.brandGreen} />
+              <Text style={[styles.infoText, { color: colors.textMain }]}>{visit.clients.name}</Text>
             </View>
             <View style={styles.infoRow}>
-              <Ionicons name="call-outline" size={20} color="#2a8c4a" />
-              <Text style={styles.infoText}>{visit.clients.phones}</Text>
+              <Ionicons name="call-outline" size={20} color={colors.brandGreen} />
+              <Text style={[styles.infoText, { color: colors.textMain }]}>{visit.clients.phones}</Text>
             </View>
             <View style={styles.infoRow}>
-              <Ionicons name="location-outline" size={20} color="#2a8c4a" />
-              <Text style={styles.infoText}>{visit.clients.address}</Text>
+              <Ionicons name="location-outline" size={20} color={colors.brandGreen} />
+              <Text style={[styles.infoText, { color: colors.textMain }]}>{visit.clients.address}</Text>
             </View>
           </View>
         </View>
 
         {/* Vendedor Info */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Vendedor</Text>
+        <View style={[styles.card, { backgroundColor: colors.cardBg, borderColor: isDark ? colors.cardBorder : 'transparent', borderWidth: isDark ? 1 : 0, shadowColor: colors.shadowColor }]}>
+          <Text style={[styles.cardTitle, { color: colors.textMain }]}>Vendedor</Text>
           <View style={styles.infoGroup}>
             <View style={styles.infoRow}>
               <Ionicons name="person-circle-outline" size={20} color="#3B82F6" />
-              {/* CORRECCIÓN 4: Renderizamos full_name */}
-              <Text style={styles.infoText}>{visit.empleados.full_name}</Text>
+              <Text style={[styles.infoText, { color: colors.textMain }]}>{visit.empleados.full_name}</Text>
             </View>
           </View>
         </View>
@@ -309,38 +314,38 @@ ${locOut.lat ? `L.marker([${locOut.lat}, ${locOut.lng}], {icon: iconOut}).addTo(
         {(visit.check_in_location || visit.check_out_location) && renderMap()}
 
         {/* Información de Tiempo */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Información de Tiempo</Text>
+        <View style={[styles.card, { backgroundColor: colors.cardBg, borderColor: isDark ? colors.cardBorder : 'transparent', borderWidth: isDark ? 1 : 0, shadowColor: colors.shadowColor }]}>
+          <Text style={[styles.cardTitle, { color: colors.textMain }]}>Información de Tiempo</Text>
           <View style={styles.infoGroup}>
             <View style={styles.infoRow}>
               <Ionicons name="log-in-outline" size={20} color="#10B981" />
               <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={styles.infoLabel}>Hora de Inicio</Text>
-                <Text style={styles.infoText}>{formatTime(visit.start_time)}</Text>
+                <Text style={[styles.infoLabel, { color: colors.textSub }]}>Hora de Inicio</Text>
+                <Text style={[styles.infoText, { color: colors.textMain }]}>{formatTime(visit.start_time)}</Text>
               </View>
             </View>
             <View style={styles.infoRow}>
               <Ionicons name="log-out-outline" size={20} color="#EF4444" />
               <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={styles.infoLabel}>Hora de Finalización</Text>
-                <Text style={styles.infoText}>{formatTime(visit.end_time)}</Text>
+                <Text style={[styles.infoLabel, { color: colors.textSub }]}>Hora de Finalización</Text>
+                <Text style={[styles.infoText, { color: colors.textMain }]}>{formatTime(visit.end_time)}</Text>
               </View>
             </View>
             <View style={styles.infoRow}>
               <Ionicons name="time-outline" size={20} color="#F59E0B" />
               <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={styles.infoLabel}>Duración Total</Text>
-                <Text style={[styles.infoText, styles.durationText]}>
+                <Text style={[styles.infoLabel, { color: colors.textSub }]}>Duración Total</Text>
+                <Text style={[styles.infoText, styles.durationText, { color: colors.brandGreen }]}>
                   {formatDuration(visit.duration_seconds)}
                 </Text>
               </View>
             </View>
             {visit.gps_accuracy_meters !== null && (
               <View style={styles.infoRow}>
-                <Ionicons name="navigate-outline" size={20} color="#6B7280" />
+                <Ionicons name="navigate-outline" size={20} color={colors.textSub} />
                 <View style={{ flex: 1, marginLeft: 12 }}>
-                  <Text style={styles.infoLabel}>Precisión GPS</Text>
-                  <Text style={styles.infoText}>±{visit.gps_accuracy_meters.toFixed(1)}m</Text>
+                  <Text style={[styles.infoLabel, { color: colors.textSub }]}>Precisión GPS</Text>
+                  <Text style={[styles.infoText, { color: colors.textMain }]}>±{visit.gps_accuracy_meters.toFixed(1)}m</Text>
                 </View>
               </View>
             )}
@@ -349,27 +354,37 @@ ${locOut.lat ? `L.marker([${locOut.lat}, ${locOut.lng}], {icon: iconOut}).addTo(
 
         {/* Notas */}
         {visit.notes && (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Notas</Text>
-            <View style={styles.notesContainer}>
-              <Ionicons name="document-text-outline" size={20} color="#6B7280" />
-              <Text style={styles.notesText}>{visit.notes}</Text>
+          <View style={[styles.card, { backgroundColor: colors.cardBg, borderColor: isDark ? colors.cardBorder : 'transparent', borderWidth: isDark ? 1 : 0, shadowColor: colors.shadowColor }]}>
+            <Text style={[styles.cardTitle, { color: colors.textMain }]}>Notas</Text>
+            <View style={[styles.notesContainer, { backgroundColor: isDark ? colors.inputBg : '#F3F4F6' }]}>
+              <Ionicons name="document-text-outline" size={20} color={colors.iconGray} />
+              <Text style={[styles.notesText, { color: colors.textMain }]}>{visit.notes}</Text>
             </View>
           </View>
         )}
       </ScrollView>
+
+      {/* --- MODAL DE MENSAJE (1 SEGUNDO) --- */}
+      <Modal transparent visible={toast.visible} animationType="fade">
+        <View style={styles.toastOverlay}>
+          <View style={[styles.toastCard, { backgroundColor: colors.cardBg, borderColor: isDark ? colors.cardBorder : 'transparent', borderWidth: isDark ? 1 : 0 }]}>
+            <Ionicons name={toast.isError ? "alert-circle" : "checkmark-circle"} size={40} color={toast.isError ? "#EF4444" : colors.brandGreen} />
+            <Text style={[styles.toastText, { color: colors.textMain }]}>{toast.text}</Text>
+          </View>
+        </View>
+      </Modal>
+
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F3F4F6',
-  },
-  header: {
-    backgroundColor: '#2a8c4a',
+  container: { flex: 1 },
+  headerGradient: {
     paddingBottom: 20,
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
+    zIndex: 10,
   },
   headerContent: {
     flexDirection: 'row',
@@ -379,10 +394,9 @@ const styles = StyleSheet.create({
     paddingTop: 10,
   },
   headerButton: {
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
+    padding: 8,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.2)',
   },
   headerTitle: {
     color: '#fff',
@@ -393,22 +407,20 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 20,
     paddingTop: 20,
+    marginTop: -20, // Overlap effect
   },
   card: {
-    backgroundColor: '#fff',
     borderRadius: 16,
     padding: 20,
     marginBottom: 15,
-    shadowColor: '#000',
+    elevation: 4,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
-    elevation: 4,
   },
   cardTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#374151',
     marginBottom: 15,
   },
   visitIdRow: {
@@ -417,15 +429,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 15,
   },
-  visitIdLabel: {
-    fontSize: 14,
-    color: '#6B7280',
-  },
-  visitIdValue: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#111827',
-  },
+  visitIdLabel: { fontSize: 14 },
+  visitIdValue: { fontSize: 18, fontWeight: 'bold' },
   outcomeBadgeLarge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -447,71 +452,55 @@ const styles = StyleSheet.create({
   },
   dateText: {
     fontSize: 14,
-    color: '#6B7280',
     marginLeft: 6,
   },
-  infoGroup: {
-    gap: 16,
-  },
+  infoGroup: { gap: 16 },
   infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   infoLabel: {
     fontSize: 12,
-    color: '#9CA3AF',
     marginBottom: 4,
   },
   infoText: {
     fontSize: 15,
-    color: '#374151',
     marginLeft: 12,
     flex: 1,
   },
   durationText: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#2a8c4a',
   },
   notesContainer: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    backgroundColor: '#F3F4F6',
     padding: 12,
     borderRadius: 8,
   },
   notesText: {
     fontSize: 14,
-    color: '#374151',
     marginLeft: 12,
     flex: 1,
     lineHeight: 20,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 15,
-    fontSize: 16,
-    color: '#6B7280',
-  },
-  errorContainer: {
+  centerContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
   },
+  loadingText: {
+    marginTop: 15,
+    fontSize: 16,
+  },
   errorText: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#374151',
     marginTop: 15,
     marginBottom: 20,
   },
   backButton: {
-    backgroundColor: '#2a8c4a',
     paddingHorizontal: 30,
     paddingVertical: 12,
     borderRadius: 12,
@@ -521,24 +510,34 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  mapContainer: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 15,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
   mapBorder: {
     height: 200,
     borderRadius: 12,
     overflow: 'hidden',
-    backgroundColor: '#f3f4f6',
   },
-  mapView: {
+  mapView: { flex: 1 },
+  // Modal Styles
+  toastOverlay: {
     flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center'
   },
+  toastCard: {
+    width: '70%',
+    padding: 25,
+    borderRadius: 20,
+    alignItems: 'center',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+  },
+  toastText: {
+    marginTop: 15,
+    fontSize: 16,
+    fontWeight: '700',
+    textAlign: 'center'
+  }
 });
