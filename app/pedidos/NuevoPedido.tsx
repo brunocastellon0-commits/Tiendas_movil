@@ -75,7 +75,7 @@ export default function NuevoPedido() {
     navTimerRef.current = setTimeout(() => {
       setSuccessModal(false);
       router.back();
-    }, 3000);
+    }, 2000);
   };
 
   useEffect(() => () => {
@@ -171,7 +171,15 @@ export default function NuevoPedido() {
         return;
       }
 
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      let loc: any = null;
+      try {
+        loc = await Promise.race([
+          Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+          new Promise((_, reject) => setTimeout(() => reject('timeout'), 5000))
+        ]);
+      } catch (e) {
+        loc = await Location.getLastKnownPositionAsync().catch(() => null);
+      }
 
       // ── Verificar sesión activa ─────────────────────────────────────────────
       const { data: { session: currentSession } } = await supabase.auth.getSession();
@@ -190,7 +198,7 @@ export default function NuevoPedido() {
         descuento_porcentaje: descuentoPct(),
         observacion: observation,
         estado: 'Pendiente',
-        ubicacion_venta: `POINT(${loc.coords.longitude} ${loc.coords.latitude})`,
+        ubicacion_venta: loc && loc.coords ? `POINT(${loc.coords.longitude} ${loc.coords.latitude})` : null,
         clients_id: clientId,
         empleado_id: session?.user.id,
       };

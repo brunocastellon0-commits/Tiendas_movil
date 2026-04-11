@@ -1,9 +1,11 @@
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Stack, useFocusEffect, useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
+  Animated,
   Dimensions,
   FlatList,
   Modal,
@@ -16,7 +18,9 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as DocumentPicker from 'expo-document-picker';
 import { useTheme } from '../../contexts/ThemeContext';
+import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 
 const { width } = Dimensions.get('window');
@@ -42,6 +46,17 @@ interface Producto {
   descripcion?: string;
   unidad_medida?: string;
 }
+
+interface CatalogoPDF {
+  id: string;
+  titulo: string;
+  archivo_url: string;
+  storage_path: string;
+  activo: boolean;
+  created_at: string;
+}
+
+type VistaTab = 'productos' | 'pdf';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Función debounce
@@ -145,6 +160,9 @@ const ProductCard = ({
 export default function CatalogoScreen() {
   const router = useRouter();
   const { colors, isDark } = useTheme();
+  const { isAdmin } = useAuth();
+
+  const [vistaTab, setVistaTab] = useState<VistaTab>('pdf');
 
   const [productos, setProductos] = useState<Producto[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
@@ -153,6 +171,16 @@ export default function CatalogoScreen() {
   const [catFilter, setCatFilter] = useState<string | null>(null);
   const [soloActivos, setSoloActivos] = useState(true);
   const [selectedProduct, setSelectedProduct] = useState<Producto | null>(null);
+
+  // ── Estados PDF ─────────────────────────────────────────────────────────
+  const [catalogosPDF, setCatalogosPDF] = useState<CatalogoPDF[]>([]);
+  const [loadingPDF, setLoadingPDF] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [pdfVisorVisible, setPdfVisorVisible] = useState(false);
+  const [pdfUrl, setPdfUrl] = useState('');
+  const [pdfTitulo, setPdfTitulo] = useState('');
+  // Animación de página
+  const pageAnim = useRef(new Animated.Value(0)).current;
 
   const debouncedSearch = useDebounce(search, 300);
 
@@ -186,7 +214,102 @@ export default function CatalogoScreen() {
     }
   }, []);
 
-  useFocusEffect(useCallback(() => { fetchData(); }, [fetchData]));
+  useFocusEffect(useCallback(() => {
+    fetchData();
+    fetchCatalogosPDF();
+  }, [fetchData]));
+
+  // ── Funciones PDF ──────────────────────────────────────────────────────────
+  const fetchCatalogosPDF = async () => {
+    try {
+      setLoadingPDF(true);
+      // Admin ve todos (activos e inactivos), vendedor solo activos
+      const query = supabase
+        .from('catalogo_pdf')
+        .select('id, titulo, archivo_url, storage_path, activo, created_at')
+        .order('created_at', { ascending: false });
+      const { data, error } = await query;
+      if (error) throw error;
+      setCatalogosPDF((data || []) as CatalogoPDF[]);
+    } catch (e: any) {
+      console.warn('Error cargando PDFs:', e.message);
+    } finally {
+      setLoadingPDF(false);
+    }
+  };
+
+  const subirPDF = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'application/pdf',
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled || !result.assets?.[0]) return;
+
+      const asset = result.assets[0];
+      const nombre = asset.name || `catalogo_${Date.now()}.pdf`;
+      const storagePath = `catalogos/${Date.now()}_${nombre}`;
+
+      setUploading(true);
+
+      const response = await fetch(asset.uri);
+      const blob = await response.blob();
+
+      const { error: uploadErr } = await supabase.storage
+        .from('catalogos')
+        .upload(storagePath, blob, { contentType: 'application/pdf', upsert: false });
+      if (uploadErr) throw uploadErr;
+
+      const { data: urlData } = supabase.storage
+        .from('catalogos')
+        .getPublicUrl(storagePath);
+
+      const { error: dbErr } = await supabase.from('catalogo_pdf').insert({
+        titulo: nombre.replace('.pdf', '').replace(/_/g, ' '),
+        archivo_url: urlData.publicUrl,
+        storage_path: storagePath,
+        activo: true,
+      });
+      if (dbErr) throw dbErr;
+
+      Alert.alert('✅ Subido', 'El catálogo PDF se subió correctamente.');
+      fetchCatalogosPDF();
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const toggleActivoPDF = async (catalogo: CatalogoPDF) => {
+    const { error } = await supabase
+      .from('catalogo_pdf')
+      .update({ activo: !catalogo.activo })
+      .eq('id', catalogo.id);
+    if (!error) fetchCatalogosPDF();
+  };
+
+  const eliminarPDF = (catalogo: CatalogoPDF) => {
+    Alert.alert('¿Eliminar catálogo?', `"${catalogo.titulo}" se eliminará permanentemente.`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Eliminar', style: 'destructive', onPress: async () => {
+          await supabase.storage.from('catalogos').remove([catalogo.storage_path]);
+          await supabase.from('catalogo_pdf').delete().eq('id', catalogo.id);
+          fetchCatalogosPDF();
+        },
+      },
+    ]);
+  };
+
+  const abrirPDF = (catalogo: CatalogoPDF) => {
+    setPdfUrl(catalogo.archivo_url);
+    setPdfTitulo(catalogo.titulo);
+    // Animación de entrada tipo página
+    pageAnim.setValue(1);
+    Animated.spring(pageAnim, { toValue: 0, useNativeDriver: true, tension: 60, friction: 10 }).start();
+    setPdfVisorVisible(true);
+  };
 
   // ── Filtrado ───────────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
@@ -226,127 +349,202 @@ export default function CatalogoScreen() {
               <Ionicons name="arrow-back" size={22} color="#fff" />
             </TouchableOpacity>
             <View style={{ flex: 1, alignItems: 'center' }}>
-              <Text style={styles.headerTitle}>Catálogo Virtual</Text>
-              <Text style={styles.headerSubtitle}>{filtered.length} productos</Text>
+              <Text style={styles.headerTitle}>Catálogo</Text>
+              <Text style={styles.headerSubtitle}>
+                {`${catalogosPDF.length} catálogos PDF`}
+              </Text>
             </View>
-            <TouchableOpacity
-              style={[styles.filterToggle, soloActivos && styles.filterToggleActive]}
-              onPress={() => setSoloActivos(v => !v)}
-            >
-              <MaterialCommunityIcons
-                name={soloActivos ? 'eye' : 'eye-off'}
-                size={18}
-                color="#fff"
-              />
-            </TouchableOpacity>
+            {isAdmin ? (
+              <TouchableOpacity
+                style={[styles.filterToggle, { backgroundColor: 'rgba(255,255,255,0.2)' }]}
+                onPress={subirPDF}
+                disabled={uploading}
+              >
+                {uploading
+                  ? <ActivityIndicator color="#fff" size="small" />
+                  : <Ionicons name="cloud-upload-outline" size={20} color="#fff" />}
+              </TouchableOpacity>
+            ) : <View style={{ width: 38 }} />}
           </View>
 
-          {/* Buscador */}
-          <View style={[styles.searchBar, { backgroundColor: 'rgba(255,255,255,0.15)' }]}>
-            <Ionicons name="search-outline" size={18} color="rgba(255,255,255,0.7)" />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Buscar por nombre o código..."
-              placeholderTextColor="rgba(255,255,255,0.55)"
-              value={search}
-              onChangeText={setSearch}
-              autoCorrect={false}
-              returnKeyType="search"
-            />
-            {search.length > 0 && (
-              <TouchableOpacity onPress={() => setSearch('')}>
-                <Ionicons name="close-circle" size={16} color="rgba(255,255,255,0.8)" />
-              </TouchableOpacity>
-            )}
-          </View>
+          {/* Banner subir — solo admin */}
+          {isAdmin && (
+            <TouchableOpacity
+              style={styles.uploadBanner}
+              onPress={subirPDF}
+              disabled={uploading}
+            >
+              <Ionicons name="add-circle-outline" size={18} color="rgba(255,255,255,0.9)" />
+              <Text style={styles.uploadBannerText}>
+                {uploading ? 'Subiendo...' : 'Subir nuevo catálogo PDF'}
+              </Text>
+            </TouchableOpacity>
+          )}
         </SafeAreaView>
       </LinearGradient>
 
-      {/* ── FILTROS DE CATEGORÍA ── */}
-      <View style={{ backgroundColor: colors.cardBg, paddingBottom: 8 }}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.catScrollContent}
-        >
-          <TouchableOpacity
-            style={[
-              styles.catChip,
-              !catFilter && { backgroundColor: '#EA580C' },
-              catFilter && { backgroundColor: isDark ? colors.inputBg : '#F1F5F9' },
-            ]}
-            onPress={() => setCatFilter(null)}
-          >
-            <Text style={[styles.catChipText, { color: !catFilter ? '#fff' : colors.textSub }]}>
-              Todos
-            </Text>
-          </TouchableOpacity>
-          {categorias.map(cat => (
-            <TouchableOpacity
-              key={cat.id}
-              style={[
-                styles.catChip,
-                catFilter === cat.id && { backgroundColor: '#EA580C' },
-                catFilter !== cat.id && { backgroundColor: isDark ? colors.inputBg : '#F1F5F9' },
-              ]}
-              onPress={() => setCatFilter(cat.id === catFilter ? null : cat.id)}
-            >
-              <Text style={[styles.catChipText, { color: catFilter === cat.id ? '#fff' : colors.textSub }]}>
-                {cat.nombre}
+      {/* ── CONTENIDO SEGÚN TAB ── */}
+      {true ? (
+
+        /* ── TAB PDF ── */
+        <View style={{ flex: 1 }}>
+          {loadingPDF ? (
+            <View style={styles.center}>
+              <ActivityIndicator size="large" color="#EA580C" />
+            </View>
+          ) : catalogosPDF.length === 0 ? (
+            <View style={styles.center}>
+              <MaterialCommunityIcons name="file-pdf-box" size={64} color={isDark ? '#334155' : '#CBD5E1'} />
+              <Text style={[styles.centerText, { color: colors.textMain, fontWeight: '700', fontSize: 17, marginTop: 12 }]}>
+                Sin catálogos PDF
               </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
+              <Text style={[styles.centerText, { color: colors.textSub, textAlign: 'center', paddingHorizontal: 40 }]}>
+                {isAdmin ? 'Usa el botón de arriba para subir el primer catálogo.' : 'Aún no hay catálogos disponibles.'}
+              </Text>
+            </View>
+          ) : (
+            <FlatList
+              data={isAdmin ? catalogosPDF : catalogosPDF.filter(c => c.activo)}
+              keyExtractor={i => i.id}
+              contentContainerStyle={{ padding: 16, paddingBottom: 80 }}
+              showsVerticalScrollIndicator={false}
+              renderItem={({ item }) => {
+                const fecha = new Date(item.created_at).toLocaleDateString('es-BO', { day: '2-digit', month: 'short', year: 'numeric' });
+                return (
+                  <TouchableOpacity
+                    style={[styles.pdfCard, { backgroundColor: isDark ? colors.cardBg : '#fff', borderColor: isDark ? colors.cardBorder : 'transparent', borderWidth: isDark ? 1 : 0 }]}
+                    onPress={() => abrirPDF(item)}
+                    activeOpacity={0.85}
+                  >
+                    {/* Ícono libro animado */}
+                    <View style={[styles.pdfIconWrap, { backgroundColor: item.activo ? '#FEF2F2' : (isDark ? '#1e1e1e' : '#F3F4F6') }]}>
+                      <MaterialCommunityIcons
+                        name={item.activo ? 'book-open-variant' : 'book-off-outline'}
+                        size={38}
+                        color={item.activo ? '#EF4444' : colors.textSub}
+                      />
+                    </View>
 
-      {/* ── RESUMEN ── */}
-      <View style={[styles.summaryBar, { backgroundColor: colors.cardBg, borderBottomColor: isDark ? colors.cardBorder : '#E2E8F0', borderBottomWidth: 1 }]}>
-        <View style={styles.summaryItem}>
-          <MaterialCommunityIcons name="package-variant" size={16} color={colors.brandGreen} />
-          <Text style={[styles.summaryLabel, { color: colors.textSub }]}>
-            {filtered.length} productos
-          </Text>
-        </View>
-        <View style={[styles.summaryDivider, { backgroundColor: isDark ? colors.cardBorder : '#E2E8F0' }]} />
-        <View style={styles.summaryItem}>
-          <MaterialCommunityIcons name="cash-multiple" size={16} color="#EA580C" />
-          <Text style={[styles.summaryLabel, { color: colors.textSub }]}>
-            Valor: Bs {totalValue.toLocaleString('es-BO', { minimumFractionDigits: 0 })}
-          </Text>
-        </View>
-      </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.pdfTitle, { color: colors.textMain }]} numberOfLines={2}>
+                        {item.titulo}
+                      </Text>
+                      <Text style={[styles.pdfDate, { color: colors.textSub }]}>{fecha}</Text>
+                      {isAdmin && (
+                        <View style={[styles.pdfActivoBadge, { backgroundColor: item.activo ? '#DCFCE7' : '#F3F4F6' }]}>
+                          <Text style={[styles.pdfActivoText, { color: item.activo ? '#16a34a' : colors.textSub }]}>
+                            {item.activo ? 'Visible a vendedores' : 'Oculto'}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
 
-      {/* ── LISTA ── */}
-      {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color="#EA580C" />
-          <Text style={[styles.centerText, { color: colors.textSub }]}>Cargando catálogo...</Text>
-        </View>
-      ) : filtered.length === 0 ? (
-        <View style={styles.center}>
-          <MaterialCommunityIcons name="book-open-page-variant-outline" size={60} color={isDark ? '#334155' : '#CBD5E1'} />
-          <Text style={[styles.centerText, { color: colors.textMain, fontWeight: '700', fontSize: 17, marginTop: 12 }]}>Sin productos</Text>
-          <Text style={[styles.centerText, { color: colors.textSub, textAlign: 'center', paddingHorizontal: 40 }]}>
-            No hay productos que coincidan con tu búsqueda.
-          </Text>
-        </View>
-      ) : (
-        <FlatList
-          data={filtered}
-          keyExtractor={item => item.id}
-          numColumns={2}
-          columnWrapperStyle={styles.row}
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-          renderItem={({ item }) => (
-            <ProductCard
-              item={item}
-              colors={colors}
-              isDark={isDark}
-              onPress={() => setSelectedProduct(item)}
+                    <View style={{ gap: 8, alignItems: 'flex-end' }}>
+                      {/* Ver */}
+                      <TouchableOpacity
+                        style={[styles.pdfActionBtn, { backgroundColor: '#EA580C15' }]}
+                        onPress={() => abrirPDF(item)}
+                      >
+                        <Ionicons name="book-outline" size={16} color="#EA580C" />
+                        <Text style={[styles.pdfActionText, { color: '#EA580C' }]}>Ver</Text>
+                      </TouchableOpacity>
+                      {/* Admin: toggle activo + eliminar */}
+                      {isAdmin && (
+                        <>
+                          <TouchableOpacity
+                            style={[styles.pdfActionBtn, { backgroundColor: item.activo ? '#FEF9C3' : '#F0FDF4' }]}
+                            onPress={() => toggleActivoPDF(item)}
+                          >
+                            <Ionicons name={item.activo ? 'eye-off-outline' : 'eye-outline'} size={14} color={item.activo ? '#D97706' : '#16a34a'} />
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={[styles.pdfActionBtn, { backgroundColor: '#FEF2F2' }]}
+                            onPress={() => eliminarPDF(item)}
+                          >
+                            <Ionicons name="trash-outline" size={14} color="#EF4444" />
+                          </TouchableOpacity>
+                        </>
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                );
+              }}
             />
           )}
-        />
+        </View>
+
+      ) : (
+
+        /* ── TAB PRODUCTOS ── */
+        <>
+          {/* Filtros de categoría */}
+          <View style={{ backgroundColor: colors.cardBg, paddingBottom: 8 }}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.catScrollContent}
+            >
+              <TouchableOpacity
+                style={[styles.catChip, !catFilter && { backgroundColor: '#EA580C' }, catFilter && { backgroundColor: isDark ? colors.inputBg : '#F1F5F9' }]}
+                onPress={() => setCatFilter(null)}
+              >
+                <Text style={[styles.catChipText, { color: !catFilter ? '#fff' : colors.textSub }]}>Todos</Text>
+              </TouchableOpacity>
+              {categorias.map(cat => (
+                <TouchableOpacity
+                  key={cat.id}
+                  style={[styles.catChip, catFilter === cat.id && { backgroundColor: '#EA580C' }, catFilter !== cat.id && { backgroundColor: isDark ? colors.inputBg : '#F1F5F9' }]}
+                  onPress={() => setCatFilter(cat.id === catFilter ? null : cat.id)}
+                >
+                  <Text style={[styles.catChipText, { color: catFilter === cat.id ? '#fff' : colors.textSub }]}>{cat.nombre}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+
+          {/* Resumen */}
+          <View style={[styles.summaryBar, { backgroundColor: colors.cardBg, borderBottomColor: isDark ? colors.cardBorder : '#E2E8F0', borderBottomWidth: 1 }]}>
+            <View style={styles.summaryItem}>
+              <MaterialCommunityIcons name="package-variant" size={16} color={colors.brandGreen} />
+              <Text style={[styles.summaryLabel, { color: colors.textSub }]}>{filtered.length} productos</Text>
+            </View>
+            <View style={[styles.summaryDivider, { backgroundColor: isDark ? colors.cardBorder : '#E2E8F0' }]} />
+            <View style={styles.summaryItem}>
+              <MaterialCommunityIcons name="cash-multiple" size={16} color="#EA580C" />
+              <Text style={[styles.summaryLabel, { color: colors.textSub }]}>
+                Valor: Bs {totalValue.toLocaleString('es-BO', { minimumFractionDigits: 0 })}
+              </Text>
+            </View>
+          </View>
+
+          {/* Lista productos */}
+          {loading ? (
+            <View style={styles.center}>
+              <ActivityIndicator size="large" color="#EA580C" />
+              <Text style={[styles.centerText, { color: colors.textSub }]}>Cargando catálogo...</Text>
+            </View>
+          ) : filtered.length === 0 ? (
+            <View style={styles.center}>
+              <MaterialCommunityIcons name="book-open-page-variant-outline" size={60} color={isDark ? '#334155' : '#CBD5E1'} />
+              <Text style={[styles.centerText, { color: colors.textMain, fontWeight: '700', fontSize: 17, marginTop: 12 }]}>Sin productos</Text>
+              <Text style={[styles.centerText, { color: colors.textSub, textAlign: 'center', paddingHorizontal: 40 }]}>
+                No hay productos que coincidan con tu búsqueda.
+              </Text>
+            </View>
+          ) : (
+            <FlatList
+              data={filtered}
+              keyExtractor={item => item.id}
+              numColumns={2}
+              columnWrapperStyle={styles.row}
+              contentContainerStyle={styles.listContent}
+              showsVerticalScrollIndicator={false}
+              renderItem={({ item }) => (
+                <ProductCard item={item} colors={colors} isDark={isDark} onPress={() => setSelectedProduct(item)} />
+              )}
+            />
+          )}
+        </>
       )}
 
       {/* ── MODAL DETALLE PRODUCTO ── */}
@@ -419,6 +617,45 @@ export default function CatalogoScreen() {
               );
             })()}
           </View>
+        </View>
+      </Modal>
+
+      {/* ── VISOR PDF con animación de libro ── */}
+      <Modal
+        visible={pdfVisorVisible}
+        animationType="none"
+        onRequestClose={() => setPdfVisorVisible(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: '#1a1a1a' }}>
+          <SafeAreaView edges={['top']} style={{ backgroundColor: '#111' }}>
+            <View style={styles.pdfViewerHeader}>
+              <TouchableOpacity onPress={() => setPdfVisorVisible(false)} style={styles.pdfViewerBack}>
+                <Ionicons name="close" size={22} color="#fff" />
+              </TouchableOpacity>
+              <View style={{ flex: 1, alignItems: 'center' }}>
+                <Text style={styles.pdfViewerTitle} numberOfLines={1}>{pdfTitulo}</Text>
+                <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, marginTop: 2 }}>Desliza para pasar páginas</Text>
+              </View>
+              <View style={{ width: 38 }} />
+            </View>
+          </SafeAreaView>
+
+          <Animated.View style={{ flex: 1, transform: [{ rotateY: pageAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '90deg'] }) }] }}>
+            {pdfUrl ? (
+              <View style={{ flex: 1, backgroundColor: '#2a2a2a', justifyContent: 'center', alignItems: 'center', padding: 32 }}>
+                <MaterialCommunityIcons name="file-pdf-box" size={80} color="#EF4444" />
+                <Text style={{ color: '#fff', fontSize: 18, fontWeight: '700', marginTop: 16, textAlign: 'center' }}>{pdfTitulo}</Text>
+                <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, marginTop: 10, textAlign: 'center', lineHeight: 20 }}>
+                </Text>
+                <TouchableOpacity
+                  style={{ marginTop: 20, backgroundColor: '#EF4444', paddingHorizontal: 28, paddingVertical: 14, borderRadius: 14 }}
+                  onPress={() => { const { Linking } = require('react-native'); Linking.openURL(pdfUrl); }}
+                >
+                  <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>Abrir PDF</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+          </Animated.View>
         </View>
       </Modal>
     </View>
@@ -539,4 +776,29 @@ const styles = StyleSheet.create({
   modalRowValue: { fontSize: 13, fontWeight: '700' },
   calcCard: { borderRadius: 12, borderWidth: 1, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 10 },
   calcText: { fontSize: 13, fontWeight: '600', flex: 1 },
+
+  // Tabs PDF/Productos
+  tabsRow: { flexDirection: 'row', gap: 8, marginBottom: 12, marginTop: 4 },
+  tabPill: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.12)' },
+  tabPillActive: { backgroundColor: 'rgba(255,255,255,0.3)' },
+  tabPillText: { fontSize: 13, fontWeight: '700', color: 'rgba(255,255,255,0.7)' },
+
+  // Banner subir PDF
+  uploadBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, marginTop: 4 },
+  uploadBannerText: { color: 'rgba(255,255,255,0.9)', fontSize: 14, fontWeight: '600' },
+
+  // Tarjeta PDF
+  pdfCard: { flexDirection: 'row', alignItems: 'center', borderRadius: 16, padding: 14, marginBottom: 12, gap: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 3 },
+  pdfIconWrap: { width: 60, height: 60, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
+  pdfTitle: { fontSize: 15, fontWeight: '700', marginBottom: 4, lineHeight: 20 },
+  pdfDate: { fontSize: 11, marginBottom: 6 },
+  pdfActivoBadge: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  pdfActivoText: { fontSize: 10, fontWeight: '700' },
+  pdfActionBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 6, borderRadius: 8 },
+  pdfActionText: { fontSize: 12, fontWeight: '700' },
+
+  // Visor PDF
+  pdfViewerHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12 },
+  pdfViewerBack: { width: 38, height: 38, justifyContent: 'center', alignItems: 'center' },
+  pdfViewerTitle: { color: '#fff', fontSize: 15, fontWeight: '700' },
 });

@@ -11,7 +11,19 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { WebView } from 'react-native-webview';
 import { supabase } from '../../lib/supabase';
+
+function parseGeoPoint(value: any): { lat: number | null; lng: number | null } {
+  if (!value) return { lat: null, lng: null };
+  try {
+    if (typeof value === 'string') {
+      const m = value.match(/POINT\s*\(\s*([-\d.]+)\s+([-\d.]+)\s*\)/i);
+      if (m) return { lng: parseFloat(m[1]), lat: parseFloat(m[2]) };
+    }
+  } catch (_) { }
+  return { lat: null, lng: null };
+}
 
 interface VisitDetail {
   id: number;
@@ -23,6 +35,8 @@ interface VisitDetail {
   outcome: 'sale' | 'no_sale' | 'closed';
   notes: string | null;
   gps_accuracy_meters: number | null;
+  check_in_location: any;
+  check_out_location: any;
   clients: {
     name: string;
     phones: string;
@@ -57,6 +71,8 @@ export default function VisitDetailScreen() {
           outcome,
           notes,
           gps_accuracy_meters,
+          check_in_location,
+          check_out_location,
           clients:client_id (
             name,
             phones,
@@ -91,6 +107,8 @@ export default function VisitDetailScreen() {
           outcome: rawData.outcome,
           notes: rawData.notes,
           gps_accuracy_meters: rawData.gps_accuracy_meters,
+          check_in_location: rawData.check_in_location,
+          check_out_location: rawData.check_out_location,
           clients: {
             name: rawClient?.name || 'Sin nombre',
             address: rawClient?.address || 'Sin dirección',
@@ -182,6 +200,37 @@ export default function VisitDetailScreen() {
     return `${minutes}m ${secs}s`;
   };
 
+  const renderMap = () => {
+    if (!visit) return null;
+    const locIn = parseGeoPoint(visit.check_in_location);
+    const locOut = parseGeoPoint(visit.check_out_location);
+    const centerLat = locIn.lat || locOut.lat || -17.3895;
+    const centerLng = locIn.lng || locOut.lng || -66.1568;
+
+    const html = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>body{margin:0;padding:0;}#map{width:100%;height:100vh;}
+.custom-marker { background: #2a8c4a; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 4px rgba(0,0,0,0.4); text-align: center; color: white; line-height: 24px; font-size: 12px; font-weight: bold; }
+</style></head><body><div id="map"></div>
+<script>
+var map = L.map('map',{zoomControl:false}).setView([${centerLat}, ${centerLng}], 15);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
+var iconIn = L.divIcon({className: 'custom-marker', html: 'A', iconSize: [24,24]});
+var iconOut = L.divIcon({className: 'custom-marker', html: 'B', iconSize: [24,24]});
+${locIn.lat ? `L.marker([${locIn.lat}, ${locIn.lng}], {icon: iconIn}).addTo(map).bindPopup("<b>Inicio de Visita</b>").openPopup();` : ''}
+${locOut.lat ? `L.marker([${locOut.lat}, ${locOut.lng}], {icon: iconOut}).addTo(map).bindPopup("<b>Fin de Visita</b>");` : ''}
+</script></body></html>`;
+
+    return (
+      <View style={styles.mapContainer}>
+        <Text style={styles.cardTitle}>Ubicación GPS</Text>
+        <View style={styles.mapBorder}>
+          <WebView source={{ html }} style={styles.mapView} scrollEnabled={false} pointerEvents="none" />
+        </View>
+      </View>
+    );
+  };
+
   return (
     <View style={styles.container}>
       <Stack.Screen options={{ headerShown: false }} />
@@ -255,6 +304,9 @@ export default function VisitDetailScreen() {
             </View>
           </View>
         </View>
+
+        {/* Mapa de ubicación */}
+        {(visit.check_in_location || visit.check_out_location) && renderMap()}
 
         {/* Información de Tiempo */}
         <View style={styles.card}>
@@ -468,5 +520,25 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  mapContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  mapBorder: {
+    height: 200,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#f3f4f6',
+  },
+  mapView: {
+    flex: 1,
   },
 });

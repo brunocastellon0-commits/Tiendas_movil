@@ -45,7 +45,7 @@ const formatFecha = (iso: string) => {
 const esHoy = (iso: string): boolean =>
   startOfDay(new Date(iso)).getTime() === startOfDay(new Date()).getTime();
 
-type MainFilter = 'hoy' | 'semana' | 'todo';
+type MainFilter = 'hoy' | 'semana';
 
 interface DetalleItem {
   id: string;
@@ -429,8 +429,8 @@ tbody tr:not(:last-child) td{border-bottom:1px solid #F3F4F6;}
           </View>
 
           <View style={styles.filterRow}>
-            {(['hoy', 'semana', 'todo'] as MainFilter[]).map(f => {
-              const labels: Record<MainFilter, string> = { hoy: 'Hoy', semana: 'Semana', todo: 'Mes' };
+            {(['hoy', 'semana'] as MainFilter[]).map(f => {
+              const labels: Record<MainFilter, string> = { hoy: 'Hoy', semana: 'Semana' };
               const active = mainFilter === f;
               return (
                 <TouchableOpacity
@@ -550,9 +550,12 @@ tbody tr:not(:last-child) td{border-bottom:1px solid #F3F4F6;}
 
                     {/* ── SI ES ADMIN, MOSTRAMOS QUÉ EMPLEADO HIZO EL PEDIDO ── */}
                     {isAdmin && pedido.empleados?.full_name && (
-                      <Text style={{ fontSize: 11, color: colors.brandGreen, marginTop: 2, fontWeight: '600' }}>
-                        👤 Vendedor: {pedido.empleados.full_name}
-                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2, gap: 4 }}>
+                        <Ionicons name="person" size={11} color={colors.brandGreen} />
+                        <Text style={{ fontSize: 11, color: colors.brandGreen, fontWeight: '600' }}>
+                          Vendedor: {pedido.empleados.full_name}
+                        </Text>
+                      </View>
                     )}
                   </View>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>

@@ -40,13 +40,13 @@ interface Producto {
 
 type FiltroStock = 'todos' | 'critico' | 'bajo' | 'ok';
 
-const STOCK_CRITICO = 5;
+const STOCK_CRITICO = 0;
 const STOCK_BAJO = 15;
 
 const getNivelStock = (stock: number) => {
-    if (stock <= STOCK_CRITICO) return { label: 'Crítico', color: '#EF4444', bg: '#FEF2F2', icon: 'alert-circle' as const };
-    if (stock <= STOCK_BAJO) return { label: 'Bajo', color: '#F59E0B', bg: '#FFFBEB', icon: 'warning' as const };
-    return { label: 'OK', color: '#10B981', bg: '#DCFCE7', icon: 'checkmark-circle' as const };
+    if (stock <= STOCK_CRITICO) return { label: 'Sin stock', color: '#EF4444', bg: '#FEF2F2', icon: 'alert-circle' as const };
+    if (stock <= STOCK_BAJO) return { label: 'Stock bajo', color: '#F59E0B', bg: '#FFFBEB', icon: 'warning' as const };
+    return { label: 'Stock suficiente', color: '#10B981', bg: '#DCFCE7', icon: 'checkmark-circle' as const };
 };
 
 export default function ReporteInventarioScreen() {
@@ -151,24 +151,6 @@ export default function ReporteInventarioScreen() {
                         <TouchableOpacity style={styles.iconBtn} onPress={cargarProductos}>
                             <Ionicons name="refresh" size={22} color="#fff" />
                         </TouchableOpacity>
-                    </View>
-
-                    {/* Resumen chips */}
-                    <View style={styles.resumenRow}>
-                        {[
-                            { key: 'critico', label: 'Críticos', value: resumen.criticos, color: '#EF4444' },
-                            { key: 'bajo', label: 'Bajos', value: resumen.bajos, color: '#F59E0B' },
-                            { key: 'ok', label: 'OK', value: resumen.ok, color: '#4ade80' },
-                        ].map(r => (
-                            <TouchableOpacity
-                                key={r.key}
-                                style={[styles.resumenChip, filtroStock === r.key && { borderWidth: 2, borderColor: r.color }]}
-                                onPress={() => setFiltroStock(filtroStock === r.key ? 'todos' : r.key as FiltroStock)}
-                            >
-                                <Text style={[styles.resumenVal, { color: r.color }]}>{r.value}</Text>
-                                <Text style={styles.resumenLabel}>{r.label}</Text>
-                            </TouchableOpacity>
-                        ))}
                     </View>
 
                     {/* Buscador */}

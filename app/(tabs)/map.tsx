@@ -77,13 +77,13 @@ function updateMap(data){
         var icon=L.divIcon({className:'',html:'<div style="background:'+color+';width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:2.5px solid rgba(255,255,255,.9);box-shadow:0 2px 8px rgba(0,0,0,.4);font-weight:bold;color:white;font-size:11px;line-height:30px;text-align:center;">'+(rp.label||'•')+'</div>',iconSize:[30,30],iconAnchor:[15,15]});
         var popup='<div style="text-align:center;min-width:160px;font-family:system-ui">';
         popup+='<b style="font-size:13px">'+(rp.label||'Punto de Ruta')+'</b><br>';
-        if(rp.clientName) popup+='<span style="color:#2a8c4a;font-size:12px;font-weight:600">👤 '+rp.clientName+'</span><br>';
-        if(rp.zoneName)   popup+='<span style="color:#666;font-size:11px">📍 '+rp.zoneName+'</span><br>';
+        if(rp.clientName) popup+='<span style="color:#2a8c4a;font-size:12px;font-weight:600">'+rp.clientName+'</span><br>';
+        if(rp.zoneName)   popup+='<span style="color:#666;font-size:11px">'+rp.zoneName+'</span><br>';
         if(rp.clientId){
           popup+=btn('▶ INICIAR VISITA','#2a8c4a','{action:\\'startVisit\\',clientId:\\''+rp.clientId+'\\'}');
           popup+=btn('✏ Cambiar cliente','#6B7280','{action:\\'assignClient\\',pointId:\\''+rp.pointId+'\\'}');
         }else{
-          popup+=btn('👤 ASIGNAR CLIENTE','#6366F1','{action:\\'assignClient\\',pointId:\\''+rp.pointId+'\\'}');
+          popup+=btn('ASIGNAR CLIENTE','#6366F1','{action:\\'assignClient\\',pointId:\\''+rp.pointId+'\\'}');
         }
         popup+='</div>';
         var m=L.marker([rp.lat,rp.lng],{icon:icon}).bindPopup(popup);
@@ -96,9 +96,9 @@ function updateMap(data){
       data.orders.forEach(function(o){
         if(!o.lat||!o.lng)return;
         var iconClass='custom-order-icon',symbol='$',label='Pedido',color='#64c27b';
-        if(o.outcome==='sale')   {iconClass='custom-order-icon-sale';   symbol='✓';label='✅ Venta';     color='#10B981';}
-        if(o.outcome==='no_sale'){iconClass='custom-order-icon-no-sale';symbol='○';label='⚠️ Sin Venta'; color='#F59E0B';}
-        if(o.outcome==='closed') {iconClass='custom-order-icon-closed'; symbol='✕';label='🔒 Cerrado';  color='#EF4444';}
+        if(o.outcome==='sale')   {iconClass='custom-order-icon-sale';   symbol='✓';label='Venta Realizada';     color='#10B981';}
+        if(o.outcome==='no_sale'){iconClass='custom-order-icon-no-sale';symbol='○';label='Sin Venta'; color='#F59E0B';}
+        if(o.outcome==='closed') {iconClass='custom-order-icon-closed'; symbol='✕';label='Cerrado';  color='#EF4444';}
         var icon=L.divIcon({className:iconClass,html:symbol,iconSize:[32,32]});
         var popup='<div style="text-align:center;min-width:150px"><b>'+label+'</b><br>';
         if(o.total>0)popup+='<span style="color:'+color+';font-size:15px;font-weight:bold">Bs. '+o.total.toFixed(2)+'</span><br>';
@@ -116,9 +116,9 @@ function updateMap(data){
       data.employees.forEach(function(emp){
         if(!emp.lat||!emp.lng)return;
         var icon=L.divIcon({className:'employee-marker',html:emp.initials,iconSize:[40,40]});
-        var popup='<div style="text-align:center"><b>👤 '+emp.name+'</b><br>';
+        var popup='<div style="text-align:center"><b>'+emp.name+'</b><br>';
         popup+='<span style="color:#8B5CF6;font-size:12px;font-weight:600">'+emp.role+'</span><br>';
-        if(emp.lastUpdate)popup+='<span style="color:#999;font-size:11px">📍 '+emp.lastUpdate+'</span>';
+        if(emp.lastUpdate)popup+='<span style="color:#999;font-size:11px">'+emp.lastUpdate+'</span>';
         popup+='</div>';
         L.marker([emp.lat,emp.lng],{icon:icon}).bindPopup(popup).addTo(markersLayer);
       });
@@ -139,13 +139,13 @@ function updateMap(data){
       var color=rp.color||'#6366F1';
       var newPopup='<div style="text-align:center;min-width:160px;font-family:system-ui">';
       newPopup+='<b style="font-size:13px">'+(rp.label||'Punto de Ruta')+'</b><br>';
-      if(rp.clientName) newPopup+='<span style="color:#2a8c4a;font-size:12px;font-weight:600">👤 '+rp.clientName+'</span><br>';
-      if(rp.zoneName)   newPopup+='<span style="color:#666;font-size:11px">📍 '+rp.zoneName+'</span><br>';
+      if(rp.clientName) newPopup+='<span style="color:#2a8c4a;font-size:12px;font-weight:600">'+rp.clientName+'</span><br>';
+      if(rp.zoneName)   newPopup+='<span style="color:#666;font-size:11px">'+rp.zoneName+'</span><br>';
       if(rp.clientId){
         newPopup+=btn('▶ INICIAR VISITA','#2a8c4a','{action:\\'startVisit\\',clientId:\\''+rp.clientId+'\\'}')
         newPopup+=btn('✏ Cambiar cliente','#6B7280','{action:\\'assignClient\\',pointId:\\''+rp.pointId+'\\'}');
       }else{
-        newPopup+=btn('👤 ASIGNAR CLIENTE','#6366F1','{action:\\'assignClient\\',pointId:\\''+rp.pointId+'\\'}');
+        newPopup+=btn('ASIGNAR CLIENTE','#6366F1','{action:\\'assignClient\\',pointId:\\''+rp.pointId+'\\'}');
       }
       newPopup+='</div>';
       mp.setPopupContent(newPopup);

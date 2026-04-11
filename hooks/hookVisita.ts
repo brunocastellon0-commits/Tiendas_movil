@@ -80,11 +80,15 @@ export const useVisitTracker = () => {
   const checkActiveVisit = async (clientId?: string) => {
     if (!session?.user) return;
     try {
+      const today = new Date();
+      const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      
       let query = supabase
         .from('visits')
         .select('id, start_time')
         .eq('seller_id', session.user.id)
         .eq('outcome', 'pending')
+        .gte('start_time', `${todayStr}T00:00:00-04:00`)
         .order('start_time', { ascending: false })
         .limit(1);
 

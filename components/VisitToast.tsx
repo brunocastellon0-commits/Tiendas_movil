@@ -73,7 +73,7 @@ export const VisitToast = () => {
             Animated.timing(opacityAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
         ]).start();
 
-        // Cierre automático a los 5 segundos
+        // Cierre automático a los 2 segundos
         if (timerRef.current) clearTimeout(timerRef.current);
         timerRef.current = setTimeout(() => {
             Animated.parallel([
@@ -84,7 +84,7 @@ export const VisitToast = () => {
                 scaleAnim.setValue(0.85);
                 opacityAnim.setValue(0);
             });
-        }, 5000);
+        }, 2000);
 
         return () => { if (timerRef.current) clearTimeout(timerRef.current); };
     }, [config.visible, config.title]);
@@ -128,7 +128,7 @@ const ProgressBar = ({ color }: { color: string }) => {
     const widthAnim = useRef(new Animated.Value(1)).current;
 
     useEffect(() => {
-        Animated.timing(widthAnim, { toValue: 0, duration: 5000, useNativeDriver: false }).start();
+        Animated.timing(widthAnim, { toValue: 0, duration: 2000, useNativeDriver: false }).start();
     }, []);
 
     return (
