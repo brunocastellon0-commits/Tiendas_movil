@@ -121,6 +121,14 @@ export default function RegisterClientScreen() {
   const [modalZona, setModalZona] = useState(false);
   const [modalPayment, setModalPayment] = useState(false);
 
+  // Modal de éxito personalizado
+  const [successModal, setSuccessModal] = useState({ visible: false, title: '', message: '' });
+  const navTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (navTimerRef.current) clearTimeout(navTimerRef.current);
+  }, []);
+
   // Referencias
   const codeRef = React.useRef<TextInput>(null);
   const nameRef = React.useRef<TextInput>(null);
@@ -246,6 +254,14 @@ export default function RegisterClientScreen() {
 
   const handleChange = (key: string, value: string) => setForm(prev => ({ ...prev, [key]: value }));
 
+  const showSuccessModalAndNavigate = (title: string, message: string) => {
+    setSuccessModal({ visible: true, title, message });
+    navTimerRef.current = setTimeout(() => {
+      setSuccessModal(p => ({ ...p, visible: false }));
+      router.back();
+    }, 2000); // 2 segundos mínimos
+  };
+
   const handleSelectZona = (zona: Zona) => {
     const vendedorNombre = zona.employees?.full_name || '';
     const vendedorId = zona.vendedor_id || '';
@@ -283,14 +299,10 @@ export default function RegisterClientScreen() {
 
       if (id && id !== 'NuevoCliente') {
         await clientService.updateClient(id.toString(), payload);
-        Alert.alert("✓ Actualizado", "Cliente editado correctamente.", [
-          { text: "OK", onPress: () => router.back() }
-        ]);
+        showSuccessModalAndNavigate("Cliente Actualizado", "El cliente fue editado correctamente.");
       } else {
         await clientService.createClient(payload);
-        Alert.alert("✓ Éxito", "Cliente registrado correctamente.", [
-          { text: "OK", onPress: () => router.back() }
-        ]);
+        showSuccessModalAndNavigate("Cliente Creado", "El cliente fue registrado correctamente.");
       }
     } catch (error: any) {
       Alert.alert("Error", error.message || "No se pudo guardar.");
@@ -872,6 +884,23 @@ export default function RegisterClientScreen() {
             </TouchableWithoutFeedback>
           </View>
         </TouchableWithoutFeedback>
+      </Modal>
+
+      {/* Modal Éxito (Timer 2s) */}
+      <Modal visible={successModal.visible} transparent animationType="fade">
+        <View style={styles.modalBg}>
+          <View style={[styles.modalContent, { backgroundColor: colors.cardBg, alignItems: 'center' }]}>
+            <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: isDark ? 'rgba(22,163,74,0.2)' : '#DCFCE7', justifyContent: 'center', alignItems: 'center', marginBottom: 16 }}>
+              <Ionicons name="checkmark-circle" size={40} color={colors.brandGreen} />
+            </View>
+            <Text style={[styles.modalTitle, { color: colors.textMain, textAlign: 'center', marginBottom: 8 }]}>
+              {successModal.title}
+            </Text>
+            <Text style={{ color: colors.textSub, textAlign: 'center', fontSize: 14 }}>
+              {successModal.message}
+            </Text>
+          </View>
+        </View>
       </Modal>
 
     </View>

@@ -174,11 +174,41 @@ export default function NuevoPedido() {
       let loc: any = null;
       try {
         loc = await Promise.race([
-          Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+          Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }),
           new Promise((_, reject) => setTimeout(() => reject('timeout'), 5000))
         ]);
       } catch (e) {
         loc = await Location.getLastKnownPositionAsync().catch(() => null);
+      }
+
+      // ── 🛡️ DETECCIÓN DE GPS FALSO (Mock Location / emulador / app spoofing) ──
+      // expo-location expone `mocked: true` en Android cuando la ubicación
+      // proviene de una app de simulación (Fake GPS, emulador, etc.)
+      if (loc?.mocked === true) {
+        console.warn('[NuevoPedido] 🚨 GPS falso detectado — bloqueando pedido');
+        // Registrar el intento en Supabase para auditoría del admin
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            await supabase.from('location_events').insert({
+              employee_id: user.id,
+              event_type: 'disabled',
+              location: null,
+              reason: '⚠️ INTENTO FRAUDE GPS: GPS falso al crear pedido (Mock Location activo)',
+              timestamp: new Date().toISOString(),
+            });
+          }
+        } catch { /* Silencioso */ }
+
+        Alert.alert(
+          '🚨 Ubicación falsa detectada',
+          'Se ha detectado que estás usando una aplicación para simular tu ubicación GPS.\n\n' +
+            'No es posible crear pedidos con una ubicación falsa. Esto ha sido registrado.\n\n' +
+            'Desactiva la ubicación simulada y vuelve a intentarlo.',
+          [{ text: 'Entendido', style: 'destructive' }]
+        );
+        setSaving(false);
+        return;
       }
 
       // ── Verificar sesión activa ─────────────────────────────────────────────

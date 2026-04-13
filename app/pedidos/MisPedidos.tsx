@@ -268,9 +268,9 @@ export default function MisPedidos() {
         if (error) throw error;
       }
       const { error } = await supabase.from('pedidos')
-        .update({ total_venta: calcularTotalModal() }).eq('id', selectedPedido.id);
+        .update({ total_venta: calcularTotalModal(), estado: 'Editado' }).eq('id', selectedPedido.id);
       if (error) throw error;
-      Alert.alert('Éxito', 'Pedido actualizado correctamente');
+      Alert.alert('Éxito', 'Pedido actualizado correctamente. El sistema sincronizará los cambios.');
       closeModal(); fetchPedidos();
     } catch (e: any) { Alert.alert('Error', e.message || 'No se pudo guardar el pedido'); }
     finally { setSaving(false); }

@@ -116,7 +116,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     let statusSubscription: any = null;
 
     // 1. Cargar sesión inicial
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session }, error }) => {
+      // ── Fix: Refresh Token inválido / expirado ─────────────────────────────
+      // Supabase lanza AuthApiError("Invalid Refresh Token") cuando el token
+      // guardado en AsyncStorage ya no es válido (p.e. reinicio de Expo Go,
+      // token revocado desde el panel). Forzamos signOut para limpiar el
+      // storage corrupto y que el usuario vuelva a la pantalla de login.
+      if (error && (error.message?.includes('Refresh Token') || error.message?.includes('refresh_token'))) {
+        console.warn('[AuthContext] Token expirado o inválido — cerrando sesión automáticamente');
+        await supabase.auth.signOut();
+        setSession(null);
+        setLoading(false);
+        return;
+      }
+
       setSession(session);
       
       if (session?.user) {

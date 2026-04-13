@@ -5,17 +5,33 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { showVisitToast } from '../components/VisitToast';
 
-// Solicita permisos de GPS de forma explícita y retorna las coords o null.
-// Si el usuario denegó el permiso, muestra un alert con instrucciones para
-// habilitarlo manualmente en la configuración del dispositivo.
+// ─── Registro del intento de fraude en Supabase ───────────────────────────────
+const logMockGPSAttempt = async (reason: string) => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    await supabase.from('location_events').insert({
+      employee_id: user.id,
+      event_type: 'disabled',
+      location: null,
+      reason: `⚠️ INTENTO FRAUDE GPS: ${reason}`,
+      timestamp: new Date().toISOString(),
+    });
+  } catch {
+    // Silencioso — no interrumpir el flujo principal
+  }
+};
+
+// ─── Solicita permisos de GPS y retorna las coords o null ────────────────────
+// Si el usuario denegó el permiso, muestra un alert con instrucciones.
+// Si se detecta GPS falso (emulador / app de spoofing), bloquea el registro.
 const requestGPSCoords = async (): Promise<{ point: string; accuracy: number | null } | null> => {
   try {
-    // Primero revisamos el estado actual sin pedirlo de nuevo si ya se decidió
+    // 1. Revisamos el estado actual sin pedirlo de nuevo si ya se decidió
     const { status: currentStatus } = await Location.getForegroundPermissionsAsync();
 
     if (currentStatus === 'denied') {
       // El usuario ya denegó antes — no podemos volver a preguntar en Android.
-      // Debemos mandarlo a Configuración.
       Alert.alert(
         'Permiso de ubicación denegado',
         'Para registrar tu visita con GPS necesitas habilitar la ubicación en la ' +
@@ -31,7 +47,7 @@ const requestGPSCoords = async (): Promise<{ point: string; accuracy: number | n
       return null;
     }
 
-    // Si todavía no se ha pedido (undetermined) o ya fue granted, solicitamos/confirmamos
+    // 2. Solicitar/confirmar permiso
     const { status } = await Location.requestForegroundPermissionsAsync();
 
     if (status !== 'granted') {
@@ -43,9 +59,30 @@ const requestGPSCoords = async (): Promise<{ point: string; accuracy: number | n
       return null;
     }
 
+    // 3. Obtener coordenadas con alta precisión
     const loc = await Location.getCurrentPositionAsync({
       accuracy: Location.Accuracy.High,
     });
+
+    // 4. 🛡️ DETECCIÓN DE GPS FALSO (Mock Location / emulador / app spoofing)
+    //    expo-location expone `mocked: true` en Android cuando el sistema
+    //    detecta que la ubicación proviene de una app de ubicación simulada.
+    if (loc.mocked === true) {
+      const reason = 'GPS falso detectado (Mock Location activo)';
+      console.warn('[hookVisita] 🚨', reason);
+
+      // Registrar el intento en Supabase para que el admin lo vea
+      await logMockGPSAttempt(reason);
+
+      Alert.alert(
+        '🚨 Ubicación falsa detectada',
+        'Se ha detectado que estás usando una aplicación para simular tu ubicación GPS.\n\n' +
+          'Esto va en contra de las políticas de la empresa y ha sido registrado.\n\n' +
+          'Desactiva la ubicación simulada y vuelve a intentarlo.',
+        [{ text: 'Entendido', style: 'destructive' }]
+      );
+      return null;
+    }
 
     return {
       point: `POINT(${loc.coords.longitude} ${loc.coords.latitude})`,

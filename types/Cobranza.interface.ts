@@ -5,6 +5,7 @@ export interface CuentaPendiente {
     numero_documento: string | null;
     fecha_venta: string | null;
     client_id: string | null;
+    empleado_id?: string | null;
     nombre_cliente: string | null;
     monto_total: number;
     monto_pagado: number;
@@ -24,6 +25,9 @@ export interface Deuda {
     dias_mora: number;
     cliente: {
         nombre: string;
+        codigo: string;
+        razon_social: string;
+        direccion: string;
         telefono: string;
     };
 }

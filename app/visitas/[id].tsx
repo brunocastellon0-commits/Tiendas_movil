@@ -217,12 +217,16 @@ export default function VisitDetailScreen() {
 
     const html = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<style>body{margin:0;padding:0;background-color:${isDark ? '#1a1a1a' : '#ffffff'}}#map{width:100%;height:100vh;}
+<style>body{margin:0;padding:0;}#map{width:100%;height:100vh;}
 .custom-marker { background: ${colors.brandGreen}; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 4px rgba(0,0,0,0.4); text-align: center; color: white; line-height: 24px; font-size: 12px; font-weight: bold; }
+${isDark ? `
+.leaflet-popup-content-wrapper, .leaflet-popup-tip { background: #1c1c1e !important; color: #f3f4f6 !important; }
+.leaflet-popup-content b { color: #f9fafb !important; }
+` : ''}
 </style></head><body><div id="map"></div>
 <script>
 var map = L.map('map',{zoomControl:false}).setView([${centerLat}, ${centerLng}], 15);
-L.tileLayer('https://{s}.basemaps.cartocdn.com/${isDark ? 'dark_all' : 'light_all'}/{z}/{x}/{y}{r}.png',{maxZoom:19}).addTo(map);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'',maxZoom:19}).addTo(map);
 var iconIn = L.divIcon({className: 'custom-marker', html: 'A', iconSize: [24,24]});
 var iconOut = L.divIcon({className: 'custom-marker', html: 'B', iconSize: [24,24]});
 ${locIn.lat ? `L.marker([${locIn.lat}, ${locIn.lng}], {icon: iconIn}).addTo(map).bindPopup("<b>Inicio de Visita</b>").openPopup();` : ''}

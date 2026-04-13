@@ -17,6 +17,7 @@ import {
   View
 } from 'react-native';
 import { WebView } from 'react-native-webview';
+import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { LocationService } from '../../services/LocationService';
@@ -44,7 +45,7 @@ function parseGeoPoint(value: any): { lat: number | null; lng: number | null } {
 }
 
 // ─── HTML DEL MAPA LEAFLET ─────────────────────────────────────────────────────
-const LEAFLET_HTML = `<!DOCTYPE html><html><head>
+const getLeafletHtml = (isDark: boolean) => `<!DOCTYPE html><html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -55,9 +56,13 @@ const LEAFLET_HTML = `<!DOCTYPE html><html><head>
   .custom-order-icon-no-sale{background:linear-gradient(135deg,#F59E0B,#D97706);border:2px solid #D97706;border-radius:50%;text-align:center;line-height:28px;font-size:16px;font-weight:bold;color:white;box-shadow:0 3px 6px rgba(245,158,11,.4);}
   .custom-order-icon-closed{background:linear-gradient(135deg,#EF4444,#DC2626);border:2px solid #DC2626;border-radius:50%;text-align:center;line-height:28px;font-size:16px;font-weight:bold;color:white;box-shadow:0 3px 6px rgba(239,68,68,.4);}
   .employee-marker{background:linear-gradient(135deg,#8B5CF6,#7C3AED);border:3px solid #fff;border-radius:50%;text-align:center;line-height:36px;font-size:14px;font-weight:bold;color:white;box-shadow:0 4px 8px rgba(139,92,246,.5);}
+  ${isDark ? `
+  .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: #1c1c1e !important; color: #f3f4f6 !important; }
+  .leaflet-popup-content b { color: #f9fafb !important; }
+  ` : ''}
 </style></head><body><div id="map"></div><script>
 var map=L.map('map',{zoomControl:false}).setView([-17.3895,-66.1568],14);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:19}).addTo(map);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'',maxZoom:19}).addTo(map);
 var markersLayer=L.layerGroup().addTo(map);
 var routeLayer=L.layerGroup().addTo(map);
 var markersMap={};
@@ -152,6 +157,28 @@ function updateMap(data){
       setTimeout(function(){mp.openPopup();},150);
     }
   }
+  if(data.type==='UPDATE_ORDERS'){
+    markersLayer.clearLayers();
+    if(data.orders&&data.orders.length>0){
+      data.orders.forEach(function(o){
+        if(!o.lat||!o.lng)return;
+        var iconClass='custom-order-icon',symbol='$',label='Pedido',color='#64c27b';
+        if(o.outcome==='sale')   {iconClass='custom-order-icon-sale';   symbol='✓';label='Venta Realizada';color='#10B981';}
+        if(o.outcome==='no_sale'){iconClass='custom-order-icon-no-sale';symbol='○';label='Sin Venta';      color='#F59E0B';}
+        if(o.outcome==='closed') {iconClass='custom-order-icon-closed'; symbol='✕';label='Cerrado';       color='#EF4444';}
+        var icon=L.divIcon({className:iconClass,html:symbol,iconSize:[32,32]});
+        var popup='<div style="text-align:center;min-width:150px"><b>'+label+'</b><br>';
+        if(o.total>0)popup+='<span style="color:'+color+';font-size:15px;font-weight:bold">Bs. '+o.total.toFixed(2)+'</span><br>';
+        popup+='<span style="color:#999;font-size:11px">'+(o.time||'')+'</span><br>';
+        var isVisit=o.id.toString().startsWith('visit-');
+        var vid=isVisit?o.id.toString().replace('visit-',''):'';
+        if(isVisit) popup+=btn('VER DETALLE','#3B82F6','{action:\\'viewVisit\\',visitId:\\''+vid+'\\'}');
+        else        popup+=btn('VER DETALLE','#3B82F6','{action:\\'viewOrder\\',orderId:\\''+o.id+'\\'}');
+        popup+='</div>';
+        L.marker([o.lat,o.lng],{icon:icon}).bindPopup(popup).addTo(markersLayer);
+      });
+    }
+  }
 }
 document.addEventListener('message',function(e){try{updateMap(JSON.parse(e.data));}catch(_){}});
 window.addEventListener('message',  function(e){try{updateMap(JSON.parse(e.data));}catch(_){}});
@@ -161,6 +188,7 @@ window.addEventListener('message',  function(e){try{updateMap(JSON.parse(e.data)
 export default function LeafletMapScreen() {
   const router = useRouter();
   const { isAdmin } = useAuth();
+  const { colors, isDark } = useTheme();
   const webViewRef = useRef<WebView>(null);
 
   const [searchText, setSearchText] = useState('');
@@ -177,6 +205,8 @@ export default function LeafletMapScreen() {
   const [showFilters, setShowFilters] = useState(false);
   const [activeFilter, setActiveFilter] = useState<'employee' | 'zone' | null>(null);
 
+  const [selectedOutcome, setSelectedOutcome] = useState<'all' | 'sale' | 'no_sale' | 'closed'>('all');
+
   const [assignModal, setAssignModal] = useState(false);
   const [assignPointId, setAssignPointId] = useState<string | null>(null);
   const [assignSearch, setAssignSearch] = useState('');
@@ -185,10 +215,19 @@ export default function LeafletMapScreen() {
   const [savingAssign, setSavingAssign] = useState(false);
 
   const [webViewReady, setWebViewReady] = useState(false);
+  // Guardamos TODOS los markers (sin filtrar) para poder aplicar filtros localmente
+  const allOrderMarkersRef = useRef<any[]>([]);
 
   const sendMessage = useCallback((payload: any) => {
     webViewRef.current?.postMessage(JSON.stringify(payload));
   }, []);
+
+  // Aplica el filtro de outcome a los markers ya cargados y los envía al mapa
+  const applyOutcomeFilter = useCallback((outcome: string) => {
+    const all = allOrderMarkersRef.current;
+    const filtered = outcome === 'all' ? all : all.filter(o => o.outcome === outcome);
+    sendMessage({ type: 'UPDATE_ORDERS', orders: filtered });
+  }, [sendMessage]);
 
   const loadMapData = useCallback(async () => {
     try {
@@ -286,12 +325,27 @@ export default function LeafletMapScreen() {
           }).filter(Boolean);
         }
       }
+      
+      // Guardamos TODOS los markers sin filtrar en el ref
+      allOrderMarkersRef.current = orderMarkers;
 
-      sendMessage({ type: 'UPDATE_DATA', clients: processedClients, routePoints: routeMarkers, orders: orderMarkers, employees: employeeMarkers });
+      // Aplicamos el filtro de outcome actual
+      const filtered = selectedOutcome === 'all'
+        ? orderMarkers
+        : orderMarkers.filter((o: any) => o.outcome === selectedOutcome);
+
+      sendMessage({ type: 'UPDATE_DATA', clients: processedClients, routePoints: routeMarkers, orders: filtered, employees: employeeMarkers });
     } catch (_) {
       Alert.alert('Error', 'No se pudieron cargar los datos del mapa');
     }
   }, [isAdmin, selectedEmployeeId, selectedZoneId, sendMessage, zones]);
+
+  // Cuando cambia SOLO el filtro de outcome → aplicar localmente sin re-fetch
+  useEffect(() => {
+    if (webViewReady && allOrderMarkersRef.current.length >= 0) {
+      applyOutcomeFilter(selectedOutcome);
+    }
+  }, [selectedOutcome]);
 
   useEffect(() => {
     if (webViewReady) loadMapData();
@@ -493,10 +547,10 @@ export default function LeafletMapScreen() {
   // sin búsqueda, sin filtros y con un overlay informativo.
   if (!isAdmin) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, { backgroundColor: colors.bgStart }]}>
         <WebView
           originWhitelist={['*']}
-          source={{ html: LEAFLET_HTML }}
+          source={{ html: getLeafletHtml(isDark) }}
           style={styles.map}
           scrollEnabled={false}
           javaScriptEnabled
@@ -517,12 +571,12 @@ export default function LeafletMapScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.bgStart }]}>
 
       <WebView
         ref={webViewRef}
         originWhitelist={['*']}
-        source={{ html: LEAFLET_HTML }}
+        source={{ html: getLeafletHtml(isDark) }}
         style={styles.map}
         onMessage={handleMessage}
         scrollEnabled={false}
@@ -560,6 +614,57 @@ export default function LeafletMapScreen() {
               )} />
           </View>
         )}
+
+        {isAdmin && employees.length > 0 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }} contentContainerStyle={{ gap: 8 }}>
+            <TouchableOpacity
+              onPress={() => { setSelectedEmployeeId(null); setZones(zonasFull); }}
+              style={[styles.outcomeChip, !selectedEmployeeId && { backgroundColor: '#6366F1', borderColor: '#6366F1' }]}
+            >
+              <Ionicons name="people" size={12} color={!selectedEmployeeId ? '#fff' : '#6366F1'} />
+              <Text style={[styles.outcomeText, { marginLeft: 5 }, !selectedEmployeeId && { color: '#fff' }]}>Todos</Text>
+            </TouchableOpacity>
+            {employees.map((emp: any) => (
+              <TouchableOpacity
+                key={emp.id}
+                onPress={() => setSelectedEmployeeId(emp.id)}
+                style={[styles.outcomeChip, selectedEmployeeId === emp.id && { backgroundColor: '#6366F1', borderColor: '#6366F1' }]}
+              >
+                <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: selectedEmployeeId === emp.id ? 'rgba(255,255,255,0.3)' : '#EEF2FF', justifyContent: 'center', alignItems: 'center', marginRight: 5 }}>
+                  <Text style={{ fontSize: 9, fontWeight: '700', color: selectedEmployeeId === emp.id ? '#fff' : '#6366F1' }}>
+                    {emp.full_name?.charAt(0) || '?'}
+                  </Text>
+                </View>
+                <Text style={[styles.outcomeText, selectedEmployeeId === emp.id && { color: '#fff' }]} numberOfLines={1}>
+                  {emp.full_name?.split(' ')[0] || 'Vendedor'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
+
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }} contentContainerStyle={{ gap: 8 }}>
+          {[
+            { key: 'all', label: 'Todos', color: '#6B7280' },
+            { key: 'sale', label: 'Ventas', color: '#10B981' },
+            { key: 'no_sale', label: 'Sin Venta', color: '#F59E0B' },
+            { key: 'closed', label: 'Cerrados', color: '#EF4444' }
+          ].map(opt => (
+            <TouchableOpacity
+              key={opt.key}
+              onPress={() => setSelectedOutcome(opt.key as any)}
+              style={[
+                styles.outcomeChip,
+                selectedOutcome === opt.key && { backgroundColor: opt.color, borderColor: opt.color }
+              ]}
+            >
+              <View style={[styles.outcomeDot, { backgroundColor: selectedOutcome === opt.key ? '#fff' : opt.color }]} />
+              <Text style={[styles.outcomeText, selectedOutcome === opt.key && { color: '#fff' }]}>
+                {opt.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
 
         <TouchableOpacity
           style={[styles.filterBtn, hasActiveFilter && styles.filterBtnActive, !selectedZoneId && styles.filterBtnPulse]}
@@ -791,7 +896,11 @@ const styles = StyleSheet.create({
   suggestionInitial: { color: '#2a8c4a', fontWeight: 'bold', fontSize: 13 },
   suggestionName: { fontSize: 14, fontWeight: '600', color: '#333' },
   suggestionCode: { fontSize: 11, color: '#999' },
+  outcomeChip: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: '#E5E7EB', elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, height: 32 },
+  outcomeDot: { width: 10, height: 10, borderRadius: 5, marginRight: 6 },
+  outcomeText: { fontSize: 12, fontWeight: '600', color: '#4B5563' },
   filterBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, alignSelf: 'flex-start', elevation: 4, borderWidth: 1.5, borderColor: '#2a8c4a', marginBottom: 6 },
+
   filterBtnActive: { backgroundColor: '#2a8c4a', borderColor: '#2a8c4a' },
   filterBtnPulse: { borderColor: '#F59E0B', borderWidth: 1.5 },
   filterBtnText: { fontSize: 13, fontWeight: '600', color: '#2a8c4a', marginLeft: 6, maxWidth: 200 },

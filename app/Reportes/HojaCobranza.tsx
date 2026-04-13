@@ -7,6 +7,7 @@ import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -16,6 +17,7 @@ import { Deuda } from '../../types/Cobranza.interface';
 export default function HojaCobranzaScreen() {
     const router = useRouter();
     const { colors, isDark } = useTheme();
+    const { session, isAdmin } = useAuth();
 
     const [loading, setLoading] = useState(true);
     const [deudas, setDeudas] = useState<Deuda[]>([]);
@@ -28,7 +30,14 @@ export default function HojaCobranzaScreen() {
     const cargarDatos = async () => {
         try {
             setLoading(true);
-            const datos = await reporteService.getHojaCobranza();
+            
+            const userId = session?.user?.id;
+            if (!userId) {
+                setLoading(false);
+                return;
+            }
+
+            const datos = await reporteService.getHojaCobranza(userId, isAdmin);
             setDeudas(datos);
 
             const sumaTotal = datos.reduce((acc, item) => acc + item.saldo, 0);
@@ -136,8 +145,12 @@ export default function HojaCobranzaScreen() {
             {/* Cabecera: nombre + saldo pendiente */}
             <View style={styles.cardHeader}>
                 <View style={{ flex: 1, paddingRight: 10 }}>
-                    <Text style={[styles.clientName, { color: colors.textMain }]}>{item.cliente.nombre}</Text>
-                    <Text style={[styles.nroDoc, { color: colors.textSub }]}>Doc: {item.nro_doc}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginBottom: 2 }}>
+                        <Text style={[styles.clientCode, { color: colors.brandGreen }]}>{item.cliente.codigo}</Text>
+                        <Text style={[styles.clientName, { color: colors.textMain, marginBottom: 0 }]}>{item.cliente.nombre}</Text>
+                    </View>
+                    <Text style={[styles.nroDoc, { color: colors.textSub }]}>Razón Soc.: {item.cliente.razon_social}</Text>
+                    <Text style={[styles.nroDoc, { color: colors.textSub }]}>Nro. Doc: {item.nro_doc}</Text>
                 </View>
                 <View style={styles.amountBox}>
                     <Text style={styles.labelAmount}>SALDO PENDIENTE</Text>
@@ -167,10 +180,20 @@ export default function HojaCobranzaScreen() {
                 </View>
             </View>
 
-            {/* Fecha de venta */}
-            <View style={styles.addressRow}>
-                <Ionicons name="calendar-outline" size={14} color={colors.textSub} style={{ marginTop: 2 }} />
-                <Text style={[styles.addressText, { color: colors.textSub }]}>Fecha de venta: {item.fecha}</Text>
+            {/* Información Extra del Cliente */}
+            <View style={{ marginBottom: 15 }}>
+                <View style={styles.infoRowSmall}>
+                    <Ionicons name="location-outline" size={13} color={colors.textSub} style={{ marginTop: 2 }} />
+                    <Text style={[styles.addressText, { color: colors.textSub }]}>{item.cliente.direccion}</Text>
+                </View>
+                <View style={styles.infoRowSmall}>
+                    <Ionicons name="call-outline" size={13} color={colors.textSub} style={{ marginTop: 2 }} />
+                    <Text style={[styles.addressText, { color: colors.textSub }]}>{item.cliente.telefono}</Text>
+                </View>
+                <View style={styles.infoRowSmall}>
+                    <Ionicons name="calendar-outline" size={13} color={colors.textSub} style={{ marginTop: 2 }} />
+                    <Text style={[styles.addressText, { color: colors.textSub }]}>Fecha de venta: {item.fecha}</Text>
+                </View>
             </View>
 
             {/* Botón llamar (si tiene teléfono) */}
@@ -267,6 +290,7 @@ const styles = StyleSheet.create({
 
     card: { borderRadius: 24, padding: 24, borderWidth: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 3 },
     cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+    clientCode: { fontSize: 12, fontWeight: '800', backgroundColor: 'rgba(16, 185, 129, 0.1)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, overflow: 'hidden' },
     clientName: { fontSize: 17, fontWeight: '800', marginBottom: 4 },
     nroDoc: { fontSize: 12, marginBottom: 2 },
 
@@ -286,8 +310,9 @@ const styles = StyleSheet.create({
     moraBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
     moraText: { fontSize: 12, fontWeight: '800' },
 
+    infoRowSmall: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 6 },
     addressRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 20 },
-    addressText: { fontSize: 13, marginLeft: 6, flex: 1, lineHeight: 18 },
+    addressText: { fontSize: 13, marginLeft: 8, flex: 1, lineHeight: 18 },
 
     callButton: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 14, borderRadius: 14, borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: '#F9FAFB', gap: 8 },
     callButtonText: { fontSize: 14, fontWeight: '700', color: '#374151' },
