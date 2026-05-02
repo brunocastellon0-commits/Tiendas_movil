@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { supabase } from '../../lib/supabase';
+import { showAppToast } from '../../components/VisitToast';
 import { ensureLocationGranted } from '../../hooks/useLocationPermission';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -62,21 +63,10 @@ export default function NuevoPedido() {
   const [nroDocumento, setNroDocumento] = useState('00000');
   const [fecha] = useState(new Date().toLocaleDateString('es-BO'));
   const [observation, setObservation] = useState('');
-  const [descuentoMonto, setDescuentoMonto] = useState('0');
+  const [descuentoMontoInput, setDescuentoMontoInput] = useState('');
   const [tipoPago, setTipoPago] = useState<'Contado' | 'Credito'>('Contado');
 
-  // ── Modal de éxito ───────────────────────────────────────────────────────────
-  const [successModal, setSuccessModal] = useState(false);
   const navTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const showSuccessModal = () => {
-    setSuccessModal(true);
-
-    navTimerRef.current = setTimeout(() => {
-      setSuccessModal(false);
-      router.back();
-    }, 2000);
-  };
 
   useEffect(() => () => {
     if (navTimerRef.current) clearTimeout(navTimerRef.current);
@@ -89,7 +79,7 @@ export default function NuevoPedido() {
 
   // ── Carga inicial ───────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!clientId) { Alert.alert('Error', 'Falta el ID del cliente'); router.back(); return; }
+    if (!clientId) { showAppToast('Falta el ID del cliente', 'error'); router.back(); return; }
     loadInitialData();
   }, [clientId]);
 
@@ -112,7 +102,7 @@ export default function NuevoPedido() {
       setProducts(prodData || []);
 
     } catch {
-      Alert.alert('Error', 'No se pudieron cargar los datos');
+      showAppToast('No se pudieron cargar los datos', 'error');
     } finally {
       setLoadingData(false);
     }
@@ -121,7 +111,7 @@ export default function NuevoPedido() {
   // ── Carrito ─────────────────────────────────────────────────────────────────
   const addToCart = (product: Product) => {
     if (cart.some(p => p.id === product.id)) {
-      Alert.alert('Ya agregado', 'Este producto ya esta en el detalle del pedido.');
+      showAppToast('Producto ya agregado', 'info');
       return;
     }
     setCart(prev => [...prev, { ...product, qty: 0 }]);
@@ -149,15 +139,15 @@ export default function NuevoPedido() {
 
   // ── Cálculos ────────────────────────────────────────────────────────────────
   const subtotal = () => cart.reduce((acc, i) => acc + i.qty * i.precio_base_venta, 0);
-  const descuentoValor = () => parseFloat(descuentoMonto) || 0;
-  const descuentoPct = () => { const s = subtotal(); return s === 0 ? 0 : (descuentoValor() / s) * 100; };
+  const descuentoValor = () => parseFloat(descuentoMontoInput) || 0;
+  const descuentoPct = () => { const s = subtotal(); return s > 0 ? (descuentoValor() / s) * 100 : 0; };
   const totalFinal = () => subtotal() - descuentoValor();
 
   // ── Guardar pedido ──────────────────────────────────────────────────────────
   const saveOrder = async () => {
     const validItems = cart.filter(i => i.qty > 0);
     if (validItems.length === 0) {
-      Alert.alert('Sin productos', 'Asigna cantidad a al menos un producto.');
+      showAppToast('Asigna cantidad a al menos un producto', 'info');
       return;
     }
     setSaving(true);
@@ -294,11 +284,14 @@ export default function NuevoPedido() {
       );
 
       // Mostrar modal de éxito
-      showSuccessModal();
+      showAppToast('Pedido enviado exitosamente', 'success');
+      navTimerRef.current = setTimeout(() => {
+        router.back();
+      }, 1500);
 
     } catch (error: any) {
       console.error('[NuevoPedido] Error general en saveOrder:', error);
-      Alert.alert('Error al guardar', error.message);
+      showAppToast('Error al guardar', 'error', error.message);
     } finally {
       setSaving(false);
     }
@@ -514,25 +507,32 @@ export default function NuevoPedido() {
 
                   <View style={styles.totalRow}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <Text style={[styles.totalLabel, { color: colors.textSub }]}>DESCUENTO</Text>
+                      <Text style={[styles.totalLabel, { color: colors.textSub }]}>DESC FINANCIERO (Bs)</Text>
                       <View style={[styles.pctBadge, { backgroundColor: isDark ? '#3a2800' : '#FEF3C7' }]}>
                         <Text style={[styles.pctBadgeText, { color: isDark ? '#FCD34D' : '#92400E' }]}>
-                          {descuentoPct().toFixed(1)}%
+                          {descuentoPct().toFixed(2)} %
                         </Text>
                       </View>
                     </View>
-                    <TextInput
-                      style={[styles.montoInput, {
-                        color: '#DC2626',
-                        backgroundColor: isDark ? '#2a0a0a' : '#FEF2F2',
-                        borderColor: '#EF4444',
-                      }]}
-                      value={descuentoMonto === '0' ? '' : descuentoMonto}
-                      onChangeText={setDescuentoMonto}
-                      keyboardType="decimal-pad"
-                      placeholder="0.00"
-                      placeholderTextColor={colors.textSub}
-                    />
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <TextInput
+                        style={[styles.montoInput, {
+                          color: '#DC2626',
+                          backgroundColor: isDark ? '#2a0a0a' : '#FEF2F2',
+                          borderColor: '#EF4444',
+                          marginRight: 4,
+                          paddingRight: 8,
+                          textAlign: 'right',
+                          minWidth: 70,
+                        }]}
+                        value={descuentoMontoInput}
+                        onChangeText={setDescuentoMontoInput}
+                        keyboardType="decimal-pad"
+                        placeholder="0.00"
+                        placeholderTextColor={colors.textSub}
+                      />
+                      <Text style={{ color: '#DC2626', fontWeight: 'bold' }}>Bs</Text>
+                    </View>
                   </View>
 
                   <View style={[styles.divider, { backgroundColor: isDark ? colors.cardBorder : '#E5E7EB' }]} />
@@ -690,21 +690,7 @@ export default function NuevoPedido() {
         </View>
       )}
 
-      {/* ── Modal de éxito con countdown ── */}
-      <Modal visible={successModal} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalBox, { backgroundColor: colors.cardBg }]}>
-            <View style={[styles.modalIconBg, { backgroundColor: isDark ? 'rgba(22,163,74,0.2)' : '#DCFCE7' }]}>
-              <Ionicons name="checkmark-circle" size={40} color={colors.brandGreen} />
-            </View>
-            <Text style={[styles.modalTitle, { color: colors.textMain }]}>
-              Pedido enviado exitosamente
-            </Text>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Modal: stock insuficiente */}
+      {/* Footer flotante */}
       <Modal
         visible={stockModal.visible}
         transparent

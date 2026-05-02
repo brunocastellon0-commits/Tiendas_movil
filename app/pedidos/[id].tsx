@@ -47,6 +47,8 @@ interface OrderDetail {
   tipo_pago?: string;
   numero_documento?: string;
   observacion?: string;
+  descuento_monto?: number; // Agregado para soportar descuento en bs
+  descuento_porcentaje?: number; // Agregado para soportar descuento en porcentaje
   items: OrderItem[];
   clients: {
     name: string;
@@ -114,9 +116,10 @@ export default function OrderDetailScreen() {
 
       // También intentamos traer número de documento / tipo_pago / observación
       // de la tabla real de pedidos si existe un match por id
+      // Obtenemos campos adicionales (descuentos, documento, etc.) de la tabla principal de pedidos
       const { data: pedidoData } = await supabase
         .from('pedidos')
-        .select('numero_documento, tipo_pago, observacion')
+        .select('numero_documento, tipo_pago, observacion, descuento_monto, descuento_porcentaje')
         .eq('id', id)
         .maybeSingle();
 
@@ -146,6 +149,8 @@ export default function OrderDetailScreen() {
           tipo_pago:       pedidoData?.tipo_pago,
           numero_documento: pedidoData?.numero_documento,
           observacion:     pedidoData?.observacion,
+          descuento_monto: pedidoData?.descuento_monto || 0,
+          descuento_porcentaje: pedidoData?.descuento_porcentaje || 0,
           clients: {
             name:    rawClient?.name    || 'Sin nombre',
             address: rawClient?.address || 'Sin dirección',
@@ -445,6 +450,24 @@ export default function OrderDetailScreen() {
                 Bs {order.items.reduce((s, i) => s + i.qty * i.price, 0).toFixed(2)}
               </Text>
             </View>
+
+            {/* Mostramos el descuento solo si es mayor a 0 */}
+            {(order.descuento_monto ?? 0) > 0 && (
+              <View style={styles.totalRow}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Text style={[styles.totalLabel, { color: colors.textSub }]}>DESCUENTO</Text>
+                  <View style={{ backgroundColor: isDark ? '#3a2800' : '#FEF3C7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
+                    <Text style={{ color: isDark ? '#FCD34D' : '#92400E', fontSize: 10, fontWeight: 'bold' }}>
+                      {(order.descuento_porcentaje ?? 0).toFixed(2)}%
+                    </Text>
+                  </View>
+                </View>
+                <Text style={[styles.totalValue, { color: '#EF4444' }]}>
+                  - Bs {(order.descuento_monto ?? 0).toFixed(2)}
+                </Text>
+              </View>
+            )}
+
             <View style={[styles.divider, { backgroundColor: isDark ? colors.cardBorder : '#E5E7EB' }]} />
             <View style={styles.totalRow}>
               <Text style={[styles.totalLabelFinal, { color: colors.textMain }]}>TOTAL</Text>

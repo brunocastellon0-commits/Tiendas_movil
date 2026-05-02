@@ -3,7 +3,7 @@ import { Alert, Linking } from 'react-native';
 import * as Location from 'expo-location';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { showVisitToast } from '../components/VisitToast';
+import { showAppToast } from '../components/VisitToast';
 
 // ─── Registro del intento de fraude en Supabase ───────────────────────────────
 const logMockGPSAttempt = async (reason: string) => {
@@ -21,6 +21,11 @@ const logMockGPSAttempt = async (reason: string) => {
     // Silencioso — no interrumpir el flujo principal
   }
 };
+
+// ─── ESTADO GLOBAL EN MEMORIA PARA LA VISITA ACTIVA ──────────────────────────
+// Esto evita que visitas pendientes de horas/días anteriores se reanuden solas.
+// Solo existirá visita activa si se inició en la sesión actual de la app.
+let globalActiveVisit: { clientId: string; visitId: number; startTime: Date } | null = null;
 
 // ─── Solicita permisos de GPS y retorna las coords o null ────────────────────
 // Si el usuario denegó el permiso, muestra un alert con instrucciones.
@@ -113,42 +118,16 @@ export const useVisitTracker = () => {
   }, [session?.user?.id]);
 
   // clientId es OBLIGATORIO: solo busca visita activa para ESE cliente específico.
-  // Sin él, una visita de otro cliente contaminaría el estado de esta pantalla.
+  // Ahora usamos el estado en memoria para que no auto-inicie visitas de sesiones anteriores.
   const checkActiveVisit = async (clientId?: string) => {
     if (!session?.user) return;
-    try {
-      const today = new Date();
-      const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-      
-      let query = supabase
-        .from('visits')
-        .select('id, start_time')
-        .eq('seller_id', session.user.id)
-        .eq('outcome', 'pending')
-        .gte('start_time', `${todayStr}T00:00:00-04:00`)
-        .order('start_time', { ascending: false })
-        .limit(1);
-
-      // Filtramos por cliente para que cada perfil tenga su estado propio
-      if (clientId) {
-        query = query.eq('client_id', clientId);
-      }
-
-      const { data, error } = await query.single();
-
-      if (data && !error) {
-        setVisitId(data.id);
-        setStartTime(new Date(data.start_time));
-        setIsVisiting(true);
-      } else {
-        // Siempre reseteamos para este cliente — sin esto, un cliente anterior
-        // podía dejar isVisiting=true al navegar a un cliente sin visita.
-        setIsVisiting(false);
-        setVisitId(null);
-        setStartTime(null);
-      }
-    } catch {
-      // .single() lanza error cuando no hay filas — es el caso normal (sin visita)
+    
+    if (globalActiveVisit && globalActiveVisit.clientId === clientId) {
+      setVisitId(globalActiveVisit.visitId);
+      setStartTime(globalActiveVisit.startTime);
+      setIsVisiting(true);
+    } else {
+      // No hay visita activa en la sesión actual para este cliente
       setIsVisiting(false);
       setVisitId(null);
       setStartTime(null);
@@ -200,12 +179,11 @@ export const useVisitTracker = () => {
       setStartTime(start);
       setIsVisiting(true);
 
+      // Guardar en memoria global
+      globalActiveVisit = { clientId, visitId: data.id, startTime: start };
+
       // Lanzamos el mensaje de éxito al darle al botón
-      showVisitToast({
-        title: 'Visita iniciada',
-        subtitle: '',
-        type: 'success',
-      });
+      showAppToast('Visita iniciada', 'success');
 
     } catch (error: any) {
       Alert.alert('Error', 'No se pudo iniciar la visita. Revisa tu conexión.');
@@ -259,11 +237,12 @@ export const useVisitTracker = () => {
         closed: { title: 'Cliente cerrado', subtitle: 'El local estaba cerrado al momento de la visita.', type: 'error' },
       };
 
-      showVisitToast(toastMap[outcome]);
+      showAppToast(toastMap[outcome].title, toastMap[outcome].type, toastMap[outcome].subtitle);
 
       setIsVisiting(false);
       setVisitId(null);
       setStartTime(null);
+      globalActiveVisit = null; // Limpiar estado global
 
     } catch (error: any) {
       Alert.alert('Error', 'No se pudo cerrar la visita: ' + error.message);

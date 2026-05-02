@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from '../contexts/AuthContext';
 import { ThemeProvider } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabase';
 import { NotificationService } from '../services/NotificationService';
+import { AppToast } from '../components/VisitToast';
 
 // proteccion de rutas
 const InitialLayout = () => {
@@ -74,6 +75,7 @@ export default function RootLayout() {
     <AuthProvider>
       <ThemeProvider>
         <InitialLayout />
+        <AppToast />
       </ThemeProvider>
     </AuthProvider>
   );

@@ -3,27 +3,28 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Modal, StyleSheet, Text, useColorScheme, View } from 'react-native';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// VisitToast — modal visual que se cierra solo en 5 segundos
+// AppToast — modal visual que se cierra solo en 1.5 segundos
 //
-// Se controla con showVisitToast() desde cualquier archivo.
+// Se controla con showAppToast() desde cualquier archivo.
 // Respeta el tema del dispositivo (dark / light) automáticamente.
 //
 // Uso:
-//   1. Monta <VisitToast /> en la pantalla donde quieras que aparezca
-//   2. Llama showVisitToast({ title, subtitle, type }) desde el hook o pantalla
+//   1. Montado globalmente en _layout.tsx
+//   2. Llama showAppToast({ title, subtitle, type }) desde el hook o pantalla
 //
 // Tipos:
-//   'success' → verde  (visita iniciada, venta realizada, pedido guardado)
-//   'info'    → azul   (visita finalizada)
+//   'success' → verde  (éxito, guardado, etc)
+//   'info'    → azul   (información general)
+//   'error'   → rojo   (errores, advertencias)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type VisitToastType = 'success' | 'info' | 'error';
+export type AppToastType = 'success' | 'info' | 'error';
 
 interface ToastConfig {
     visible: boolean;
     title: string;
     subtitle: string;
-    type: VisitToastType;
+    type: AppToastType;
 }
 
 const INITIAL: ToastConfig = { visible: false, title: '', subtitle: '', type: 'success' };
@@ -35,23 +36,23 @@ const COLORS = {
         dark: { icon: 'checkmark-circle-outline' as const, iconColor: '#4ade80', iconBg: '#052e16', titleColor: '#4ade80' },
     },
     info: {
-        light: { icon: 'flag-outline' as const, iconColor: '#3B82F6', iconBg: '#EFF6FF', titleColor: '#1E40AF' },
-        dark: { icon: 'flag-outline' as const, iconColor: '#60a5fa', iconBg: '#0c1a2e', titleColor: '#60a5fa' },
+        light: { icon: 'information-circle-outline' as const, iconColor: '#3B82F6', iconBg: '#EFF6FF', titleColor: '#1E40AF' },
+        dark: { icon: 'information-circle-outline' as const, iconColor: '#60a5fa', iconBg: '#0c1a2e', titleColor: '#60a5fa' },
     },
     error: {
-        light: { icon: 'lock-closed-outline' as const, iconColor: '#DC2626', iconBg: '#FEF2F2', titleColor: '#991B1B' },
-        dark: { icon: 'lock-closed-outline' as const, iconColor: '#f87171', iconBg: '#2d0a0a', titleColor: '#f87171' },
+        light: { icon: 'alert-circle-outline' as const, iconColor: '#DC2626', iconBg: '#FEF2F2', titleColor: '#991B1B' },
+        dark: { icon: 'alert-circle-outline' as const, iconColor: '#f87171', iconBg: '#2d0a0a', titleColor: '#f87171' },
     },
 };
 
 // Setter global
 let _trigger: ((cfg: Omit<ToastConfig, 'visible'>) => void) | null = null;
 
-export const showVisitToast = (cfg: Omit<ToastConfig, 'visible'>) => {
-    _trigger?.(cfg);
+export const showAppToast = (title: string, type: AppToastType = 'info', subtitle: string = '') => {
+    _trigger?.({ title, subtitle, type });
 };
 
-export const VisitToast = () => {
+export const AppToast = () => {
     const scheme = useColorScheme();
     const isDark = scheme === 'dark';
     const [config, setConfig] = useState<ToastConfig>(INITIAL);
@@ -73,7 +74,7 @@ export const VisitToast = () => {
             Animated.timing(opacityAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
         ]).start();
 
-        // Cierre automático a los 2 segundos
+        // Cierre automático a los 1.5 segundos (1500 ms)
         if (timerRef.current) clearTimeout(timerRef.current);
         timerRef.current = setTimeout(() => {
             Animated.parallel([
@@ -84,7 +85,7 @@ export const VisitToast = () => {
                 scaleAnim.setValue(0.85);
                 opacityAnim.setValue(0);
             });
-        }, 2000);
+        }, 1500);
 
         return () => { if (timerRef.current) clearTimeout(timerRef.current); };
     }, [config.visible, config.title]);
@@ -113,7 +114,7 @@ export const VisitToast = () => {
                         <Text style={[styles.subtitle, { color: subtitleColor }]}>{config.subtitle}</Text>
                     ) : null}
 
-                    {/* Barra de progreso que se consume en 5 segundos */}
+                    {/* Barra de progreso que se consume en 1.5 segundos */}
                     <View style={[styles.progressTrack, { backgroundColor: isDark ? '#374151' : '#F3F4F6' }]}>
                         <ProgressBar color={c.iconColor} />
                     </View>
@@ -123,12 +124,12 @@ export const VisitToast = () => {
     );
 };
 
-// Barra que se consume de izquierda a derecha en 5 segundos
+// Barra que se consume de izquierda a derecha en 1.5 segundos
 const ProgressBar = ({ color }: { color: string }) => {
     const widthAnim = useRef(new Animated.Value(1)).current;
 
     useEffect(() => {
-        Animated.timing(widthAnim, { toValue: 0, duration: 2000, useNativeDriver: false }).start();
+        Animated.timing(widthAnim, { toValue: 0, duration: 1500, useNativeDriver: false }).start();
     }, []);
 
     return (

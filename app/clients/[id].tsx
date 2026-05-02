@@ -14,9 +14,9 @@ import {
 } from 'react-native';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useVisitTracker } from '../../hooks/hookVisita';
-import { VisitToast } from '../../components/VisitToast';
 import { clientService } from '../../services/ClienteService';
 import { Client } from '../../types/Cliente.interface';
+import { supabase } from '../../lib/supabase';
 
 interface InfoRowProps {
   label: string;
@@ -98,7 +98,18 @@ export default function ClientDetailScreen() {
   const fetchClientDetails = async () => {
     const data = await clientService.getClientById(id as string);
     if (data) {
-      setClient(data);
+      try {
+        const { data: cuentas } = await supabase
+          .from('cuentas_pendientes')
+          .select('saldo_pendiente')
+          .eq('client_id', id);
+
+        const saldoTotal = (cuentas || []).reduce((acc, curr) => acc + (Number(curr.saldo_pendiente) || 0), 0);
+        setClient({ ...data, current_balance: saldoTotal });
+      } catch (e) {
+        console.error('Error al obtener cuentas', e);
+        setClient(data);
+      }
     } else {
       router.back();
     }
@@ -132,7 +143,6 @@ export default function ClientDetailScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.bgStart }]}>
       <Stack.Screen options={{ headerShown: false }} />
-      <VisitToast />
 
       <LinearGradient colors={[colors.brandGreen, '#166534']} style={styles.header}>
         <View style={styles.headerTop}>
@@ -178,6 +188,7 @@ export default function ClientDetailScreen() {
 
         <SectionCard title="Contacto y dirección" icon="call-outline" colors={colors} isDark={isDark}>
           <InfoRow label="Razón social" value={client.business_name || client.name} colors={colors} />
+          <InfoRow label="NIT" value={client.tax_id || 'S/N'} colors={colors} />
           <InfoRow label="Dirección" value={client.address || 'No registrada'} colors={colors} />
           <InfoRow label="Teléfono" value={client.phones || 'S/N'} colors={colors} />
         </SectionCard>

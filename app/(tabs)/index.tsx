@@ -205,6 +205,7 @@ export default function HomeScreen() {
       let query = supabase
         .from('pedidos')
         .select('id, total_venta, estado')
+        .not('ubicacion_venta', 'is', null) // <-- FILTRO: Solo pedidos app (con GPS)
         .gte('crated_at', todayStart)
         .lte('crated_at', todayEnd);
 

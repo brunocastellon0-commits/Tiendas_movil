@@ -22,6 +22,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { supabase } from '../../lib/supabase';
+import { showAppToast } from '../../components/VisitToast';
 
 const DIAS_ES = ['Dom', 'Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab'];
 const MESES_ES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
@@ -62,8 +63,10 @@ interface Pedido {
   total_venta: number;
   estado: string;
   crated_at: string;
-  clients: { name: string; code: string } | null;
+  clients: { name: string; code: string; business_name: string; tax_id: string; address: string } | null;
   empleados?: { full_name: string } | null; // Se agregó campo empleado
+  descuento_monto?: number; // Agregado: descuento en bs
+  descuento_porcentaje?: number; // Agregado: descuento en porcentaje
 }
 
 interface Producto {
@@ -109,6 +112,7 @@ export default function MisPedidos() {
   const [editedQtys, setEditedQtys] = useState<Record<string, string>>({});
   const [modalNote, setModalNote] = useState('');
   const [notes, setNotes] = useState<Record<string, string>>({});
+  const [descuentoMontoInput, setDescuentoMontoInput] = useState(''); // Agregado para el descuento en Bs
 
   const [allProducts, setAllProducts] = useState<Producto[]>([]);
   const [searchProd, setSearchProd] = useState('');
@@ -140,7 +144,8 @@ export default function MisPedidos() {
       // Consultamos el empleado para poder mostrar el nombre si es admin
       let query = supabase
         .from('pedidos')
-        .select(`id, clients_id, total_venta, estado, crated_at, clients:clients_id (name, code), empleados:empleado_id (full_name)`)
+        .select(`id, clients_id, total_venta, estado, crated_at, descuento_monto, descuento_porcentaje, clients:clients_id (name, code, business_name, tax_id, address), empleados:empleado_id (full_name)`)
+        .not('ubicacion_venta', 'is', null) // <-- FILTRO MAGICO: Solo pedidos hechos en la app (con GPS)
         .gte('crated_at', from.toISOString())
         .lte('crated_at', to.toISOString())
         .order('crated_at', { ascending: false });
@@ -194,6 +199,7 @@ export default function MisPedidos() {
     setSearchProd('');
     setShowAddPanel(false);
     setModalNote(notes[pedido.id] || '');
+    setDescuentoMontoInput(pedido.descuento_monto ? String(pedido.descuento_monto) : ''); // Inicializar descuento
     try {
       const promises: PromiseLike<any>[] = [
         supabase
@@ -211,7 +217,7 @@ export default function MisPedidos() {
         );
       }
       const [detalleRes, prodRes] = await Promise.all(promises);
-      if (detalleRes.error) { Alert.alert('Error', 'No se pudo cargar el detalle'); return; }
+      if (detalleRes.error) { showAppToast('No se pudo cargar el detalle', 'error'); return; }
       const mapped = (detalleRes.data || []).map((d: any) => ({
         ...d, productos: Array.isArray(d.productos) ? d.productos[0] : d.productos,
       })) as DetalleItem[];
@@ -220,7 +226,7 @@ export default function MisPedidos() {
       mapped.forEach(d => { qtys[d.id] = d.cantidad.toString(); });
       setEditedQtys(qtys);
       if (prodRes) setAllProducts((prodRes.data || []) as Producto[]);
-    } catch { Alert.alert('Error', 'Ocurrió un error inesperado'); }
+    } catch { showAppToast('Ocurrió un error inesperado', 'error'); }
     finally { setLoadingDetalles(false); }
   };
 
@@ -231,7 +237,7 @@ export default function MisPedidos() {
     setModalNote(''); setToDelete(new Set()); setNewItems({}); setSearchProd(''); setShowAddPanel(false);
   };
 
-  const calcularTotalModal = () => {
+  const calcSubtotalModal = () => {
     const existentes = detalles
       .filter(d => !toDelete.has(d.id))
       .reduce((s, d) => s + (parseFloat(editedQtys[d.id] || '0') || 0) * d.precio_unitario, 0);
@@ -240,11 +246,15 @@ export default function MisPedidos() {
     return existentes + nuevos;
   };
 
+  const descuentoValor = () => parseFloat(descuentoMontoInput) || 0;
+  const descuentoPct = () => { const s = calcSubtotalModal(); return s > 0 ? (descuentoValor() / s) * 100 : 0; };
+  const calcularTotalModal = () => calcSubtotalModal() - descuentoValor();
+
   const guardarCambios = async () => {
     if (!selectedPedido) return;
     const newEntries = Object.values(newItems);
     if (newEntries.some(({ qty }) => !(parseFloat(qty) > 0))) {
-      Alert.alert('Cantidad inválida', 'Todos los productos nuevos deben tener una cantidad mayor a 0.'); return;
+      showAppToast('Cantidad inválida', 'error', 'Todos los productos nuevos deben tener una cantidad mayor a 0.'); return;
     }
     setSaving(true);
     try {
@@ -268,11 +278,16 @@ export default function MisPedidos() {
         if (error) throw error;
       }
       const { error } = await supabase.from('pedidos')
-        .update({ total_venta: calcularTotalModal(), estado: 'Editado' }).eq('id', selectedPedido.id);
+        .update({
+          total_venta: calcularTotalModal(),
+          descuento_monto: descuentoValor(),
+          descuento_porcentaje: descuentoPct(),
+          estado: 'Editado'
+        }).eq('id', selectedPedido.id);
       if (error) throw error;
-      Alert.alert('Éxito', 'Pedido actualizado correctamente. El sistema sincronizará los cambios.');
+      showAppToast('Pedido actualizado', 'success', 'Sincronizando cambios...');
       closeModal(); fetchPedidos();
-    } catch (e: any) { Alert.alert('Error', e.message || 'No se pudo guardar el pedido'); }
+    } catch (e: any) { showAppToast('Error al guardar', 'error', e.message || 'No se pudo guardar el pedido'); }
     finally { setSaving(false); }
   };
 
@@ -301,6 +316,9 @@ export default function MisPedidos() {
         </tr>`;
       }).join('');
 
+      const subtotal = calcSubtotalModal().toFixed(2);
+      const descuentoMontoStr = descuentoValor().toFixed(2);
+      const descuentoPctStr = descuentoPct().toFixed(2);
       const total = calcularTotalModal().toFixed(2);
 
       const html = `<!DOCTYPE html>
@@ -380,11 +398,24 @@ tbody tr:not(:last-child) td{border-bottom:1px solid #F3F4F6;}
     </table>
   </div>
   <div class="total-section">
-    <div class="total-label-group">
-      <div class="tl">Total a pagar</div>
-      <div class="tv">${detalles.length} producto${detalles.length !== 1 ? 's' : ''}</div>
+    <div style="flex:1;">
+      <div class="total-label-group" style="margin-bottom:8px; display:flex; justify-content:space-between;">
+        <div class="tl">Subtotal</div>
+        <div class="tv">Bs ${subtotal}</div>
+      </div>
+      ${descuentoValor() > 0 ? `
+      <div class="total-label-group" style="margin-bottom:8px; display:flex; justify-content:space-between; color:#EF4444;">
+        <div class="tl" style="color:#EF4444;">Descuento (${descuentoPctStr}%)</div>
+        <div class="tv" style="color:#EF4444;">- Bs ${descuentoMontoStr}</div>
+      </div>
+      <div style="height:1px; background:#E5E7EB; margin-bottom:8px;"></div>
+      ` : ''}
+      <div class="total-label-group" style="display:flex; justify-content:space-between; align-items:center;">
+        <div class="tl" style="font-size:14px; font-weight:800; color:#111827;">Total a pagar</div>
+        <div class="tv" style="margin-top:0;">${detalles.length} producto${detalles.length !== 1 ? 's' : ''}</div>
+      </div>
     </div>
-    <div class="total-amount">Bs ${total}</div>
+    <div class="total-amount" style="margin-left:20px; text-align:right;">Bs ${total}</div>
   </div>
   <div class="footer">
     <div class="footer-left">Documento generado el ${fechaHoy}<br/>Este documento no tiene validez fiscal.</div>
@@ -398,7 +429,7 @@ tbody tr:not(:last-child) td{border-bottom:1px solid #F3F4F6;}
       } else {
         await Print.printAsync({ uri });
       }
-    } catch { Alert.alert('Error', 'No se pudo generar el PDF'); }
+    } catch { showAppToast('No se pudo generar el PDF', 'error'); }
   };
 
   const activeRange = getActiveRange();
@@ -654,11 +685,21 @@ tbody tr:not(:last-child) td{border-bottom:1px solid #F3F4F6;}
                       <Text style={[styles.infoLabel, { color: colors.textSub }]}>Cliente</Text>
                       <Text style={[styles.infoValue, { color: colors.textMain }]}>
                         {selectedPedido.clients?.code ? `[${selectedPedido.clients.code}] ` : ''}
-                        {selectedPedido.clients?.name || 'Sin nombre'}
+                        {selectedPedido.clients?.business_name || selectedPedido.clients?.name || 'Sin nombre'}
                       </Text>
+                      {selectedPedido.clients?.tax_id && (
+                        <Text style={[styles.infoValue, { color: colors.textSub, fontSize: 12, marginTop: 2 }]}>
+                          NIT: {selectedPedido.clients.tax_id}
+                        </Text>
+                      )}
+                      {selectedPedido.clients?.address && (
+                        <Text style={[styles.infoValue, { color: colors.textSub, fontSize: 12, marginTop: 2 }]} numberOfLines={2}>
+                          Dir: {selectedPedido.clients.address}
+                        </Text>
+                      )}
                     </View>
                   </View>
-                  <View style={[styles.infoDivider, { backgroundColor: cardBorder }]} />
+                  <View style={[styles.infoDivider, { backgroundColor: cardBorder, height: 1, marginVertical: 12 }]} />
                   <View style={styles.infoRow}>
                     <Ionicons name="calendar-outline" size={20} color={colors.brandGreen} />
                     <View style={{ marginLeft: 10 }}>
@@ -768,9 +809,62 @@ tbody tr:not(:last-child) td{border-bottom:1px solid #F3F4F6;}
                     );
                   })}
 
-                  <View style={[styles.totalBar, { backgroundColor: isDark ? 'rgba(42,140,74,0.15)' : '#F0FDF4', borderColor: isDark ? 'rgba(42,140,74,0.3)' : '#BBF7D0' }]}>
-                    <Text style={[styles.totalBarLabel, { color: colors.textSub }]}>TOTAL</Text>
-                    <Text style={[styles.totalBarAmt, { color: colors.brandGreen }]}>Bs {calcularTotalModal().toFixed(2)}</Text>
+                  <View style={[styles.totalBar, { backgroundColor: cardBg, borderColor: cardBorder, flexDirection: 'column', gap: 8 }]}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%' }}>
+                      <Text style={[styles.totalBarLabel, { color: colors.textSub }]}>SUBTOTAL</Text>
+                      <Text style={[styles.totalBarAmt, { fontSize: 16, color: colors.textMain }]}>
+                        Bs {calcSubtotalModal().toFixed(2)}
+                      </Text>
+                    </View>
+
+                    {modalMode === 'edit' ? (
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Text style={[styles.totalBarLabel, { color: colors.textSub }]}>DESCUENTO</Text>
+                          <View style={{ backgroundColor: isDark ? '#3a2800' : '#FEF3C7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
+                            <Text style={{ color: isDark ? '#FCD34D' : '#92400E', fontSize: 10, fontWeight: 'bold' }}>
+                              {descuentoPct().toFixed(2)}%
+                            </Text>
+                          </View>
+                        </View>
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                          <TextInput
+                            style={[styles.qtyInput, { width: 70, height: 32, borderColor: '#EF4444', backgroundColor: isDark ? '#2a0a0a' : '#FEF2F2', color: '#DC2626', marginRight: 4, textAlign: 'right', paddingRight: 6 }]}
+                            value={descuentoMontoInput}
+                            onChangeText={setDescuentoMontoInput}
+                            keyboardType="decimal-pad"
+                            placeholder="0.00"
+                            placeholderTextColor={colors.textSub}
+                          />
+                          <Text style={{ color: '#DC2626', fontWeight: 'bold' }}>Bs</Text>
+                        </View>
+                      </View>
+                    ) : (
+                      descuentoValor() > 0 && (
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Text style={[styles.totalBarLabel, { color: colors.textSub }]}>DESCUENTO</Text>
+                            <View style={{ backgroundColor: isDark ? '#3a2800' : '#FEF3C7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
+                              <Text style={{ color: isDark ? '#FCD34D' : '#92400E', fontSize: 10, fontWeight: 'bold' }}>
+                                {descuentoPct().toFixed(2)}%
+                              </Text>
+                            </View>
+                          </View>
+                          <Text style={[styles.totalBarAmt, { fontSize: 16, color: '#EF4444' }]}>
+                            - Bs {descuentoValor().toFixed(2)}
+                          </Text>
+                        </View>
+                      )
+                    )}
+
+                    <View style={{ height: 1, backgroundColor: cardBorder, width: '100%', marginVertical: 4 }} />
+
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+                      <Text style={[styles.totalBarLabel, { color: colors.textMain, fontSize: 14 }]}>TOTAL</Text>
+                      <Text style={[styles.totalBarAmt, { color: colors.brandGreen }]}>
+                        Bs {calcularTotalModal().toFixed(2)}
+                      </Text>
+                    </View>
                   </View>
 
                   <View style={styles.notasSection}>

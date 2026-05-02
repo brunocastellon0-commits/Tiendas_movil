@@ -10,6 +10,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../../contexts/ThemeContext';
 import { supabase } from '../../lib/supabase';
+import { showAppToast } from '../../components/VisitToast';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PANTALLA: EditarPedido
@@ -51,6 +52,8 @@ interface Pedido {
     crated_at: string;
     tipo_pago: string;
     observacion: string | null;
+    descuento_monto: number; // Agregado: descuento en bs
+    descuento_porcentaje: number; // Agregado: descuento en porcentaje
     clients: { name: string; code?: string } | null;
 }
 
@@ -77,8 +80,9 @@ export default function EditarPedido() {
     const [showAddPanel, setShowAddPanel] = useState(false);
     const [searchAdd, setSearchAdd] = useState('');
 
-    // Observación
+    // Observación y Descuento
     const [observacion, setObservacion] = useState('');
+    const [descuentoMontoInput, setDescuentoMontoInput] = useState(''); // Agregado: input para el descuento en Bs
 
     // Modal de éxito
     const [successModal, setSuccessModal] = useState(false);
@@ -87,7 +91,7 @@ export default function EditarPedido() {
     const scrollViewRef = useRef<ScrollView>(null);
 
     useEffect(() => {
-        if (!pedidoId) { Alert.alert('Error', 'Falta el ID del pedido'); router.back(); return; }
+        if (!pedidoId) { showAppToast('Falta el ID del pedido', 'error'); router.back(); return; }
         loadData();
         return () => { if (navTimerRef.current) clearTimeout(navTimerRef.current); };
     }, [pedidoId]);
@@ -99,12 +103,16 @@ export default function EditarPedido() {
             // Cargar pedido
             const { data: ped, error: pedErr } = await supabase
                 .from('pedidos')
-                .select('id, numero_documento, total_venta, estado, crated_at, tipo_pago, observacion, clients:clients_id(name, code)')
+                .select('id, numero_documento, total_venta, estado, crated_at, tipo_pago, observacion, descuento_monto, descuento_porcentaje, clients:clients_id(name, code)')
                 .eq('id', pedidoId)
                 .single();
             if (pedErr) throw pedErr;
             setPedido(ped as any);
             setObservacion((ped as any).observacion || '');
+            // Cargamos el descuento si existe
+            if ((ped as any).descuento_monto) {
+                setDescuentoMontoInput(String((ped as any).descuento_monto));
+            }
 
             // Cargar detalles
             const { data: dets, error: detErr } = await supabase
@@ -136,15 +144,15 @@ export default function EditarPedido() {
             setAllProducts(prods || []);
 
         } catch (e: any) {
-            Alert.alert('Error', 'No se pudieron cargar los datos: ' + e.message);
+            showAppToast('No se pudieron cargar los datos', 'error', e.message);
             router.back();
         } finally {
             setLoadingData(false);
         }
     };
 
-    // ── Cálculo del total ───────────────────────────────────────────────────────
-    const calcTotal = (): number => {
+    // ── Cálculo del total y descuentos ──────────────────────────────────────────
+    const calcSubtotal = (): number => {
         const existentes = detalles
             .filter(d => !toDelete.has(d.id))
             .reduce((s, d) => s + (parseFloat(editedQtys[d.id] || '0') || 0) * d.precio_unitario, 0);
@@ -152,6 +160,11 @@ export default function EditarPedido() {
             .reduce((s, { producto, qty }) => s + (parseFloat(qty) || 0) * producto.precio_base_venta, 0);
         return existentes + nuevos;
     };
+    
+    // Funciones de descuento agregadas
+    const descuentoValor = () => parseFloat(descuentoMontoInput) || 0;
+    const descuentoPct = () => { const s = calcSubtotal(); return s > 0 ? (descuentoValor() / s) * 100 : 0; };
+    const calcTotal = (): number => calcSubtotal() - descuentoValor();
 
     // ── Guardar cambios ─────────────────────────────────────────────────────────
     const guardarCambios = async () => {
@@ -159,7 +172,7 @@ export default function EditarPedido() {
 
         const newEntries = Object.values(newItems);
         if (newEntries.some(({ qty }) => !(parseFloat(qty) > 0))) {
-            Alert.alert('Cantidad inválida', 'Todos los productos nuevos deben tener cantidad mayor a 0.');
+            showAppToast('Cantidad inválida', 'error', 'Todos los productos nuevos deben tener cantidad mayor a 0.');
             return;
         }
 
@@ -200,20 +213,21 @@ export default function EditarPedido() {
             const nuevoTotal = calcTotal();
             const { error: pedErr } = await supabase.from('pedidos').update({
                 total_venta: nuevoTotal,
+                descuento_monto: descuentoValor(), // Guardamos el descuento en Bs
+                descuento_porcentaje: descuentoPct(), // Guardamos el descuento en porcentaje
                 observacion,
                 estado: 'Editado',  // ← despierta al Cerebro Híbrido
             }).eq('id', pedido.id);
             if (pedErr) throw pedErr;
 
-            // Mostrar modal de éxito y volver después de 3 segundos
-            setSuccessModal(true);
+            // Mostrar modal de éxito y volver después de 1.5 segundos
+            showAppToast('¡Pedido actualizado!', 'success', 'Se sincronizará automáticamente');
             navTimerRef.current = setTimeout(() => {
-                setSuccessModal(false);
                 router.back();
-            }, 3000);
+            }, 1500);
 
         } catch (e: any) {
-            Alert.alert('Error', e.message || 'No se pudo guardar el pedido');
+            showAppToast('Error al guardar', 'error', e.message || 'No se pudo guardar el pedido');
         } finally {
             setSaving(false);
         }
@@ -471,6 +485,46 @@ export default function EditarPedido() {
                                 <Text style={[styles.emptyText, { color: colors.textSub }]}>Sin productos. Usa "Agregar" para añadir.</Text>
                             </View>
                         )}
+
+                        {/* Totalizador de descuento y subtotales igual que en NuevoPedido */}
+                        <View style={[styles.totalsSection, { borderTopColor: isDark ? colors.cardBorder : '#E5E7EB' }]}>
+                            <View style={styles.totalRow}>
+                                <Text style={[styles.totalLabel, { color: colors.textSub }]}>SUBTOTAL</Text>
+                                <Text style={[styles.totalValue, { color: colors.textMain }]}>
+                                    Bs {calcSubtotal().toFixed(2)}
+                                </Text>
+                            </View>
+
+                            <View style={styles.totalRow}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                    <Text style={[styles.totalLabel, { color: colors.textSub }]}>DESC FINANCIERO (Bs)</Text>
+                                    <View style={[styles.pctBadge, { backgroundColor: isDark ? '#3a2800' : '#FEF3C7' }]}>
+                                        <Text style={[styles.pctBadgeText, { color: isDark ? '#FCD34D' : '#92400E' }]}>
+                                            {descuentoPct().toFixed(2)} %
+                                        </Text>
+                                    </View>
+                                </View>
+                                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                    <TextInput
+                                        style={[styles.montoInput, {
+                                            color: '#DC2626',
+                                            backgroundColor: isDark ? '#2a0a0a' : '#FEF2F2',
+                                            borderColor: '#EF4444',
+                                            marginRight: 4,
+                                            paddingRight: 8,
+                                            textAlign: 'right',
+                                            minWidth: 70,
+                                        }]}
+                                        value={descuentoMontoInput}
+                                        onChangeText={setDescuentoMontoInput}
+                                        keyboardType="decimal-pad"
+                                        placeholder="0.00"
+                                        placeholderTextColor={colors.textSub}
+                                    />
+                                    <Text style={{ color: '#DC2626', fontWeight: 'bold' }}>Bs</Text>
+                                </View>
+                            </View>
+                        </View>
                     </View>
 
                     {/* ── OBSERVACIÓN ── */}
@@ -523,20 +577,6 @@ export default function EditarPedido() {
                 </TouchableOpacity>
             </View>
 
-            {/* ── MODAL ÉXITO ── */}
-            <Modal visible={successModal} transparent animationType="fade">
-                <View style={styles.modalOverlay}>
-                    <View style={[styles.modalBox, { backgroundColor: cardBg }]}>
-                        <View style={[styles.modalIconBg, { backgroundColor: `${colors.brandGreen}20` }]}>
-                            <Ionicons name="checkmark-circle" size={44} color={colors.brandGreen} />
-                        </View>
-                        <Text style={[styles.modalTitle, { color: colors.textMain }]}>¡Pedido actualizado!</Text>
-                        <Text style={[styles.modalBody, { color: colors.textSub }]}>
-                            Los cambios se sincronizarán automáticamente.
-                        </Text>
-                    </View>
-                </View>
-            </Modal>
         </View>
     );
 }
@@ -619,4 +659,13 @@ const styles = StyleSheet.create({
     modalIconBg: { width: 72, height: 72, borderRadius: 36, justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
     modalTitle: { fontSize: 18, fontWeight: '700', marginBottom: 8, textAlign: 'center' },
     modalBody: { fontSize: 14, textAlign: 'center', lineHeight: 20 },
+
+    // TOTALES EXTRA (para el descuento)
+    totalsSection: { marginTop: 14, paddingTop: 14, borderTopWidth: 1.5 },
+    totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+    totalLabel: { fontSize: 12, fontWeight: '700' },
+    totalValue: { fontSize: 14, fontWeight: '700' },
+    pctBadge: { paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6 },
+    pctBadgeText: { fontSize: 10, fontWeight: 'bold' },
+    montoInput: { borderWidth: 1, borderRadius: 6, paddingVertical: 4, fontSize: 14, fontWeight: '700' },
 });
