@@ -14,7 +14,6 @@ import {
 } from 'react-native';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useVisitTracker } from '../../hooks/hookVisita';
-import { clientService } from '../../services/ClienteService';
 import { Client } from '../../types/Cliente.interface';
 import { supabase } from '../../lib/supabase';
 
@@ -85,7 +84,6 @@ export default function ClientDetailScreen() {
   const [visitNotes, setVisitNotes] = useState('');
 
   // Carga del cliente y revisión de visita silenciosa al enfocar la pantalla.
-  // Pasamos el id del cliente para que solo detecte visitas de ESTE cliente.
   useFocusEffect(
     useCallback(() => {
       if (id) {
@@ -95,25 +93,47 @@ export default function ClientDetailScreen() {
     }, [id])
   );
 
+  // ✅ AQUÍ ESTÁ LA FUNCIÓN CORREGIDA
   const fetchClientDetails = async () => {
-    const data = await clientService.getClientById(id as string);
-    if (data) {
-      try {
-        const { data: cuentas } = await supabase
-          .from('cuentas_pendientes')
-          .select('saldo_pendiente')
-          .eq('client_id', id);
+    try {
+      setLoading(true);
 
-        const saldoTotal = (cuentas || []).reduce((acc, curr) => acc + (Number(curr.saldo_pendiente) || 0), 0);
-        setClient({ ...data, current_balance: saldoTotal });
-      } catch (e) {
-        console.error('Error al obtener cuentas', e);
-        setClient(data);
+      // 1. Traer el cliente FRESCO directo de Supabase
+      const { data: freshClient, error: clientError } = await supabase
+        .from('clients')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+      if (clientError || !freshClient) {
+        console.error('Error al traer cliente:', clientError);
+        router.back();
+        return;
       }
-    } else {
-      router.back();
+
+      // 2. Traer las cuentas por cobrar de este cliente
+      const { data: cuentas, error: cuentasError } = await supabase
+        .from('cuentas_pendientes')
+        .select('saldo_pendiente')
+        .eq('client_id', id);
+
+      // 3. Sumar el total de la deuda para el Saldo Actual
+      let saldoTotal = 0;
+      if (!cuentasError && cuentas) {
+        saldoTotal = cuentas.reduce((acc, curr) => acc + (Number(curr.saldo_pendiente) || 0), 0);
+      }
+
+      // 4. Actualizar la pantalla con los datos reales
+      setClient({
+        ...freshClient,
+        current_balance: saldoTotal
+      });
+
+    } catch (e) {
+      console.error('Error inesperado al cargar perfil:', e);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleStartVisit = async () => {

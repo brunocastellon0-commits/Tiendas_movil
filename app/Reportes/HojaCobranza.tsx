@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity,
-    ActivityIndicator, StatusBar, FlatList, Alert, Linking
+    ActivityIndicator, StatusBar, FlatList, Alert, Linking, TextInput
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -14,6 +14,15 @@ import * as Sharing from 'expo-sharing';
 import { reporteService } from '../../services/ReporteCobranzas';
 import { Deuda } from '../../types/Cobranza.interface';
 
+function useDebounce<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = useState<T>(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delayMs);
+    return () => clearTimeout(t);
+  }, [value, delayMs]);
+  return debounced;
+}
+
 export default function HojaCobranzaScreen() {
     const router = useRouter();
     const { colors, isDark } = useTheme();
@@ -21,7 +30,26 @@ export default function HojaCobranzaScreen() {
 
     const [loading, setLoading] = useState(true);
     const [deudas, setDeudas] = useState<Deuda[]>([]);
-    const [totalGeneral, setTotalGeneral] = useState(0);
+    
+    const [searchNombre, setSearchNombre] = useState('');
+    const [searchCodigo, setSearchCodigo] = useState('');
+
+    const debouncedNombre = useDebounce(searchNombre, 350);
+    const debouncedCodigo = useDebounce(searchCodigo, 350);
+
+    const filteredDeudas = useMemo(() => {
+        const nombre = debouncedNombre.toLowerCase().trim();
+        const codigo = debouncedCodigo.toLowerCase().trim();
+        return deudas.filter(d => {
+            const cumpleNombre = !nombre || d.cliente.nombre?.toLowerCase().includes(nombre) || d.cliente.razon_social?.toLowerCase().includes(nombre);
+            const cumpleCodigo = !codigo || d.cliente.codigo?.toLowerCase().startsWith(codigo) || d.nro_doc?.toLowerCase().startsWith(codigo);
+            return cumpleNombre && cumpleCodigo;
+        });
+    }, [deudas, debouncedNombre, debouncedCodigo]);
+
+    const totalFiltrado = useMemo(() => {
+        return filteredDeudas.reduce((acc, item) => acc + item.saldo, 0);
+    }, [filteredDeudas]);
 
     useEffect(() => {
         cargarDatos();
@@ -39,9 +67,6 @@ export default function HojaCobranzaScreen() {
 
             const datos = await reporteService.getHojaCobranza(userId, isAdmin);
             setDeudas(datos);
-
-            const sumaTotal = datos.reduce((acc, item) => acc + item.saldo, 0);
-            setTotalGeneral(sumaTotal);
         } catch (error) {
             console.error('Error cargando cuentas pendientes:', error);
             Alert.alert('Error', 'No se pudieron cargar las cuentas por cobrar.');
@@ -52,7 +77,7 @@ export default function HojaCobranzaScreen() {
 
     // --- LÓGICA DE DESCARGA PDF ---
     const savePdf = async () => {
-        if (deudas.length === 0) {
+        if (filteredDeudas.length === 0) {
             Alert.alert('Vacío', 'No hay datos para generar el reporte.');
             return;
         }
@@ -61,7 +86,7 @@ export default function HojaCobranzaScreen() {
             const fechaReporte = new Date().toLocaleDateString('es-BO');
             const fileName = `Cobranza_${fechaReporte.replace(/\//g, '-')}.pdf`;
 
-            const filasHTML = deudas.map(d => `
+            const filasHTML = filteredDeudas.map(d => `
                 <tr style="border-bottom: 1px solid #eee;">
                     <td style="padding: 10px;">
                         <div style="font-weight: bold; font-size: 12px;">${d.cliente.nombre}</div>
@@ -93,7 +118,7 @@ export default function HojaCobranzaScreen() {
                   <body>
                     <h1>HOJA DE COBRANZA</h1>
                     <div class="header">
-                      <p>Fecha: <strong>${fechaReporte}</strong> | Total pendiente: <strong>Bs ${totalGeneral.toFixed(2)}</strong></p>
+                      <p>Fecha: <strong>${fechaReporte}</strong> | Total pendiente: <strong>Bs ${totalFiltrado.toFixed(2)}</strong></p>
                     </div>
                     <table>
                       <thead>
@@ -111,7 +136,7 @@ export default function HojaCobranzaScreen() {
                       </tbody>
                     </table>
                     <div class="total">
-                      TOTAL CARTERA PENDIENTE: Bs ${totalGeneral.toFixed(2)}
+                      TOTAL CARTERA PENDIENTE: Bs ${totalFiltrado.toFixed(2)}
                     </div>
                   </body>
                 </html>
@@ -231,12 +256,29 @@ export default function HojaCobranzaScreen() {
                         </View>
                     </View>
 
+                    {/* Buscadores */}
+                    <View style={{ marginTop: 16 }}>
+                        <Text style={styles.searchLabel}>Buscar por nombre o razón social</Text>
+                        <View style={[styles.searchBar, { backgroundColor: 'rgba(255,255,255,0.15)', marginBottom: 8 }]}>
+                            <Ionicons name="person-outline" size={18} color="rgba(255,255,255,0.7)" />
+                            <TextInput style={styles.searchInput} placeholder="Ej: Juan, Farmacia..." placeholderTextColor="rgba(255,255,255,0.55)" value={searchNombre} onChangeText={setSearchNombre} returnKeyType="search" autoCorrect={false} autoCapitalize="words" />
+                            {searchNombre.length > 0 && <TouchableOpacity onPress={() => setSearchNombre('')}><Ionicons name="close-circle" size={16} color="rgba(255,255,255,0.8)" /></TouchableOpacity>}
+                        </View>
+
+                        <Text style={styles.searchLabel}>Buscar por código o doc.</Text>
+                        <View style={[styles.searchBar, { backgroundColor: 'rgba(255,255,255,0.15)', marginBottom: 10 }]}>
+                            <Ionicons name="barcode-outline" size={18} color="rgba(255,255,255,0.7)" />
+                            <TextInput style={styles.searchInput} placeholder="Ej: 002-095, 12345..." placeholderTextColor="rgba(255,255,255,0.55)" value={searchCodigo} onChangeText={setSearchCodigo} returnKeyType="search" autoCorrect={false} autoCapitalize="none" />
+                            {searchCodigo.length > 0 && <TouchableOpacity onPress={() => setSearchCodigo('')}><Ionicons name="close-circle" size={16} color="rgba(255,255,255,0.8)" /></TouchableOpacity>}
+                        </View>
+                    </View>
+
                     {/* Tarjeta resumen total */}
                     <View style={styles.totalFloatingCard}>
                         <View>
                             <Text style={styles.totalLabel}>TOTAL CARTERA PENDIENTE</Text>
-                            <Text style={styles.totalValue}>Bs {totalGeneral.toFixed(2)}</Text>
-                            <Text style={styles.totalSub}>{deudas.length} cliente(s) con saldo</Text>
+                            <Text style={styles.totalValue}>Bs {totalFiltrado.toFixed(2)}</Text>
+                            <Text style={styles.totalSub}>{filteredDeudas.length} cliente(s) con saldo</Text>
                         </View>
                         <View style={styles.iconCircle}>
                             <MaterialCommunityIcons name="finance" size={32} color={colors.brandGreen} />
@@ -251,10 +293,10 @@ export default function HojaCobranzaScreen() {
                     <ActivityIndicator size="large" color={colors.brandGreen} style={{ marginTop: 60 }} />
                 ) : (
                     <FlatList
-                        data={deudas}
+                        data={filteredDeudas}
                         keyExtractor={item => item.id}
                         renderItem={renderItem}
-                        contentContainerStyle={{ paddingBottom: 40, paddingTop: 80, paddingHorizontal: 20 }}
+                        contentContainerStyle={{ paddingBottom: 40, paddingTop: 70, paddingHorizontal: 20 }}
                         showsVerticalScrollIndicator={false}
                         ItemSeparatorComponent={() => <View style={{ height: 20 }} />}
                         ListEmptyComponent={
@@ -274,19 +316,38 @@ export default function HojaCobranzaScreen() {
 }
 
 const styles = StyleSheet.create({
-    headerGradient: { height: 210, borderBottomLeftRadius: 35, borderBottomRightRadius: 35, paddingHorizontal: 20, position: 'absolute', top: 0, width: '100%', zIndex: 10 },
-    headerContent: { flex: 1 },
+    headerGradient: { paddingBottom: 30, borderBottomLeftRadius: 35, borderBottomRightRadius: 35, paddingHorizontal: 20, zIndex: 10 },
+    headerContent: { },
     navBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 },
     iconBtn: { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center' },
     headerTitle: { fontSize: 18, fontWeight: '800', color: '#fff' },
 
-    totalFloatingCard: { position: 'absolute', bottom: -50, left: 20, right: 20, backgroundColor: '#fff', borderRadius: 24, padding: 24, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.1, shadowRadius: 12, elevation: 10 },
+    searchLabel: { fontSize: 10, fontWeight: '700', color: 'rgba(255,255,255,0.8)', marginBottom: 4, letterSpacing: 0.5 },
+    searchBar: { flexDirection: 'row', alignItems: 'center', borderRadius: 14, height: 46, paddingHorizontal: 14 },
+    searchInput: { flex: 1, fontSize: 14, color: '#fff', marginLeft: 8 },
+
+    totalFloatingCard: { 
+        backgroundColor: '#fff', 
+        borderRadius: 24, 
+        padding: 24, 
+        flexDirection: 'row', 
+        justifyContent: 'space-between', 
+        alignItems: 'center', 
+        shadowColor: '#000', 
+        shadowOffset: { width: 0, height: 8 }, 
+        shadowOpacity: 0.1, 
+        shadowRadius: 12, 
+        elevation: 10,
+        marginTop: 10,
+        marginBottom: -45,
+        transform: [{ translateY: 30 }]
+    },
     totalLabel: { fontSize: 11, color: '#9CA3AF', fontWeight: '800', letterSpacing: 1 },
     totalValue: { fontSize: 26, fontWeight: '900', color: '#DC2626', marginTop: 4 },
     totalSub: { fontSize: 11, color: '#9CA3AF', marginTop: 2 },
     iconCircle: { width: 55, height: 55, borderRadius: 28, backgroundColor: '#F0FDF4', justifyContent: 'center', alignItems: 'center' },
 
-    listWrapper: { flex: 1, marginTop: 160 },
+    listWrapper: { flex: 1, zIndex: 1 },
 
     card: { borderRadius: 24, padding: 24, borderWidth: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 3 },
     cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
